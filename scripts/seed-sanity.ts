@@ -76,7 +76,7 @@ async function seed() {
         "Gentle movement and breath work to support you and your baby through pregnancy.",
       fullDescription: textBlocks([
         "Gentle movement and breath work to support you and your baby through pregnancy.",
-        "Each class is designed to help you connect with your changing body, build strength for birth, and find calm in the journey ahead.",
+        "These classes are designed to ease common discomforts, build strength and flexibility, and nurture a deep connection with your growing baby. Suitable from the second trimester onwards.",
       ]),
       category: "class",
       bookingType: "stripe",
@@ -89,7 +89,7 @@ async function seed() {
       shortDescription: "Rebuild strength and connection in the months after birth.",
       fullDescription: textBlocks([
         "Rebuild strength and connection in the months after birth.",
-        "A nurturing space to restore your body, settle your mind, and meet other new mothers on the same path.",
+        "These classes offer a gentle, supported return to movement, focusing on pelvic floor health, core reconnection and emotional wellbeing. Babies are welcome and encouraged to join.",
       ]),
       category: "class",
       bookingType: "stripe",
@@ -103,7 +103,7 @@ async function seed() {
         "Bonding, relaxation and developmental support for you and your baby.",
       fullDescription: textBlocks([
         "Bonding, relaxation and developmental support for you and your baby.",
-        "Learn gentle massage techniques and yoga-inspired movements that support your baby's development while deepening your connection.",
+        "Through gentle massage strokes and playful yoga-inspired movements, you will learn to read your baby's cues, support their physical development, and deepen your bond through touch.",
       ]),
       category: "class",
       bookingType: "stripe",
@@ -116,7 +116,7 @@ async function seed() {
       shortDescription: "Seasonal flow connecting your practice to nature's rhythms.",
       fullDescription: textBlocks([
         "Seasonal flow connecting your practice to nature's rhythms.",
-        "Each class draws on the energy of the current season — building heat in summer, turning inward in winter — to create a practice that moves with the world around you.",
+        "Each series honours the qualities of the season — the stillness of winter, the renewal of spring, the abundance of summer, the release of autumn — weaving breath, movement and reflection into a practice that feels alive.",
       ]),
       category: "class",
       bookingType: "stripe",
@@ -129,8 +129,9 @@ async function seed() {
       shortDescription:
         "One-to-one coaching to support you through life's transitions.",
       fullDescription: textBlocks([
-        "One-to-one coaching to support you through life's transitions.",
-        "Whether you're navigating motherhood, career change, or a deeper shift in who you are, coaching creates space to explore what's emerging and find your way forward.",
+        "Life is full of transitions — some chosen, some not. Transformational coaching offers a dedicated space to explore what is shifting in your life, to identify what you truly want, and to move forward with clarity and confidence.",
+        "Working one-to-one, we will draw on a range of embodied and somatic practices alongside coaching methodologies to support you in reconnecting with your own wisdom. Whether you are navigating a career change, a shift in identity, a relationship transition or simply a sense that something needs to change, coaching can help you find your way.",
+        "Sessions are held online or in person, and are tailored entirely to you.",
       ]),
       category: "coaching",
       bookingType: "contact",
@@ -143,8 +144,9 @@ async function seed() {
       shortDescription:
         "Gatherings and events for women to connect, share and grow together.",
       fullDescription: textBlocks([
-        "Gatherings and events for women to connect, share and grow together.",
-        "Community is at the heart of Moontide. These events bring women together to share stories, move, and remember that none of us are doing this alone.",
+        "Connection is at the heart of everything I do. Creating Community is about bringing women together to share, to grow and to be seen — away from the relentless pace of everyday life.",
+        "Gatherings take the form of seasonal rituals, workshops, day retreats and online events. Each one is thoughtfully held, weaving together movement, reflection, conversation and rest.",
+        "Whether you are new to this kind of gathering or have been part of women's circles for years, all are welcome.",
       ]),
       category: "community",
       bookingType: "info",
@@ -181,7 +183,9 @@ async function seed() {
     _type: "trainer",
     name: "Gabrielle",
     bio: textBlocks([
-      "Yoga teacher and transformational coach supporting women through every phase of life.",
+      "Hi, I'm Gabrielle — a yoga teacher and transformational coach supporting women through every phase of life.",
+      "My practice is rooted in the belief that wellbeing is not a destination but a living, breathing relationship with ourselves. Through movement, breath and community, I create spaces where women can slow down, come home to their bodies, and move through change with grace.",
+      "Whether you're navigating pregnancy, early motherhood, or simply seeking more stillness in your day-to-day life, I'm here to support your journey.",
     ]),
     qualifications: [
       {
