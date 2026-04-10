@@ -8,6 +8,7 @@ export default defineConfig({
   title: "Moontide",
   projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID!,
   dataset: process.env.NEXT_PUBLIC_SANITY_DATASET!,
+  basePath: "/studio",
   plugins: [structureTool({ structure })],
   schema: {
     types: schemaTypes,
