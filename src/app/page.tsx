@@ -1,6 +1,6 @@
 import { Hero } from "@/components/hero";
 import { BookingOptions } from "@/components/booking-options";
-import { ServiceCard } from "@/components/service-card";
+import { ServicesSection } from "@/components/services-section";
 import { AboutPreview } from "@/components/about-preview";
 import { ContactForm } from "@/components/contact-form";
 import type { Service } from "@/lib/sanity/types";
@@ -77,11 +77,7 @@ export default function HomePage() {
     <>
       <Hero />
       <BookingOptions />
-      <section className="max-w-4xl mx-auto">
-        {placeholderServices.map((service) => (
-          <ServiceCard key={service._id} service={service} />
-        ))}
-      </section>
+      <ServicesSection services={placeholderServices} />
       <AboutPreview
         name="Gabrielle"
         shortBio="Yoga teacher and transformational coach supporting women through every phase of life."

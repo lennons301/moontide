@@ -8,7 +8,7 @@ export function Nav() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 bg-foam-white/95 backdrop-blur-sm border-b border-driftwood">
+    <header className="sticky top-0 z-50 bg-foam-white border-b border-driftwood">
       <div className="flex items-center justify-between px-6 py-4">
         <button
           onClick={() => setMenuOpen(true)}
