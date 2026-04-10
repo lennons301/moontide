@@ -1,87 +1,31 @@
+import { sanityClient } from "@/lib/sanity/client";
+import { servicesQuery, trainerQuery } from "@/lib/sanity/queries";
+import type { Service, Trainer } from "@/lib/sanity/types";
 import { Hero } from "@/components/hero";
 import { BookingOptions } from "@/components/booking-options";
 import { ServicesSection } from "@/components/services-section";
 import { AboutPreview } from "@/components/about-preview";
 import { ContactForm } from "@/components/contact-form";
-import type { Service } from "@/lib/sanity/types";
 
-// Placeholder services until Sanity CMS is connected
-const placeholderServices: Service[] = [
-  {
-    _id: "1",
-    title: "Prenatal Yoga",
-    slug: { current: "prenatal" },
-    shortDescription: "Gentle movement and breath work to support you and your baby through pregnancy.",
-    category: "class",
-    bookingType: "stripe",
-    displayOrder: 1,
-  },
-  {
-    _id: "2",
-    title: "Postnatal Yoga",
-    slug: { current: "postnatal" },
-    shortDescription: "Rebuild strength and connection in the months after birth.",
-    category: "class",
-    bookingType: "stripe",
-    displayOrder: 2,
-  },
-  {
-    _id: "3",
-    title: "Baby Yoga & Massage",
-    slug: { current: "baby-yoga" },
-    shortDescription: "Bonding, relaxation and developmental support for you and your baby.",
-    category: "class",
-    bookingType: "stripe",
-    displayOrder: 3,
-  },
-  {
-    _id: "4",
-    title: "Vinyasa Yoga Seasonal Flow",
-    slug: { current: "vinyasa" },
-    shortDescription: "Seasonal flow connecting your practice to nature's rhythms.",
-    category: "class",
-    bookingType: "stripe",
-    displayOrder: 4,
-  },
-  {
-    _id: "5",
-    title: "Transformational Coaching",
-    slug: { current: "coaching" },
-    shortDescription: "One-to-one coaching to support you through life's transitions.",
-    category: "coaching",
-    bookingType: "contact",
-    displayOrder: 5,
-  },
-  {
-    _id: "6",
-    title: "Creating Community",
-    slug: { current: "community" },
-    shortDescription: "Gatherings and events for women to connect, share and grow together.",
-    category: "community",
-    bookingType: "info",
-    displayOrder: 6,
-  },
-  {
-    _id: "7",
-    title: "Private Classes",
-    slug: { current: "private" },
-    shortDescription: "Everyone comes to the mat for different reasons. Private classes are highly personalised to your desired outcomes for mind, body and spirit.",
-    category: "private",
-    bookingType: "contact",
-    displayOrder: 7,
-  },
-];
+export const revalidate = 60; // Revalidate CMS content every 60 seconds
 
-export default function HomePage() {
+export default async function HomePage() {
+  const [services, trainer] = await Promise.all([
+    sanityClient.fetch<Service[]>(servicesQuery),
+    sanityClient.fetch<Trainer | null>(trainerQuery),
+  ]);
+
   return (
     <>
       <Hero />
       <BookingOptions />
-      <ServicesSection services={placeholderServices} />
-      <AboutPreview
-        name="Gabrielle"
-        shortBio="Yoga teacher and transformational coach supporting women through every phase of life."
-      />
+      <ServicesSection services={services} />
+      {trainer && (
+        <AboutPreview
+          name={trainer.name}
+          shortBio="Yoga teacher and transformational coach supporting women through every phase of life."
+        />
+      )}
       <section className="py-16 px-6 bg-foam-white">
         <div className="max-w-lg mx-auto">
           <h2 className="text-xl font-semibold text-deep-current text-center mb-1">
