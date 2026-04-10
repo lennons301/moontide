@@ -6,40 +6,87 @@ Wellbeing website for women navigating change through yoga, coaching, and embodi
 
 - **Framework:** Next.js 16 (App Router), React 19, TypeScript 5.7
 - **Database:** Neon (Postgres) with Drizzle ORM
-- **CMS:** Sanity
-- **Auth:** Better Auth (admin-only)
-- **UI:** shadcn/ui + Tailwind CSS
+- **CMS:** Sanity (project ID: 77icfczp, dataset: production)
+- **Auth:** Better Auth (admin-only, Phase 2)
+- **UI:** shadcn/ui + Tailwind CSS v4
 - **Email:** Resend
+- **Secrets:** Doppler (project: moontide, configs: dev/stg/prd)
 - **Deployment:** Vercel Hobby
+- **Testing:** Vitest
 
 ## Commands
 
 ```bash
-npm run dev          # Start dev server (requires: docker compose up -d && doppler run --)
-npm run build        # Production build
-npm run lint         # Linting
-npm run test         # Run tests
-npm run db:migrate   # Apply database migrations
-npm run db:seed      # Seed database with dev data
+doppler run -- npm run dev    # Start dev server with secrets injected
+npm run build                 # Production build
+npm run lint                  # Linting
+npm run test                  # Run tests (Vitest)
+npm run db:generate           # Generate Drizzle migrations
+npm run db:migrate            # Apply database migrations
+npm run db:seed-cms           # Seed Sanity CMS with initial content
+npm run db:studio             # Open Drizzle Studio
 ```
 
 ## Project Structure
 
 ```
 src/
-  app/              # Next.js App Router pages
-  components/       # React components (shadcn/ui in components/ui/)
-  lib/              # Database, Sanity client, email, utilities
-  sanity/           # Sanity schema definitions
+  app/                    # Next.js App Router pages
+    api/contact/          # Contact form POST endpoint
+    studio/[[...tool]]/   # Embedded Sanity Studio at /studio
+    classes/[slug]/       # Dynamic class detail pages
+  components/
+    ui/                   # shadcn/ui components (button, input, textarea, label, sheet)
+    nav.tsx               # Header: burger left, logo right
+    mobile-menu.tsx       # Full-screen menu with collapsible Classes section
+    footer.tsx            # Site footer with service links
+    hero.tsx              # Homepage hero section
+    booking-options.tsx   # Individual class + bundle booking grid
+    services-section.tsx  # Grouped services: 2x2 class grid, featured cards, community
+    about-preview.tsx     # Homepage about Gabrielle preview
+    contact-form.tsx      # Contact form with shadcn/ui inputs
+  lib/
+    db/
+      index.ts            # Drizzle client (postgres.js driver)
+      schema.ts           # Drizzle schema (contact_submissions)
+    sanity/
+      client.ts           # Sanity client + urlFor() image helper
+      queries.ts          # GROQ queries for all document types
+      types.ts            # TypeScript types for Sanity documents
+    email.ts              # Resend email helper (sendContactEmail)
+  sanity/
+    schema/               # Sanity document schemas (siteSettings, service, page, trainer, communityEvent)
+    structure.ts          # Sanity Studio desk structure
+scripts/
+  seed-sanity.ts          # CMS seed script (run via doppler run -- npx tsx)
+tests/
+  api/contact.test.ts     # Contact form API tests
+  lib/email.test.ts       # Email helper tests
+drizzle/
+  migrations/             # Generated Drizzle migrations
 ```
 
 ## Key Conventions
 
-- Secrets managed via Doppler — never commit .env files
-- Editorial content (text, images) lives in Sanity CMS
-- Transactional data (bookings, contact submissions) lives in Neon Postgres
-- Mobile-first responsive design
-- Local dev uses Docker Compose for Postgres
+- **Secrets:** Managed via Doppler — never commit .env files. Use `doppler run --` to inject.
+- **CMS boundary:** Editorial content (text, images, descriptions) → Sanity. Transactional data (bookings, contact submissions) → Neon Postgres.
+- **Tailwind CSS v4:** No tailwind.config.ts. Colours configured via `@theme inline` in globals.css. Custom palette: deep-current, deep-ocean, shallow-water, lunar-gold, driftwood, foam-white, seagrass.
+- **Design:** Mobile-first, photography-led, light and inviting. Theme: "Calm, luminous and gently energising — like light moving across water."
+- **Nav layout:** Burger menu left, logo (MOONTIDE) right.
+- **Services grouping:** Classes shown as 2x2 photo grid, coaching/private as featured cards, community as light text block.
+- **Sanity images:** Use `urlFor(image).width(x).height(y).url()` from `@/lib/sanity/client`.
+- **Page fallbacks:** All content pages try Sanity first, fall back to hardcoded content if CMS returns null.
+- **Local dev:** Docker Compose for Postgres (`docker compose up -d`), Doppler for secrets.
+- **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
+- **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
+
+## Environments
+
+| Environment | Database | Secrets | URL |
+|-------------|----------|---------|-----|
+| dev | Local Docker Postgres | Doppler dev | localhost:3000 |
+| stg | Neon staging branch | Doppler stg | Vercel preview |
+| prd | Neon production | Doppler prd | moontide-six.vercel.app (domain TBC) |
 
 ## Platform Context
 
