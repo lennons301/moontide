@@ -51,7 +51,7 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
             <li key={item.label}>
               {"href" in item ? (
                 <Link
-                  href={item.href}
+                  href={item.href!}
                   onClick={onClose}
                   className="block text-lg text-deep-ocean hover:text-lunar-gold transition-colors"
                 >
