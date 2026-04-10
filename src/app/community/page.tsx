@@ -1,10 +1,9 @@
-import { Metadata } from "next";
+import type { Metadata } from "next";
 import Image from "next/image";
-import { sanityClient } from "@/lib/sanity/client";
-import { urlFor } from "@/lib/sanity/client";
-import { serviceBySlugQuery, communityEventsQuery } from "@/lib/sanity/queries";
-import type { Service, CommunityEvent } from "@/lib/sanity/types";
 import { PortableText } from "next-sanity";
+import { sanityClient, urlFor } from "@/lib/sanity/client";
+import { communityEventsQuery, serviceBySlugQuery } from "@/lib/sanity/queries";
+import type { CommunityEvent, Service } from "@/lib/sanity/types";
 
 export const metadata: Metadata = { title: "Creating Community — Moontide" };
 
@@ -19,26 +18,37 @@ export default async function CommunityPage() {
   let events: CommunityEvent[] = [];
 
   try {
-    service = await sanityClient.fetch<Service>(serviceBySlugQuery, { slug: "community" });
+    service = await sanityClient.fetch<Service>(serviceBySlugQuery, {
+      slug: "community",
+    });
   } catch {
     // Sanity not connected yet — use fallback content
   }
 
   try {
-    const fetched = await sanityClient.fetch<CommunityEvent[]>(communityEventsQuery);
+    const fetched =
+      await sanityClient.fetch<CommunityEvent[]>(communityEventsQuery);
     events = fetched ?? [];
   } catch {
     // Sanity not connected yet
   }
 
-  const imageUrl = service?.image ? urlFor(service.image).width(1200).height(500).url() : null;
+  const imageUrl = service?.image
+    ? urlFor(service.image).width(1200).height(500).url()
+    : null;
 
   return (
     <>
       {/* Hero image */}
       <div className="relative h-64 md:h-96 bg-shallow-water/30">
         {imageUrl ? (
-          <Image src={imageUrl} alt="Creating Community" fill className="object-cover" priority />
+          <Image
+            src={imageUrl}
+            alt="Creating Community"
+            fill
+            className="object-cover"
+            priority
+          />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-deep-ocean/40">
             [ Photography — creating community ]
@@ -59,9 +69,9 @@ export default async function CommunityPage() {
                 <PortableText value={service.fullDescription} />
               </div>
             ) : (
-              fallbackDescription.split("\n\n").map((para, i) => (
-                <p key={i}>{para}</p>
-              ))
+              fallbackDescription
+                .split("\n\n")
+                .map((para, i) => <p key={i}>{para}</p>)
             )}
           </div>
         </div>
@@ -70,12 +80,17 @@ export default async function CommunityPage() {
       {/* Upcoming dates */}
       <section className="py-12 px-6 bg-driftwood">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-xl font-semibold text-deep-current mb-6">Upcoming Dates</h2>
+          <h2 className="text-xl font-semibold text-deep-current mb-6">
+            Upcoming Dates
+          </h2>
 
           {events.length > 0 ? (
             <ul className="space-y-6">
               {events.map((event) => (
-                <li key={event._id} className="bg-foam-white rounded-md px-5 py-4 border border-driftwood">
+                <li
+                  key={event._id}
+                  className="bg-foam-white rounded-md px-5 py-4 border border-driftwood"
+                >
                   <p className="text-lunar-gold text-sm font-semibold mb-1">
                     {event.date
                       ? new Date(event.date).toLocaleDateString("en-GB", {
@@ -86,12 +101,18 @@ export default async function CommunityPage() {
                         })
                       : "Date TBC"}
                   </p>
-                  <h3 className="text-deep-current font-semibold mb-1">{event.title}</h3>
+                  <h3 className="text-deep-current font-semibold mb-1">
+                    {event.title}
+                  </h3>
                   {event.location && (
-                    <p className="text-deep-ocean text-sm mb-1">{event.location}</p>
+                    <p className="text-deep-ocean text-sm mb-1">
+                      {event.location}
+                    </p>
                   )}
                   {event.description && (
-                    <p className="text-deep-ocean text-sm leading-relaxed">{event.description}</p>
+                    <p className="text-deep-ocean text-sm leading-relaxed">
+                      {event.description}
+                    </p>
                   )}
                 </li>
               ))}

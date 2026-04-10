@@ -1,4 +1,4 @@
-import { Metadata } from "next";
+import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Terms & Conditions — Moontide" };
 
@@ -17,15 +17,17 @@ export default function TermsPage() {
               Bookings and Cancellations
             </h2>
             <p>
-              All purchases are non-refundable. Please contact me directly if you would like
-              to cancel or reschedule a class. Should I have to cancel a class, a credit will
-              be issued and can be transferred to another class at a suitable time, subject to
-              availability.
+              All purchases are non-refundable. Please contact me directly if
+              you would like to cancel or reschedule a class. Should I have to
+              cancel a class, a credit will be issued and can be transferred to
+              another class at a suitable time, subject to availability.
             </p>
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-deep-current mb-3">Bundles</h2>
+            <h2 className="text-lg font-semibold text-deep-current mb-3">
+              Bundles
+            </h2>
             <p>Class bundles will expire 90 days from the date of purchase.</p>
           </div>
         </div>

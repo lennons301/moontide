@@ -8,7 +8,10 @@ export async function POST(request: Request) {
   const { name, email, subject, message } = body;
 
   if (!name || !email || !subject || !message) {
-    return NextResponse.json({ error: "All fields are required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "All fields are required" },
+      { status: 400 },
+    );
   }
 
   await db.insert(contactSubmissions).values({ name, email, subject, message });

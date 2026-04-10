@@ -86,7 +86,8 @@ async function seed() {
       _id: "service-postnatal",
       title: "Postnatal Yoga",
       slug: { _type: "slug", current: "postnatal" },
-      shortDescription: "Rebuild strength and connection in the months after birth.",
+      shortDescription:
+        "Rebuild strength and connection in the months after birth.",
       fullDescription: textBlocks([
         "Rebuild strength and connection in the months after birth.",
         "These classes offer a gentle, supported return to movement, focusing on pelvic floor health, core reconnection and emotional wellbeing. Babies are welcome and encouraged to join.",
@@ -113,7 +114,8 @@ async function seed() {
       _id: "service-vinyasa",
       title: "Vinyasa Yoga Seasonal Flow",
       slug: { _type: "slug", current: "vinyasa" },
-      shortDescription: "Seasonal flow connecting your practice to nature's rhythms.",
+      shortDescription:
+        "Seasonal flow connecting your practice to nature's rhythms.",
       fullDescription: textBlocks([
         "Seasonal flow connecting your practice to nature's rhythms.",
         "Each series honours the qualities of the season — the stillness of winter, the renewal of spring, the abundance of summer, the release of autumn — weaving breath, movement and reflection into a practice that feels alive.",
@@ -246,7 +248,9 @@ async function seed() {
           },
         ],
       },
-      ...textBlock("Class bundles will expire 90 days from the date of purchase."),
+      ...textBlock(
+        "Class bundles will expire 90 days from the date of purchase.",
+      ),
     ],
   });
 

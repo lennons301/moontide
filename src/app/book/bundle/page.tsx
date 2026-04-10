@@ -1,4 +1,4 @@
-import { Metadata } from "next";
+import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = { title: "Six Class Bundle — Moontide" };
@@ -12,8 +12,8 @@ export default function BookBundlePage() {
         </h1>
         <div className="w-8 h-0.5 bg-lunar-gold mx-auto mb-8" />
         <p className="text-deep-ocean leading-relaxed mb-6">
-          Online booking is coming soon. In the meantime, please get in touch directly to
-          purchase a bundle.
+          Online booking is coming soon. In the meantime, please get in touch
+          directly to purchase a bundle.
         </p>
         <Link
           href="/contact"

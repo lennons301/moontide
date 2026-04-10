@@ -1,13 +1,14 @@
-import { Metadata } from "next";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { sanityClient } from "@/lib/sanity/client";
-import { urlFor } from "@/lib/sanity/client";
+import { PortableText } from "next-sanity";
+import { sanityClient, urlFor } from "@/lib/sanity/client";
 import { serviceBySlugQuery } from "@/lib/sanity/queries";
 import type { Service } from "@/lib/sanity/types";
-import { PortableText } from "next-sanity";
 
-export const metadata: Metadata = { title: "Transformational Coaching — Moontide" };
+export const metadata: Metadata = {
+  title: "Transformational Coaching — Moontide",
+};
 
 const fallbackDescription = `Life is full of transitions — some chosen, some not. Transformational coaching offers a dedicated space to explore what is shifting in your life, to identify what you truly want, and to move forward with clarity and confidence.
 
@@ -18,19 +19,29 @@ Sessions are held online or in person, and are tailored entirely to you.`;
 export default async function CoachingPage() {
   let service: Service | null = null;
   try {
-    service = await sanityClient.fetch<Service>(serviceBySlugQuery, { slug: "coaching" });
+    service = await sanityClient.fetch<Service>(serviceBySlugQuery, {
+      slug: "coaching",
+    });
   } catch {
     // Sanity not connected yet — use fallback content
   }
 
-  const imageUrl = service?.image ? urlFor(service.image).width(1200).height(500).url() : null;
+  const imageUrl = service?.image
+    ? urlFor(service.image).width(1200).height(500).url()
+    : null;
 
   return (
     <>
       {/* Hero image */}
       <div className="relative h-64 md:h-96 bg-shallow-water/30">
         {imageUrl ? (
-          <Image src={imageUrl} alt="Transformational Coaching" fill className="object-cover" priority />
+          <Image
+            src={imageUrl}
+            alt="Transformational Coaching"
+            fill
+            className="object-cover"
+            priority
+          />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-deep-ocean/40">
             [ Photography — transformational coaching ]
@@ -51,9 +62,9 @@ export default async function CoachingPage() {
                 <PortableText value={service.fullDescription} />
               </div>
             ) : (
-              fallbackDescription.split("\n\n").map((para, i) => (
-                <p key={i}>{para}</p>
-              ))
+              fallbackDescription
+                .split("\n\n")
+                .map((para, i) => <p key={i}>{para}</p>)
             )}
           </div>
 

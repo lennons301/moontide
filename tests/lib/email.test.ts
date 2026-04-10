@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("resend", () => ({
+  // biome-ignore lint/complexity/useArrowFunction: must be a constructor for `new Resend()`
   Resend: vi.fn().mockImplementation(function () {
     return {
       emails: {

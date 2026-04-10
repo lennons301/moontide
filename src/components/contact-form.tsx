@@ -3,15 +3,17 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 interface ContactFormProps {
   defaultSubject?: string;
 }
 
 export function ContactForm({ defaultSubject }: ContactFormProps) {
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">(
+    "idle",
+  );
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -43,8 +45,11 @@ export function ContactForm({ defaultSubject }: ContactFormProps) {
     return (
       <div className="text-center py-8">
         <p className="text-seagrass font-semibold mb-2">Message sent</p>
-        <p className="text-deep-ocean text-sm">Thank you — I&apos;ll be in touch soon.</p>
+        <p className="text-deep-ocean text-sm">
+          Thank you — I&apos;ll be in touch soon.
+        </p>
         <button
+          type="button"
           onClick={() => setStatus("idle")}
           className="mt-4 text-sm text-lunar-gold underline"
         >
@@ -76,7 +81,13 @@ export function ContactForm({ defaultSubject }: ContactFormProps) {
       </div>
       <div>
         <Label htmlFor="message">Your message</Label>
-        <Textarea id="message" name="message" required rows={5} className="mt-1" />
+        <Textarea
+          id="message"
+          name="message"
+          required
+          rows={5}
+          className="mt-1"
+        />
       </div>
       <Button
         type="submit"

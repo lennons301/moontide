@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/email", () => ({
   sendContactEmail: vi.fn().mockResolvedValue({ success: true }),

@@ -1,30 +1,39 @@
-import { Metadata } from "next";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { sanityClient } from "@/lib/sanity/client";
-import { urlFor } from "@/lib/sanity/client";
+import { PortableText } from "next-sanity";
+import { sanityClient, urlFor } from "@/lib/sanity/client";
 import { serviceBySlugQuery } from "@/lib/sanity/queries";
 import type { Service } from "@/lib/sanity/types";
-import { PortableText } from "next-sanity";
 
 export const metadata: Metadata = { title: "Private Classes — Moontide" };
 
 export default async function PrivatePage() {
   let service: Service | null = null;
   try {
-    service = await sanityClient.fetch<Service>(serviceBySlugQuery, { slug: "private" });
+    service = await sanityClient.fetch<Service>(serviceBySlugQuery, {
+      slug: "private",
+    });
   } catch {
     // Sanity not connected yet — use fallback content
   }
 
-  const imageUrl = service?.image ? urlFor(service.image).width(1200).height(500).url() : null;
+  const imageUrl = service?.image
+    ? urlFor(service.image).width(1200).height(500).url()
+    : null;
 
   return (
     <>
       {/* Hero image */}
       <div className="relative h-64 md:h-96 bg-shallow-water/30">
         {imageUrl ? (
-          <Image src={imageUrl} alt="Private Classes" fill className="object-cover" priority />
+          <Image
+            src={imageUrl}
+            alt="Private Classes"
+            fill
+            className="object-cover"
+            priority
+          />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-deep-ocean/40">
             [ Photography — private classes ]
@@ -46,8 +55,9 @@ export default async function PrivatePage() {
               </div>
             ) : (
               <p>
-                Everyone comes to the mat for different reasons. Private classes are highly
-                personalised to your desired outcomes for mind, body and spirit.
+                Everyone comes to the mat for different reasons. Private classes
+                are highly personalised to your desired outcomes for mind, body
+                and spirit.
               </p>
             )}
           </div>

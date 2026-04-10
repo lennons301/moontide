@@ -1,5 +1,5 @@
-import Link from "next/link";
 import Image from "next/image";
+import Link from "next/link";
 import { urlFor } from "@/lib/sanity/client";
 import type { Service } from "@/lib/sanity/types";
 
@@ -150,7 +150,9 @@ export function ServicesSection({ services }: { services: Service[] }) {
         {/* Classes — 2x2 photo grid */}
         {classes.length > 0 && (
           <div>
-            <h2 className="text-xl font-semibold text-deep-current mb-1">Classes</h2>
+            <h2 className="text-xl font-semibold text-deep-current mb-1">
+              Classes
+            </h2>
             <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
             <ClassGrid services={classes} />
           </div>
@@ -159,7 +161,9 @@ export function ServicesSection({ services }: { services: Service[] }) {
         {/* Coaching — featured card */}
         {coaching && (
           <div>
-            <h2 className="text-xl font-semibold text-deep-current mb-1">Coaching</h2>
+            <h2 className="text-xl font-semibold text-deep-current mb-1">
+              Coaching
+            </h2>
             <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
             <FeaturedCard service={coaching} />
           </div>
@@ -168,7 +172,9 @@ export function ServicesSection({ services }: { services: Service[] }) {
         {/* Community — light treatment */}
         {community && (
           <div>
-            <h2 className="text-xl font-semibold text-deep-current mb-1">Community</h2>
+            <h2 className="text-xl font-semibold text-deep-current mb-1">
+              Community
+            </h2>
             <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
             <CommunityCard service={community} />
           </div>
@@ -177,7 +183,9 @@ export function ServicesSection({ services }: { services: Service[] }) {
         {/* Private — featured card, reversed */}
         {privateService && (
           <div>
-            <h2 className="text-xl font-semibold text-deep-current mb-1">Private Classes</h2>
+            <h2 className="text-xl font-semibold text-deep-current mb-1">
+              Private Classes
+            </h2>
             <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
             <FeaturedCard service={privateService} reverse />
           </div>

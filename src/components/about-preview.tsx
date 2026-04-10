@@ -1,5 +1,5 @@
-import Link from "next/link";
 import Image from "next/image";
+import Link from "next/link";
 
 interface AboutPreviewProps {
   name: string;
@@ -15,12 +15,19 @@ export function AboutPreview({ name, shortBio, photoUrl }: AboutPreviewProps) {
           {photoUrl ? (
             <Image src={photoUrl} alt={name} fill className="object-cover" />
           ) : (
-            <div className="flex items-center justify-center h-full text-xs text-deep-ocean">Photo</div>
+            <div className="flex items-center justify-center h-full text-xs text-deep-ocean">
+              Photo
+            </div>
           )}
         </div>
-        <h2 className="text-xl font-semibold text-deep-current mb-2">Hello, I&apos;m {name}</h2>
+        <h2 className="text-xl font-semibold text-deep-current mb-2">
+          Hello, I&apos;m {name}
+        </h2>
         <p className="text-deep-ocean leading-relaxed mb-4">{shortBio}</p>
-        <Link href="/about" className="text-lunar-gold font-semibold hover:text-lunar-gold/80 transition-colors">
+        <Link
+          href="/about"
+          className="text-lunar-gold font-semibold hover:text-lunar-gold/80 transition-colors"
+        >
           About me &rarr;
         </Link>
       </div>

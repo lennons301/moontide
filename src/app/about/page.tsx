@@ -1,11 +1,10 @@
-import { Metadata } from "next";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { sanityClient } from "@/lib/sanity/client";
-import { urlFor } from "@/lib/sanity/client";
+import { PortableText } from "next-sanity";
+import { sanityClient, urlFor } from "@/lib/sanity/client";
 import { trainerQuery } from "@/lib/sanity/queries";
 import type { Trainer } from "@/lib/sanity/types";
-import { PortableText } from "next-sanity";
 
 export const metadata: Metadata = { title: "About — Moontide" };
 
@@ -44,7 +43,9 @@ export default async function AboutPage() {
   }
 
   const qualifications = trainer?.qualifications ?? fallbackQualifications;
-  const photoUrl = trainer?.photo ? urlFor(trainer.photo).width(320).height(320).url() : null;
+  const photoUrl = trainer?.photo
+    ? urlFor(trainer.photo).width(320).height(320).url()
+    : null;
 
   return (
     <>
@@ -65,7 +66,12 @@ export default async function AboutPage() {
             {/* Photo */}
             <div className="relative w-32 h-32 rounded-full overflow-hidden shrink-0 bg-shallow-water/40">
               {photoUrl ? (
-                <Image src={photoUrl} alt="Gabrielle" fill className="object-cover" />
+                <Image
+                  src={photoUrl}
+                  alt="Gabrielle"
+                  fill
+                  className="object-cover"
+                />
               ) : (
                 <div className="flex items-center justify-center h-full text-xs text-deep-ocean/50">
                   Photo
@@ -75,7 +81,9 @@ export default async function AboutPage() {
 
             {/* Bio text */}
             <div>
-              <h2 className="text-xl font-semibold text-deep-current mb-4">About Me</h2>
+              <h2 className="text-xl font-semibold text-deep-current mb-4">
+                About Me
+              </h2>
               {trainer?.bio ? (
                 <div className="prose prose-stone text-deep-ocean leading-relaxed">
                   <PortableText value={trainer.bio} />
@@ -83,19 +91,20 @@ export default async function AboutPage() {
               ) : (
                 <div className="space-y-3 text-deep-ocean leading-relaxed">
                   <p>
-                    Hi, I&apos;m Gabrielle — a yoga teacher and transformational coach
-                    supporting women through every phase of life.
+                    Hi, I&apos;m Gabrielle — a yoga teacher and transformational
+                    coach supporting women through every phase of life.
                   </p>
                   <p>
-                    My practice is rooted in the belief that wellbeing is not a destination
-                    but a living, breathing relationship with ourselves. Through movement,
-                    breath and community, I create spaces where women can slow down, come
-                    home to their bodies, and move through change with grace.
+                    My practice is rooted in the belief that wellbeing is not a
+                    destination but a living, breathing relationship with
+                    ourselves. Through movement, breath and community, I create
+                    spaces where women can slow down, come home to their bodies,
+                    and move through change with grace.
                   </p>
                   <p>
-                    Whether you&apos;re navigating pregnancy, early motherhood, or simply
-                    seeking more stillness in your day-to-day life, I&apos;m here to support
-                    your journey.
+                    Whether you&apos;re navigating pregnancy, early motherhood,
+                    or simply seeking more stillness in your day-to-day life,
+                    I&apos;m here to support your journey.
                   </p>
                 </div>
               )}
@@ -116,7 +125,9 @@ export default async function AboutPage() {
                 <span className="text-lunar-gold font-semibold text-sm mt-0.5 shrink-0 w-10">
                   {q.year}
                 </span>
-                <span className="text-deep-ocean leading-relaxed">{q.description}</span>
+                <span className="text-deep-ocean leading-relaxed">
+                  {q.description}
+                </span>
               </li>
             ))}
           </ul>
@@ -126,7 +137,9 @@ export default async function AboutPage() {
       {/* Services */}
       <section className="py-12 px-6 bg-driftwood">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-xl font-semibold text-deep-current mb-6">Services</h2>
+          <h2 className="text-xl font-semibold text-deep-current mb-6">
+            Services
+          </h2>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {services.map((s) => (
               <li key={s.href}>

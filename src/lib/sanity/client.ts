@@ -1,5 +1,5 @@
-import { createClient } from "next-sanity";
 import imageUrlBuilder from "@sanity/image-url";
+import { createClient } from "next-sanity";
 import type { Image } from "sanity";
 
 export const sanityClient = createClient({

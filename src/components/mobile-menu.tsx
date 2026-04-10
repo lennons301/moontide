@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
+import { useState } from "react";
 
 const menuLinks = [
   { label: "Home", href: "/" },
@@ -35,8 +35,21 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
   return (
     <div className="fixed inset-0 z-50 bg-driftwood">
       <div className="flex items-center justify-between px-6 py-4 border-b border-driftwood">
-        <button onClick={onClose} className="p-2 text-deep-current" aria-label="Close menu">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-2 text-deep-current"
+          aria-label="Close menu"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <title>Close menu</title>
             <line x1="4" y1="4" x2="16" y2="16" />
             <line x1="16" y1="4" x2="4" y2="16" />
           </svg>
@@ -60,6 +73,7 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
               ) : (
                 <>
                   <button
+                    type="button"
                     onClick={() => setClassesOpen(!classesOpen)}
                     className="flex items-center gap-2 text-lg text-deep-ocean hover:text-lunar-gold transition-colors"
                   >
@@ -73,6 +87,7 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
                       strokeWidth="2"
                       className={`transition-transform ${classesOpen ? "rotate-180" : ""}`}
                     >
+                      <title>Toggle classes submenu</title>
                       <polyline points="2,4 6,8 10,4" />
                     </svg>
                   </button>

@@ -1,11 +1,11 @@
+import { AboutPreview } from "@/components/about-preview";
+import { BookingOptions } from "@/components/booking-options";
+import { ContactForm } from "@/components/contact-form";
+import { Hero } from "@/components/hero";
+import { ServicesSection } from "@/components/services-section";
 import { sanityClient } from "@/lib/sanity/client";
 import { servicesQuery, trainerQuery } from "@/lib/sanity/queries";
 import type { Service, Trainer } from "@/lib/sanity/types";
-import { Hero } from "@/components/hero";
-import { BookingOptions } from "@/components/booking-options";
-import { ServicesSection } from "@/components/services-section";
-import { AboutPreview } from "@/components/about-preview";
-import { ContactForm } from "@/components/contact-form";
 
 export const revalidate = 60; // Revalidate CMS content every 60 seconds
 
