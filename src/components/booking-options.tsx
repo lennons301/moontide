@@ -159,15 +159,6 @@ export function BookingOptions() {
             </span>
           </Link>
         </div>
-        <p className="mt-6 text-sm text-deep-ocean">
-          For all other enquiries, please{" "}
-          <Link
-            href="/contact"
-            className="text-lunar-gold underline hover:text-lunar-gold/80"
-          >
-            get in touch
-          </Link>
-        </p>
       </div>
     </section>
   );
