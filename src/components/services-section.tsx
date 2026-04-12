@@ -5,7 +5,7 @@ import type { Service } from "@/lib/sanity/types";
 
 function ClassGrid({ services }: { services: Service[] }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {services.map((service) => {
         const imageUrl = service.image
           ? urlFor(service.image).width(600).height(400).url()
@@ -145,52 +145,58 @@ export function ServicesSection({ services }: { services: Service[] }) {
   const privateService = services.find((s) => s.category === "private");
 
   return (
-    <section className="py-16 px-6">
-      <div className="max-w-4xl mx-auto space-y-16">
-        {/* Classes — 2x2 photo grid */}
-        {classes.length > 0 && (
-          <div>
+    <>
+      {/* Classes — Dawn Light */}
+      {classes.length > 0 && (
+        <section className="py-16 px-6 bg-foam-white">
+          <div className="max-w-4xl mx-auto">
             <h2 className="text-xl font-semibold text-deep-current mb-1">
               Classes
             </h2>
             <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
             <ClassGrid services={classes} />
           </div>
-        )}
+        </section>
+      )}
 
-        {/* Coaching — featured card */}
-        {coaching && (
-          <div>
+      {/* Coaching — white */}
+      {coaching && (
+        <section className="py-16 px-6 bg-white">
+          <div className="max-w-4xl mx-auto">
             <h2 className="text-xl font-semibold text-deep-current mb-1">
               Coaching
             </h2>
             <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
             <FeaturedCard service={coaching} />
           </div>
-        )}
+        </section>
+      )}
 
-        {/* Community — light treatment */}
-        {community && (
-          <div>
+      {/* Community — Dawn Light */}
+      {community && (
+        <section className="py-16 px-6 bg-foam-white">
+          <div className="max-w-4xl mx-auto">
             <h2 className="text-xl font-semibold text-deep-current mb-1">
               Community
             </h2>
             <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
             <CommunityCard service={community} />
           </div>
-        )}
+        </section>
+      )}
 
-        {/* Private — featured card, reversed */}
-        {privateService && (
-          <div>
+      {/* Private — white */}
+      {privateService && (
+        <section className="py-16 px-6 bg-white">
+          <div className="max-w-4xl mx-auto">
             <h2 className="text-xl font-semibold text-deep-current mb-1">
               Private Classes
             </h2>
             <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
             <FeaturedCard service={privateService} reverse />
           </div>
-        )}
-      </div>
-    </section>
+        </section>
+      )}
+    </>
   );
 }
