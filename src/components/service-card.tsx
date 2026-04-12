@@ -66,7 +66,7 @@ export function ServiceCard({ service }: { service: Service }) {
           {cta && (
             <Link
               href={cta.href}
-              className="bg-lunar-gold text-deep-current px-5 py-2 rounded-md text-sm font-semibold hover:bg-lunar-gold/90 transition-colors"
+              className="bg-lunar-gold text-foam-white px-5 py-2 rounded-md text-sm font-semibold hover:bg-lunar-gold/90 transition-colors"
             >
               {cta.label}
             </Link>

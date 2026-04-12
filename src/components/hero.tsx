@@ -32,7 +32,7 @@ export function Hero({ imageUrl }: HeroProps) {
         <div className="flex gap-3 justify-center flex-wrap">
           <Link
             href="/book"
-            className="bg-lunar-gold text-deep-current px-6 py-3 rounded-md font-semibold text-sm hover:bg-lunar-gold/90 transition-colors"
+            className="bg-lunar-gold text-foam-white px-6 py-3 rounded-md font-semibold text-sm hover:bg-lunar-gold/90 transition-colors"
           >
             Book a Class
           </Link>

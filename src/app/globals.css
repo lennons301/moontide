@@ -7,9 +7,11 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
-  --font-heading: var(--font-sans);
+  --font-sans:
+    var(--font-sans), "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-heading), "Playfair Display", serif;
+  --font-accent: var(--font-accent), "Cormorant Garamond", serif;
+  --font-mono: ui-monospace, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -55,37 +57,39 @@
   --color-driftwood: var(--moontide-driftwood);
   --color-foam-white: var(--moontide-foam-white);
   --color-seagrass: var(--moontide-seagrass);
+  --color-sky-mist: var(--moontide-sky-mist);
 }
 
 :root {
   /* Moontide brand palette */
-  --background: #f7f4ef;
+  --background: #f7f9fb;
   --foreground: #2c3e50;
 
   /* Moontide named colours */
-  --moontide-deep-current: #1e2a38;
+  --moontide-deep-current: #1e3a5f;
   --moontide-deep-ocean: #2c3e50;
-  --moontide-shallow-water: #a8c5d6;
-  --moontide-lunar-gold: #c8a96a;
-  --moontide-driftwood: #e8ddd3;
-  --moontide-foam-white: #f7f4ef;
+  --moontide-shallow-water: #5fa8d3;
+  --moontide-lunar-gold: #ff7a2f;
+  --moontide-driftwood: #e7e3dc;
+  --moontide-foam-white: #f7f9fb;
   --moontide-seagrass: #6b8f71;
-  --card: #e8ddd3;
+  --moontide-sky-mist: #dceaf4;
+  --card: #e7e3dc;
   --card-foreground: #2c3e50;
-  --popover: #f7f4ef;
+  --popover: #f7f9fb;
   --popover-foreground: #2c3e50;
-  --primary: #1e2a38;
-  --primary-foreground: #f7f4ef;
-  --secondary: #e8ddd3;
-  --secondary-foreground: #1e2a38;
-  --muted: #e8ddd3;
+  --primary: #1e3a5f;
+  --primary-foreground: #f7f9fb;
+  --secondary: #e7e3dc;
+  --secondary-foreground: #1e3a5f;
+  --muted: #e7e3dc;
   --muted-foreground: #2c3e50;
-  --accent: #c8a96a;
-  --accent-foreground: #1e2a38;
+  --accent: #ff7a2f;
+  --accent-foreground: #1e3a5f;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: #a8c5d6;
-  --input: #e8ddd3;
-  --ring: #c8a96a;
+  --border: #5fa8d3;
+  --input: #e7e3dc;
+  --ring: #ff7a2f;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -155,5 +159,6 @@
   h5,
   h6 {
     color: var(--moontide-deep-current);
+    font-family: var(--font-heading);
   }
 }

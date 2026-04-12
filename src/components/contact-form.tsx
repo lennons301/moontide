@@ -92,7 +92,7 @@ export function ContactForm({ defaultSubject }: ContactFormProps) {
       <Button
         type="submit"
         disabled={status === "sending"}
-        className="w-full bg-lunar-gold text-deep-current hover:bg-lunar-gold/90 font-semibold"
+        className="w-full bg-lunar-gold text-foam-white hover:bg-lunar-gold/90 font-semibold"
       >
         {status === "sending" ? "Sending..." : "Send Message"}
       </Button>

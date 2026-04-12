@@ -70,7 +70,7 @@ export default async function CoachingPage() {
 
           <Link
             href="/contact?subject=Transformational+Coaching"
-            className="inline-block bg-lunar-gold text-deep-current px-6 py-3 rounded-md font-semibold hover:bg-lunar-gold/90 transition-colors"
+            className="inline-block bg-lunar-gold text-foam-white px-6 py-3 rounded-md font-semibold hover:bg-lunar-gold/90 transition-colors"
           >
             Contact Me
           </Link>

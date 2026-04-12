@@ -64,7 +64,7 @@ export default async function PrivatePage() {
 
           <Link
             href="/contact?subject=Private+Classes"
-            className="inline-block bg-lunar-gold text-deep-current px-6 py-3 rounded-md font-semibold hover:bg-lunar-gold/90 transition-colors"
+            className="inline-block bg-lunar-gold text-foam-white px-6 py-3 rounded-md font-semibold hover:bg-lunar-gold/90 transition-colors"
           >
             Contact Me
           </Link>

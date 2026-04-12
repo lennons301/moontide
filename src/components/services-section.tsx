@@ -28,8 +28,8 @@ function ClassGrid({ services }: { services: Service[] }) {
               <div className="absolute inset-0 bg-gradient-to-b from-shallow-water/20 to-shallow-water/40" />
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-deep-current/60 to-transparent" />
-            <div className="absolute bottom-0 left-0 right-0 p-3">
-              <h3 className="text-sm md:text-base font-semibold text-foam-white">
+            <div className="absolute inset-0 flex items-center justify-center p-3">
+              <h3 className="text-base md:text-xl font-semibold text-foam-white text-center font-[family-name:var(--font-heading)]">
                 {service.title}
               </h3>
             </div>
@@ -101,7 +101,7 @@ function FeaturedCard({
         <div className="flex gap-3 items-center">
           <Link
             href={ctaHref}
-            className="bg-lunar-gold text-deep-current px-5 py-2 rounded-md text-sm font-semibold hover:bg-lunar-gold/90 transition-colors"
+            className="bg-lunar-gold text-foam-white px-5 py-2 rounded-md text-sm font-semibold hover:bg-lunar-gold/90 transition-colors"
           >
             {ctaLabel}
           </Link>
