@@ -20,6 +20,14 @@ export function Hero({ imageUrl }: HeroProps) {
         <div className="absolute inset-0 bg-gradient-to-b from-ocean-light-blue via-soft-moonstone/50 to-dawn-light" />
       )}
       <div className="relative z-10 text-center px-6 py-16">
+        <Image
+          src="/images/moontide-icon.png"
+          alt=""
+          width={351}
+          height={234}
+          className="h-24 md:h-32 w-auto mx-auto mb-4"
+          priority
+        />
         <h1 className="text-4xl md:text-5xl font-light tracking-[0.12em] text-deep-tide-blue mb-4">
           Moontide
         </h1>
