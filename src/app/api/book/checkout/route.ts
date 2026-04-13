@@ -2,12 +2,13 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { classes, schedules } from "@/lib/db/schema";
-import { stripe } from "@/lib/stripe";
+import { getStripe } from "@/lib/stripe";
 
 const BUNDLE_PRICE_PENCE = 7500; // £75 for 6 classes — Gabrielle to confirm
 const BUNDLE_CREDITS = 6;
 
 export async function POST(request: Request) {
+  const stripe = getStripe();
   const body = await request.json();
   const { type, scheduleId, customerName, customerEmail } = body;
 

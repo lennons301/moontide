@@ -29,12 +29,13 @@ const {
 });
 
 // Mock Stripe
+const mockConstructEvent = vi.fn();
 vi.mock("@/lib/stripe", () => ({
-  stripe: {
+  getStripe: () => ({
     webhooks: {
-      constructEvent: vi.fn(),
+      constructEvent: mockConstructEvent,
     },
-  },
+  }),
 }));
 
 // Mock DB with transaction support
@@ -52,8 +53,8 @@ vi.mock("@/lib/db/schema", () => ({
   schedules: { id: "id", bookedCount: "booked_count" },
 }));
 
+import type Stripe from "stripe";
 import { POST } from "@/app/api/stripe/webhook/route";
-import { stripe } from "@/lib/stripe";
 
 describe("POST /api/stripe/webhook", () => {
   beforeEach(() => {
@@ -85,7 +86,7 @@ describe("POST /api/stripe/webhook", () => {
   });
 
   it("returns 400 for invalid signature", async () => {
-    vi.mocked(stripe.webhooks.constructEvent).mockImplementation(() => {
+    mockConstructEvent.mockImplementation(() => {
       throw new Error("Invalid signature");
     });
 
@@ -102,7 +103,7 @@ describe("POST /api/stripe/webhook", () => {
   });
 
   it("creates booking inside a transaction for individual purchase", async () => {
-    vi.mocked(stripe.webhooks.constructEvent).mockReturnValue({
+    mockConstructEvent.mockReturnValue({
       type: "checkout.session.completed",
       data: {
         object: {
@@ -115,7 +116,7 @@ describe("POST /api/stripe/webhook", () => {
           },
         },
       },
-    } as unknown as ReturnType<typeof stripe.webhooks.constructEvent>);
+    } as unknown as Stripe.Event);
 
     const request = new Request("http://localhost:3000/api/stripe/webhook", {
       method: "POST",
@@ -145,7 +146,7 @@ describe("POST /api/stripe/webhook", () => {
   });
 
   it("creates bundle record for bundle purchase", async () => {
-    vi.mocked(stripe.webhooks.constructEvent).mockReturnValue({
+    mockConstructEvent.mockReturnValue({
       type: "checkout.session.completed",
       data: {
         object: {
@@ -156,7 +157,7 @@ describe("POST /api/stripe/webhook", () => {
           },
         },
       },
-    } as unknown as ReturnType<typeof stripe.webhooks.constructEvent>);
+    } as unknown as Stripe.Event);
 
     const request = new Request("http://localhost:3000/api/stripe/webhook", {
       method: "POST",
@@ -188,10 +189,10 @@ describe("POST /api/stripe/webhook", () => {
   });
 
   it("returns 200 for unhandled event types", async () => {
-    vi.mocked(stripe.webhooks.constructEvent).mockReturnValue({
+    mockConstructEvent.mockReturnValue({
       type: "payment_intent.succeeded",
       data: { object: {} },
-    } as unknown as ReturnType<typeof stripe.webhooks.constructEvent>);
+    } as unknown as Stripe.Event);
 
     const request = new Request("http://localhost:3000/api/stripe/webhook", {
       method: "POST",

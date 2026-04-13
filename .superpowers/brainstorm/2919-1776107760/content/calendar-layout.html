@@ -1,0 +1,161 @@
+<h2>Calendar Booking Page — Layout</h2>
+<p class="subtitle">How should the calendar and class list relate to each other?</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding: 20px; background: #f7f4ef; font-family: system-ui;">
+        <!-- Bundle banner -->
+        <div style="background: linear-gradient(135deg, #c8a96a22, #c8a96a11); border: 1px solid #c8a96a44; border-radius: 12px; padding: 20px; margin-bottom: 24px; text-align: center;">
+          <div style="font-size: 18px; font-weight: 600; color: #1e2a38;">Save with a 6-Class Bundle</div>
+          <div style="color: #2c3e50; font-size: 14px; margin: 4px 0 12px;">6 classes for £75 · Valid 90 days</div>
+          <div style="display: inline-block; background: #c8a96a; color: #f7f4ef; padding: 8px 20px; border-radius: 6px; font-size: 14px; font-weight: 600;">Purchase Bundle →</div>
+        </div>
+        <!-- Calendar -->
+        <div style="background: white; border-radius: 12px; padding: 16px; border: 1px solid #e8ddd3;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span style="color: #2c3e50; font-size: 13px;">← </span>
+            <span style="font-weight: 600; color: #1e2a38;">April 2026</span>
+            <span style="color: #2c3e50; font-size: 13px;"> →</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: 12px;">
+            <div style="color: #a8c5d6; padding: 4px;">Mon</div>
+            <div style="color: #a8c5d6; padding: 4px;">Tue</div>
+            <div style="color: #a8c5d6; padding: 4px;">Wed</div>
+            <div style="color: #a8c5d6; padding: 4px;">Thu</div>
+            <div style="color: #a8c5d6; padding: 4px;">Fri</div>
+            <div style="color: #a8c5d6; padding: 4px;">Sat</div>
+            <div style="color: #a8c5d6; padding: 4px;">Sun</div>
+            <!-- Week 1 -->
+            <div style="color: #ccc; padding: 8px 4px;">30</div>
+            <div style="color: #ccc; padding: 8px 4px;">31</div>
+            <div style="color: #ccc; padding: 8px 4px;">1</div>
+            <div style="color: #ccc; padding: 8px 4px;">2</div>
+            <div style="color: #ccc; padding: 8px 4px;">3</div>
+            <div style="color: #ccc; padding: 8px 4px;">4</div>
+            <div style="background: #c8a96a22; border-radius: 8px; padding: 8px 4px; font-weight: 600; color: #1e2a38; cursor: pointer; border: 2px solid #c8a96a;">5</div>
+            <!-- Week 2 -->
+            <div style="color: #ccc; padding: 8px 4px;">6</div>
+            <div style="color: #ccc; padding: 8px 4px;">7</div>
+            <div style="padding: 8px 4px; color: #1e2a38;">8</div>
+            <div style="color: #ccc; padding: 8px 4px;">9</div>
+            <div style="color: #ccc; padding: 8px 4px;">10</div>
+            <div style="color: #ccc; padding: 8px 4px;">11</div>
+            <div style="background: #c8a96a22; border-radius: 8px; padding: 8px 4px; font-weight: 600; color: #1e2a38; cursor: pointer;">12</div>
+            <!-- Week 3 -->
+            <div style="color: #ccc; padding: 8px 4px;">13</div>
+            <div style="color: #ccc; padding: 8px 4px;">14</div>
+            <div style="background: #c8a96a22; border-radius: 8px; padding: 8px 4px; font-weight: 600; color: #1e2a38; cursor: pointer;">15</div>
+            <div style="color: #ccc; padding: 8px 4px;">16</div>
+            <div style="color: #ccc; padding: 8px 4px;">17</div>
+            <div style="color: #ccc; padding: 8px 4px;">18</div>
+            <div style="background: #c8a96a22; border-radius: 8px; padding: 8px 4px; font-weight: 600; color: #1e2a38; cursor: pointer;">19</div>
+          </div>
+        </div>
+        <!-- Selected day classes -->
+        <div style="margin-top: 16px;">
+          <div style="font-size: 14px; font-weight: 600; color: #1e2a38; margin-bottom: 12px;">Sunday 5 April</div>
+          <div style="background: white; border: 1px solid #e8ddd3; border-radius: 10px; padding: 16px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+              <div>
+                <div style="font-weight: 600; color: #1e2a38; font-size: 15px;">Prenatal Yoga</div>
+                <div style="color: #2c3e50; font-size: 13px; margin-top: 2px;">10:00–11:00 · Studio A</div>
+                <div style="color: #2c3e50; font-size: 12px; margin-top: 6px; line-height: 1.4;">Gentle, nurturing practice for all stages of pregnancy...</div>
+                <a style="color: #c8a96a; font-size: 12px; text-decoration: none; margin-top: 4px; display: inline-block;">View class details →</a>
+              </div>
+              <div style="text-align: right; white-space: nowrap; margin-left: 16px;">
+                <div style="font-weight: 600; color: #1e2a38;">£15.00</div>
+                <div style="color: #2c3e50; font-size: 12px;">5 spots left</div>
+              </div>
+            </div>
+          </div>
+          <div style="background: white; border: 1px solid #e8ddd3; border-radius: 10px; padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+              <div>
+                <div style="font-weight: 600; color: #1e2a38; font-size: 15px;">Vinyasa Flow</div>
+                <div style="color: #2c3e50; font-size: 13px; margin-top: 2px;">11:30–12:30 · Studio A</div>
+                <div style="color: #2c3e50; font-size: 12px; margin-top: 6px; line-height: 1.4;">Dynamic, seasonal flow connecting breath and movement...</div>
+                <a style="color: #c8a96a; font-size: 12px; text-decoration: none; margin-top: 4px; display: inline-block;">View class details →</a>
+              </div>
+              <div style="text-align: right; white-space: nowrap; margin-left: 16px;">
+                <div style="font-weight: 600; color: #1e2a38;">£15.00</div>
+                <div style="color: #2c3e50; font-size: 12px;">3 spots left</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A: Stacked — Calendar above, classes below</h3>
+      <p>Calendar shows the full month. Click a date with classes (gold-highlighted) and the class list appears below. Mobile-friendly, single column. Bundle CTA is a prominent banner at the very top.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="padding: 20px; background: #f7f4ef; font-family: system-ui;">
+        <!-- Bundle banner -->
+        <div style="background: linear-gradient(135deg, #c8a96a22, #c8a96a11); border: 1px solid #c8a96a44; border-radius: 12px; padding: 20px; margin-bottom: 24px; text-align: center;">
+          <div style="font-size: 18px; font-weight: 600; color: #1e2a38;">Save with a 6-Class Bundle</div>
+          <div style="color: #2c3e50; font-size: 14px; margin: 4px 0 12px;">6 classes for £75 · Valid 90 days</div>
+          <div style="display: inline-block; background: #c8a96a; color: #f7f4ef; padding: 8px 20px; border-radius: 6px; font-size: 14px; font-weight: 600;">Purchase Bundle →</div>
+        </div>
+        <!-- Side by side -->
+        <div style="display: flex; gap: 20px;">
+          <!-- Calendar (left) -->
+          <div style="background: white; border-radius: 12px; padding: 16px; border: 1px solid #e8ddd3; flex: 0 0 260px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <span style="color: #2c3e50; font-size: 13px;">←</span>
+              <span style="font-weight: 600; color: #1e2a38; font-size: 14px;">April 2026</span>
+              <span style="color: #2c3e50; font-size: 13px;">→</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; text-align: center; font-size: 11px;">
+              <div style="color: #a8c5d6; padding: 3px;">M</div>
+              <div style="color: #a8c5d6; padding: 3px;">T</div>
+              <div style="color: #a8c5d6; padding: 3px;">W</div>
+              <div style="color: #a8c5d6; padding: 3px;">T</div>
+              <div style="color: #a8c5d6; padding: 3px;">F</div>
+              <div style="color: #a8c5d6; padding: 3px;">S</div>
+              <div style="color: #a8c5d6; padding: 3px;">S</div>
+              <div style="color: #ccc; padding: 6px 3px;">30</div>
+              <div style="color: #ccc; padding: 6px 3px;">31</div>
+              <div style="color: #ccc; padding: 6px 3px;">1</div>
+              <div style="color: #ccc; padding: 6px 3px;">2</div>
+              <div style="color: #ccc; padding: 6px 3px;">3</div>
+              <div style="color: #ccc; padding: 6px 3px;">4</div>
+              <div style="background: #c8a96a; color: white; border-radius: 6px; padding: 6px 3px; font-weight: 600;">5</div>
+              <div style="color: #ccc; padding: 6px 3px;">6</div>
+              <div style="color: #ccc; padding: 6px 3px;">7</div>
+              <div style="padding: 6px 3px; color: #1e2a38;">8</div>
+              <div style="color: #ccc; padding: 6px 3px;">9</div>
+              <div style="color: #ccc; padding: 6px 3px;">10</div>
+              <div style="color: #ccc; padding: 6px 3px;">11</div>
+              <div style="background: #c8a96a22; border-radius: 6px; padding: 6px 3px; font-weight: 600; color: #1e2a38;">12</div>
+            </div>
+          </div>
+          <!-- Classes (right) -->
+          <div style="flex: 1;">
+            <div style="font-size: 14px; font-weight: 600; color: #1e2a38; margin-bottom: 12px;">Sunday 5 April</div>
+            <div style="background: white; border: 1px solid #e8ddd3; border-radius: 10px; padding: 14px; margin-bottom: 8px;">
+              <div style="font-weight: 600; color: #1e2a38; font-size: 14px;">Prenatal Yoga</div>
+              <div style="color: #2c3e50; font-size: 12px; margin-top: 2px;">10:00–11:00 · £15</div>
+              <div style="color: #2c3e50; font-size: 11px; margin-top: 4px;">Gentle, nurturing practice...</div>
+              <a style="color: #c8a96a; font-size: 11px; text-decoration: none;">View details →</a>
+            </div>
+            <div style="background: white; border: 1px solid #e8ddd3; border-radius: 10px; padding: 14px;">
+              <div style="font-weight: 600; color: #1e2a38; font-size: 14px;">Vinyasa Flow</div>
+              <div style="color: #2c3e50; font-size: 12px; margin-top: 2px;">11:30–12:30 · £15</div>
+              <div style="color: #2c3e50; font-size: 11px; margin-top: 4px;">Dynamic, seasonal flow...</div>
+              <a style="color: #c8a96a; font-size: 11px; text-decoration: none;">View details →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B: Side-by-side — Calendar left, classes right</h3>
+      <p>Desktop: calendar and class list sit side by side. Feels more like a scheduling app. On mobile, collapses to stacked (same as A). More space-efficient on wide screens but the calendar is smaller.</p>
+    </div>
+  </div>
+</div>
