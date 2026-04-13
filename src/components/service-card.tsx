@@ -38,8 +38,8 @@ export function ServiceCard({ service }: { service: Service }) {
     : null;
 
   return (
-    <div className="border-t border-driftwood">
-      <div className="relative h-48 md:h-64 bg-shallow-water/30">
+    <div className="border-t border-soft-moonstone">
+      <div className="relative h-48 md:h-64 bg-ocean-light-blue/30">
         {imageUrl ? (
           <Image
             src={imageUrl}
@@ -53,8 +53,8 @@ export function ServiceCard({ service }: { service: Service }) {
           </div>
         )}
       </div>
-      <div className="px-6 py-6 bg-foam-white">
-        <h3 className="text-lg font-semibold text-deep-current mb-2">
+      <div className="px-6 py-6 bg-dawn-light">
+        <h3 className="text-lg font-semibold text-deep-tide-blue mb-2">
           {service.title}
         </h3>
         {service.shortDescription && (
@@ -66,14 +66,14 @@ export function ServiceCard({ service }: { service: Service }) {
           {cta && (
             <Link
               href={cta.href}
-              className="bg-lunar-gold text-foam-white px-5 py-2 rounded-md text-sm font-semibold hover:bg-lunar-gold/90 transition-colors"
+              className="bg-bright-orange text-dawn-light px-5 py-2 rounded-md text-sm font-semibold hover:bg-bright-orange/90 transition-colors"
             >
               {cta.label}
             </Link>
           )}
           <Link
             href={detailHref}
-            className="text-deep-ocean text-sm border-b border-deep-ocean hover:text-lunar-gold hover:border-lunar-gold transition-colors"
+            className="text-deep-ocean text-sm border-b border-deep-ocean hover:text-bright-orange hover:border-bright-orange transition-colors"
           >
             More info
           </Link>

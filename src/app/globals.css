@@ -49,13 +49,13 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
-  /* Moontide palette utilities (bg-deep-current, text-lunar-gold, etc.) */
-  --color-deep-current: var(--moontide-deep-current);
+  /* Moontide palette utilities (bg-deep-tide-blue, text-bright-orange, etc.) */
+  --color-deep-tide-blue: var(--moontide-deep-tide-blue);
   --color-deep-ocean: var(--moontide-deep-ocean);
-  --color-shallow-water: var(--moontide-shallow-water);
-  --color-lunar-gold: var(--moontide-lunar-gold);
-  --color-driftwood: var(--moontide-driftwood);
-  --color-foam-white: var(--moontide-foam-white);
+  --color-ocean-light-blue: var(--moontide-ocean-light-blue);
+  --color-bright-orange: var(--moontide-bright-orange);
+  --color-soft-moonstone: var(--moontide-soft-moonstone);
+  --color-dawn-light: var(--moontide-dawn-light);
   --color-seagrass: var(--moontide-seagrass);
   --color-sky-mist: var(--moontide-sky-mist);
 }
@@ -66,12 +66,12 @@
   --foreground: #2c3e50;
 
   /* Moontide named colours */
-  --moontide-deep-current: #1e3a5f;
+  --moontide-deep-tide-blue: #1e3a5f;
   --moontide-deep-ocean: #2c3e50;
-  --moontide-shallow-water: #5fa8d3;
-  --moontide-lunar-gold: #ff7a2f;
-  --moontide-driftwood: #e7e3dc;
-  --moontide-foam-white: #f7f9fb;
+  --moontide-ocean-light-blue: #5fa8d3;
+  --moontide-bright-orange: #ff7a2f;
+  --moontide-soft-moonstone: #e7e3dc;
+  --moontide-dawn-light: #f7f9fb;
   --moontide-seagrass: #6b8f71;
   --moontide-sky-mist: #dceaf4;
   --card: #e7e3dc;
@@ -158,7 +158,7 @@
   h4,
   h5,
   h6 {
-    color: var(--moontide-deep-current);
+    color: var(--moontide-deep-tide-blue);
     font-family: var(--font-heading);
   }
 }

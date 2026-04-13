@@ -4,16 +4,16 @@ export const metadata: Metadata = { title: "Terms & Conditions — Moontide" };
 
 export default function TermsPage() {
   return (
-    <section className="py-16 px-6 bg-foam-white">
+    <section className="py-16 px-6 bg-dawn-light">
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl md:text-4xl font-semibold text-deep-current mb-3">
+        <h1 className="text-3xl md:text-4xl font-semibold text-deep-tide-blue mb-3">
           Terms &amp; Conditions
         </h1>
-        <div className="w-8 h-0.5 bg-lunar-gold mb-10" />
+        <div className="w-8 h-0.5 bg-bright-orange mb-10" />
 
         <div className="space-y-8 text-deep-ocean leading-relaxed">
           <div>
-            <h2 className="text-lg font-semibold text-deep-current mb-3">
+            <h2 className="text-lg font-semibold text-deep-tide-blue mb-3">
               Bookings and Cancellations
             </h2>
             <p>
@@ -25,7 +25,7 @@ export default function TermsPage() {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-deep-current mb-3">
+            <h2 className="text-lg font-semibold text-deep-tide-blue mb-3">
               Bundles
             </h2>
             <p>Class bundles will expire 90 days from the date of purchase.</p>

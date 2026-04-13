@@ -15,7 +15,7 @@ function ClassGrid({ services }: { services: Service[] }) {
           <Link
             key={service._id}
             href={`/classes/${service.slug.current}`}
-            className="group relative aspect-[4/3] rounded-lg overflow-hidden bg-shallow-water/30"
+            className="group relative aspect-[4/3] rounded-lg overflow-hidden bg-ocean-light-blue/30"
           >
             {imageUrl ? (
               <Image
@@ -25,11 +25,11 @@ function ClassGrid({ services }: { services: Service[] }) {
                 className="object-cover group-hover:scale-105 transition-transform duration-300"
               />
             ) : (
-              <div className="absolute inset-0 bg-gradient-to-b from-shallow-water/20 to-shallow-water/40" />
+              <div className="absolute inset-0 bg-gradient-to-b from-ocean-light-blue/20 to-ocean-light-blue/40" />
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-deep-current/60 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-deep-tide-blue/60 to-transparent" />
             <div className="absolute inset-0 flex items-center justify-center p-3">
-              <h3 className="text-base md:text-xl font-semibold text-foam-white text-center font-[family-name:var(--font-heading)]">
+              <h3 className="text-base md:text-xl font-semibold text-dawn-light text-center font-[family-name:var(--font-heading)]">
                 {service.title}
               </h3>
             </div>
@@ -76,7 +76,7 @@ function FeaturedCard({
     >
       <Link
         href={detailHref}
-        className="relative w-full md:w-1/2 aspect-[4/3] rounded-lg overflow-hidden bg-shallow-water/30 group"
+        className="relative w-full md:w-1/2 aspect-[4/3] rounded-lg overflow-hidden bg-ocean-light-blue/30 group"
       >
         {imageUrl ? (
           <Image
@@ -86,11 +86,11 @@ function FeaturedCard({
             className="object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-shallow-water/20 to-driftwood/40" />
+          <div className="absolute inset-0 bg-gradient-to-br from-ocean-light-blue/20 to-soft-moonstone/40" />
         )}
       </Link>
       <div className="w-full md:w-1/2 py-2">
-        <h3 className="text-lg font-semibold text-deep-current mb-2">
+        <h3 className="text-lg font-semibold text-deep-tide-blue mb-2">
           {service.title}
         </h3>
         {service.shortDescription && (
@@ -101,13 +101,13 @@ function FeaturedCard({
         <div className="flex gap-3 items-center">
           <Link
             href={ctaHref}
-            className="bg-lunar-gold text-foam-white px-5 py-2 rounded-md text-sm font-semibold hover:bg-lunar-gold/90 transition-colors"
+            className="bg-bright-orange text-dawn-light px-5 py-2 rounded-md text-sm font-semibold hover:bg-bright-orange/90 transition-colors"
           >
             {ctaLabel}
           </Link>
           <Link
             href={detailHref}
-            className="text-deep-ocean text-sm border-b border-deep-ocean hover:text-lunar-gold hover:border-lunar-gold transition-colors"
+            className="text-deep-ocean text-sm border-b border-deep-ocean hover:text-bright-orange hover:border-bright-orange transition-colors"
           >
             More info
           </Link>
@@ -119,8 +119,8 @@ function FeaturedCard({
 
 function CommunityCard({ service }: { service: Service }) {
   return (
-    <div className="border-l-2 border-lunar-gold pl-6 py-2">
-      <h3 className="text-lg font-semibold text-deep-current mb-2">
+    <div className="border-l-2 border-bright-orange pl-6 py-2">
+      <h3 className="text-lg font-semibold text-deep-tide-blue mb-2">
         {service.title}
       </h3>
       {service.shortDescription && (
@@ -130,7 +130,7 @@ function CommunityCard({ service }: { service: Service }) {
       )}
       <Link
         href="/community"
-        className="text-lunar-gold font-semibold text-sm hover:text-lunar-gold/80 transition-colors"
+        className="text-bright-orange font-semibold text-sm hover:text-bright-orange/80 transition-colors"
       >
         More info &rarr;
       </Link>
@@ -148,12 +148,12 @@ export function ServicesSection({ services }: { services: Service[] }) {
     <>
       {/* Classes — Dawn Light */}
       {classes.length > 0 && (
-        <section className="py-16 px-6 bg-foam-white">
+        <section className="py-16 px-6 bg-dawn-light">
           <div className="max-w-4xl mx-auto">
-            <h2 className="text-xl font-semibold text-deep-current mb-1">
+            <h2 className="text-xl font-semibold text-deep-tide-blue mb-1">
               Classes
             </h2>
-            <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
+            <div className="w-8 h-0.5 bg-bright-orange mb-6" />
             <ClassGrid services={classes} />
           </div>
         </section>
@@ -163,10 +163,10 @@ export function ServicesSection({ services }: { services: Service[] }) {
       {coaching && (
         <section className="py-16 px-6 bg-white">
           <div className="max-w-4xl mx-auto">
-            <h2 className="text-xl font-semibold text-deep-current mb-1">
+            <h2 className="text-xl font-semibold text-deep-tide-blue mb-1">
               Coaching
             </h2>
-            <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
+            <div className="w-8 h-0.5 bg-bright-orange mb-6" />
             <FeaturedCard service={coaching} />
           </div>
         </section>
@@ -174,12 +174,12 @@ export function ServicesSection({ services }: { services: Service[] }) {
 
       {/* Community — Dawn Light */}
       {community && (
-        <section className="py-16 px-6 bg-foam-white">
+        <section className="py-16 px-6 bg-dawn-light">
           <div className="max-w-4xl mx-auto">
-            <h2 className="text-xl font-semibold text-deep-current mb-1">
+            <h2 className="text-xl font-semibold text-deep-tide-blue mb-1">
               Community
             </h2>
-            <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
+            <div className="w-8 h-0.5 bg-bright-orange mb-6" />
             <CommunityCard service={community} />
           </div>
         </section>
@@ -189,10 +189,10 @@ export function ServicesSection({ services }: { services: Service[] }) {
       {privateService && (
         <section className="py-16 px-6 bg-white">
           <div className="max-w-4xl mx-auto">
-            <h2 className="text-xl font-semibold text-deep-current mb-1">
+            <h2 className="text-xl font-semibold text-deep-tide-blue mb-1">
               Private Classes
             </h2>
-            <div className="w-8 h-0.5 bg-lunar-gold mb-6" />
+            <div className="w-8 h-0.5 bg-bright-orange mb-6" />
             <FeaturedCard service={privateService} reverse />
           </div>
         </section>

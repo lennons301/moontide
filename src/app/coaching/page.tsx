@@ -33,7 +33,7 @@ export default async function CoachingPage() {
   return (
     <>
       {/* Hero image */}
-      <div className="relative h-64 md:h-96 bg-shallow-water/30">
+      <div className="relative h-64 md:h-96 bg-ocean-light-blue/30">
         {imageUrl ? (
           <Image
             src={imageUrl}
@@ -49,12 +49,12 @@ export default async function CoachingPage() {
         )}
       </div>
 
-      <section className="py-12 px-6 bg-foam-white">
+      <section className="py-12 px-6 bg-dawn-light">
         <div className="max-w-2xl mx-auto">
-          <h1 className="text-3xl md:text-4xl font-semibold text-deep-current mb-3">
+          <h1 className="text-3xl md:text-4xl font-semibold text-deep-tide-blue mb-3">
             Transformational Coaching
           </h1>
-          <div className="w-8 h-0.5 bg-lunar-gold mb-8" />
+          <div className="w-8 h-0.5 bg-bright-orange mb-8" />
 
           <div className="text-deep-ocean leading-relaxed mb-10 space-y-4">
             {service?.fullDescription ? (
@@ -70,7 +70,7 @@ export default async function CoachingPage() {
 
           <Link
             href="/contact?subject=Transformational+Coaching"
-            className="inline-block bg-lunar-gold text-foam-white px-6 py-3 rounded-md font-semibold hover:bg-lunar-gold/90 transition-colors"
+            className="inline-block bg-bright-orange text-dawn-light px-6 py-3 rounded-md font-semibold hover:bg-bright-orange/90 transition-colors"
           >
             Contact Me
           </Link>

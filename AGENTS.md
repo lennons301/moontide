@@ -7,7 +7,8 @@ Wellbeing website for women navigating change through yoga, coaching, and embodi
 - **Framework:** Next.js 16 (App Router), React 19, TypeScript 5.7
 - **Database:** Neon (Postgres) with Drizzle ORM
 - **CMS:** Sanity (project ID: 77icfczp, dataset: production)
-- **Auth:** Better Auth (admin-only, Phase 2)
+- **Auth:** Better Auth (admin-only, email/password)
+- **Payments:** Stripe Checkout + webhooks
 - **UI:** shadcn/ui + Tailwind CSS v4
 - **Email:** Resend
 - **Linting:** Biome (pre-commit via husky + lint-staged)
@@ -37,7 +38,28 @@ just db-studio        # Open Drizzle Studio
 ```
 src/
   app/                    # Next.js App Router pages
-    api/contact/          # Contact form POST endpoint
+    api/
+      auth/[...all]/      # Better Auth API handler
+      contact/            # Contact form POST endpoint
+      stripe/webhook/     # Stripe webhook (checkout.session.completed)
+      book/
+        checkout/         # Create Stripe Checkout session (individual + bundle)
+        redeem/           # Redeem bundle credit for booking
+      admin/
+        schedules/        # CRUD API for class schedules
+        classes/          # GET active class types
+        bookings/         # GET all bookings
+        bundles/          # GET all bundles
+        messages/         # GET contact submissions
+    admin/
+      login/              # Admin login page
+      schedule/           # Schedule management (CRUD)
+      bookings/           # View bookings
+      bundles/            # View bundles
+      messages/           # Contact message inbox
+    book/
+      bundle/             # Bundle purchase page
+      confirmation/       # Post-payment confirmation
     studio/[[...tool]]/   # Embedded Sanity Studio at /studio
     classes/[slug]/       # Dynamic class detail pages
   components/
@@ -51,9 +73,13 @@ src/
     about-preview.tsx     # Homepage about Gabrielle preview
     contact-form.tsx      # Contact form with shadcn/ui inputs
   lib/
+    auth.ts               # Better Auth server config
+    auth-client.ts        # Better Auth client config
+    stripe.ts             # Stripe client singleton
     db/
       index.ts            # Drizzle client (postgres.js driver)
-      schema.ts           # Drizzle schema (contact_submissions)
+      schema.ts           # Drizzle schema (all tables + re-exports auth-schema)
+      auth-schema.ts      # Better Auth tables (user, session, account, verification)
     sanity/
       client.ts           # Sanity client + urlFor() image helper
       queries.ts          # GROQ queries for all document types
@@ -62,10 +88,17 @@ src/
   sanity/
     schema/               # Sanity document schemas (siteSettings, service, page, trainer, communityEvent)
     structure.ts          # Sanity Studio desk structure
+  middleware.ts             # Admin route protection (/admin/* except /admin/login)
 scripts/
   seed-sanity.ts          # CMS seed script
+  seed-classes.ts         # Seed class types (prenatal, postnatal, baby-yoga, vinyasa)
+  seed-admin.ts           # Seed admin user (Gabrielle)
 tests/
   api/contact.test.ts     # Contact form API tests
+  api/stripe-webhook.test.ts  # Stripe webhook handler tests
+  api/book-checkout.test.ts   # Checkout session tests
+  api/book-redeem.test.ts     # Bundle redemption tests
+  admin/schedules.test.ts     # Admin schedule API tests
   lib/email.test.ts       # Email helper tests
 drizzle/
   migrations/             # Generated Drizzle migrations
@@ -76,7 +109,7 @@ drizzle/
 - **Package manager:** pnpm (not npm). Use `pnpm add`, `pnpm exec`, `pnpm dlx`.
 - **Secrets:** Managed via Doppler — never commit .env files. Use `doppler run --` to inject.
 - **CMS boundary:** Editorial content (text, images, descriptions) → Sanity. Transactional data (bookings, contact submissions) → Neon Postgres.
-- **Tailwind CSS v4:** No tailwind.config.ts. Colours configured via `@theme inline` in globals.css. Custom palette: deep-current, deep-ocean, shallow-water, lunar-gold, driftwood, foam-white, seagrass.
+- **Tailwind CSS v4:** No tailwind.config.ts. Colours configured via `@theme inline` in globals.css. Custom palette: deep-tide-blue (#1e3a5f), deep-ocean (#2c3e50), ocean-light-blue (#5fa8d3), bright-orange (#ff7a2f), soft-moonstone (#e7e3dc), dawn-light (#f7f9fb), seagrass (#6b8f71), sky-mist (#dceaf4).
 - **Design:** Mobile-first, photography-led, light and inviting. Theme: "Calm, luminous and gently energising — like light moving across water."
 - **Nav layout:** Burger menu left, logo (MOONTIDE) right.
 - **Services grouping:** Classes shown as 2x2 photo grid, coaching/private as featured cards, community as light text block.
@@ -86,6 +119,13 @@ drizzle/
 - **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
 - **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
 - **Linting:** Biome runs on pre-commit via husky. Run `just lint` to check/fix manually.
+- **Auth:** Better Auth protects `/admin/*` routes via middleware. Login at `/admin/login`.
+- **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on middleware for page access).
+- **Stripe webhook:** At `/api/stripe/webhook` — reads raw body for signature verification, never parse JSON before verifying.
+- **Booking flow:** `/api/book/checkout` (Stripe Checkout) and `/api/book/redeem` (bundle credit). Checkout handles both individual and bundle purchases via `type` field.
+- **Prices in pence:** Class prices stored in `classes.priceInPence`. Bundle price is a constant in the checkout route (£75 / 7500 pence for 6 classes).
+- **Bundle redemption:** Email-based lookup, no customer auth required. 90-day expiry from purchase.
+- **DB transactions:** Multi-step mutations (e.g., booking insert + count increment) wrapped in `db.transaction()` for atomicity.
 
 ## Environments
 

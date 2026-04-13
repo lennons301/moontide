@@ -10,14 +10,14 @@ const footerLinks = [
 
 export function Footer({ instagramUrl }: { instagramUrl?: string }) {
   return (
-    <footer className="border-t border-driftwood bg-white py-8 px-6">
+    <footer className="border-t border-soft-moonstone bg-white py-8 px-6">
       <div className="max-w-6xl mx-auto text-center">
         <nav className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm text-deep-ocean">
           {footerLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="hover:text-lunar-gold transition-colors"
+              className="hover:text-bright-orange transition-colors"
             >
               {link.label}
             </Link>
@@ -27,13 +27,13 @@ export function Footer({ instagramUrl }: { instagramUrl?: string }) {
               href={instagramUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-lunar-gold transition-colors"
+              className="hover:text-bright-orange transition-colors"
             >
               Instagram
             </a>
           )}
         </nav>
-        <p className="mt-4 text-xs text-shallow-water">
+        <p className="mt-4 text-xs text-ocean-light-blue">
           &copy; {new Date().getFullYear()} Moontide
         </p>
       </div>

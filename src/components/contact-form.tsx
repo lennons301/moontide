@@ -51,7 +51,7 @@ export function ContactForm({ defaultSubject }: ContactFormProps) {
         <button
           type="button"
           onClick={() => setStatus("idle")}
-          className="mt-4 text-sm text-lunar-gold underline"
+          className="mt-4 text-sm text-bright-orange underline"
         >
           Send another message
         </button>
@@ -92,7 +92,7 @@ export function ContactForm({ defaultSubject }: ContactFormProps) {
       <Button
         type="submit"
         disabled={status === "sending"}
-        className="w-full bg-lunar-gold text-foam-white hover:bg-lunar-gold/90 font-semibold"
+        className="w-full bg-bright-orange text-dawn-light hover:bg-bright-orange/90 font-semibold"
       >
         {status === "sending" ? "Sending..." : "Send Message"}
       </Button>
