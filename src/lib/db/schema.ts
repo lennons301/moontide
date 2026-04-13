@@ -98,3 +98,11 @@ export const bookings = pgTable("bookings", {
   status: bookingStatus("status").notNull().default("confirmed"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// Re-export Better Auth tables
+export {
+  account,
+  session,
+  user,
+  verification,
+} from "./auth-schema";
