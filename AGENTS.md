@@ -109,7 +109,7 @@ drizzle/
 - **Package manager:** pnpm (not npm). Use `pnpm add`, `pnpm exec`, `pnpm dlx`.
 - **Secrets:** Managed via Doppler — never commit .env files. Use `doppler run --` to inject.
 - **CMS boundary:** Editorial content (text, images, descriptions) → Sanity. Transactional data (bookings, contact submissions) → Neon Postgres.
-- **Tailwind CSS v4:** No tailwind.config.ts. Colours configured via `@theme inline` in globals.css. Custom palette: deep-current, deep-ocean, shallow-water, lunar-gold, driftwood, foam-white, seagrass.
+- **Tailwind CSS v4:** No tailwind.config.ts. Colours configured via `@theme inline` in globals.css. Custom palette: deep-tide-blue (#1e3a5f), deep-ocean (#2c3e50), ocean-light-blue (#5fa8d3), bright-orange (#ff7a2f), soft-moonstone (#e7e3dc), dawn-light (#f7f9fb), seagrass (#6b8f71), sky-mist (#dceaf4).
 - **Design:** Mobile-first, photography-led, light and inviting. Theme: "Calm, luminous and gently energising — like light moving across water."
 - **Nav layout:** Burger menu left, logo (MOONTIDE) right.
 - **Services grouping:** Classes shown as 2x2 photo grid, coaching/private as featured cards, community as light text block.
