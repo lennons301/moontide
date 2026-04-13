@@ -65,6 +65,20 @@ export default function SchedulePage() {
     fetchClassTypes();
   }, [fetchSchedules, fetchClassTypes]);
 
+  async function handleDelete(id: number) {
+    if (!window.confirm("Are you sure you want to delete this schedule?")) {
+      return;
+    }
+    const res = await fetch("/api/admin/schedules", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (res.ok) {
+      await fetchSchedules();
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -278,13 +292,14 @@ export default function SchedulePage() {
               <th className="px-4 py-3">Location</th>
               <th className="px-4 py-3">Booked</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-soft-moonstone/10">
             {scheduleList.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-8 text-center text-soft-moonstone"
                 >
                   No scheduled classes yet.
@@ -311,6 +326,15 @@ export default function SchedulePage() {
                   </td>
                   <td className="px-4 py-3">
                     {statusBadge(item.schedules.status)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(item.schedules.id)}
+                      className="text-red-600 hover:text-red-800 text-sm"
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))

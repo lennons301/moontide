@@ -473,13 +473,6 @@ export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
                       {item.schedules.location &&
                         ` \u00b7 ${item.schedules.location}`}
                     </p>
-                    <Link
-                      href={`/classes/${item.classes.slug}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-bright-orange text-sm hover:text-bright-orange/80 transition-colors"
-                    >
-                      View class details &rarr;
-                    </Link>
                   </div>
                   <div className="flex items-center gap-4 sm:flex-col sm:items-end sm:gap-1">
                     <span className="font-semibold text-deep-tide-blue">

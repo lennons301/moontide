@@ -70,3 +70,12 @@ export async function POST(request: Request) {
 
   return NextResponse.json(result[0], { status: 201 });
 }
+
+export async function DELETE(request: Request) {
+  const { id } = await request.json();
+  if (!id) {
+    return NextResponse.json({ error: "Missing schedule ID" }, { status: 400 });
+  }
+  await db.delete(schedules).where(eq(schedules.id, id));
+  return NextResponse.json({ deleted: true });
+}
