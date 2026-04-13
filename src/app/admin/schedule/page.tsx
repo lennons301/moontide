@@ -108,11 +108,16 @@ export default function SchedulePage() {
         isEditing
           ? {
               id: editingId,
+              classId: Number(formData.classId),
               date: formData.date,
               startTime: formData.startTime,
               endTime: formData.endTime,
               capacity: Number(formData.capacity),
               location: formData.location || null,
+              repeatWeekly: formData.repeatWeekly,
+              numberOfWeeks: formData.repeatWeekly
+                ? Number(formData.numberOfWeeks)
+                : undefined,
             }
           : {
               classId: Number(formData.classId),
@@ -220,52 +225,47 @@ export default function SchedulePage() {
                 required
               />
             </div>
-            {!editingId && (
-              <div className="sm:col-span-2 flex items-center gap-4">
-                <label
-                  htmlFor="repeatWeekly"
-                  className="flex items-center gap-2 text-sm font-medium text-deep-tide-blue cursor-pointer"
-                >
-                  <input
-                    id="repeatWeekly"
-                    type="checkbox"
-                    checked={formData.repeatWeekly}
+            <div className="sm:col-span-2 flex items-center gap-4">
+              <label
+                htmlFor="repeatWeekly"
+                className="flex items-center gap-2 text-sm font-medium text-deep-tide-blue cursor-pointer"
+              >
+                <input
+                  id="repeatWeekly"
+                  type="checkbox"
+                  checked={formData.repeatWeekly}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      repeatWeekly: e.target.checked,
+                    })
+                  }
+                  className="h-4 w-4 rounded border-soft-moonstone accent-bright-orange"
+                />
+                Repeat weekly
+              </label>
+              {formData.repeatWeekly && (
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="numberOfWeeks" className="whitespace-nowrap">
+                    Number of weeks
+                  </Label>
+                  <Input
+                    id="numberOfWeeks"
+                    type="number"
+                    min="2"
+                    max="52"
+                    value={formData.numberOfWeeks}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        repeatWeekly: e.target.checked,
+                        numberOfWeeks: e.target.value,
                       })
                     }
-                    className="h-4 w-4 rounded border-soft-moonstone accent-bright-orange"
+                    className="w-20"
                   />
-                  Repeat weekly
-                </label>
-                {formData.repeatWeekly && (
-                  <div className="flex items-center gap-2">
-                    <Label
-                      htmlFor="numberOfWeeks"
-                      className="whitespace-nowrap"
-                    >
-                      Number of weeks
-                    </Label>
-                    <Input
-                      id="numberOfWeeks"
-                      type="number"
-                      min="2"
-                      max="52"
-                      value={formData.numberOfWeeks}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          numberOfWeeks: e.target.value,
-                        })
-                      }
-                      className="w-20"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
             <div>
               <Label htmlFor="startTime">Start Time</Label>
               <Input
