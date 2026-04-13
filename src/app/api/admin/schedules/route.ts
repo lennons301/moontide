@@ -71,6 +71,34 @@ export async function POST(request: Request) {
   return NextResponse.json(result[0], { status: 201 });
 }
 
+export async function PUT(request: Request) {
+  const body = await request.json();
+  const { id, date, startTime, endTime, capacity, location, status } = body;
+
+  if (!id) {
+    return NextResponse.json({ error: "Missing schedule ID" }, { status: 400 });
+  }
+
+  const result = await db
+    .update(schedules)
+    .set({
+      ...(date && { date }),
+      ...(startTime && { startTime }),
+      ...(endTime && { endTime }),
+      ...(capacity && { capacity }),
+      ...(location !== undefined && { location }),
+      ...(status && { status }),
+    })
+    .where(eq(schedules.id, id))
+    .returning();
+
+  if (result.length === 0) {
+    return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
+  }
+
+  return NextResponse.json(result[0]);
+}
+
 export async function DELETE(request: Request) {
   const { id } = await request.json();
   if (!id) {

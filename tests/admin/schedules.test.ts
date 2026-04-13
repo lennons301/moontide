@@ -7,6 +7,9 @@ const {
   mockOrderBy,
   mockInsertValues,
   mockReturning,
+  mockUpdateSet,
+  mockUpdateWhere,
+  mockUpdateReturning,
 } = vi.hoisted(() => {
   const mockOrderBy = vi.fn().mockResolvedValue([]);
   const mockInnerJoin = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
@@ -24,12 +27,20 @@ const {
   const mockInsertValues = vi
     .fn()
     .mockReturnValue({ returning: mockReturning });
+  const mockUpdateReturning = vi.fn().mockResolvedValue([]);
+  const mockUpdateWhere = vi
+    .fn()
+    .mockReturnValue({ returning: mockUpdateReturning });
+  const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
   return {
     mockSelectFrom,
     mockInnerJoin,
     mockOrderBy,
     mockInsertValues,
     mockReturning,
+    mockUpdateSet,
+    mockUpdateWhere,
+    mockUpdateReturning,
   };
 });
 
@@ -40,6 +51,9 @@ vi.mock("@/lib/db", () => ({
     }),
     insert: vi.fn().mockReturnValue({
       values: mockInsertValues,
+    }),
+    update: vi.fn().mockReturnValue({
+      set: mockUpdateSet,
     }),
   },
 }));
@@ -54,7 +68,7 @@ vi.mock("drizzle-orm", () => ({
   desc: vi.fn((col: unknown) => col),
 }));
 
-import { GET, POST } from "@/app/api/admin/schedules/route";
+import { GET, POST, PUT } from "@/app/api/admin/schedules/route";
 
 describe("GET /api/admin/schedules", () => {
   beforeEach(() => {
@@ -318,5 +332,84 @@ describe("POST /api/admin/schedules", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe("Missing required fields");
+  });
+});
+
+describe("PUT /api/admin/schedules", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
+    mockUpdateWhere.mockReturnValue({ returning: mockUpdateReturning });
+  });
+
+  it("returns 200 when updating a schedule", async () => {
+    mockUpdateReturning.mockResolvedValue([
+      {
+        id: 1,
+        classId: 1,
+        date: "2026-05-02",
+        startTime: "10:00",
+        endTime: "11:00",
+        capacity: 10,
+        bookedCount: 0,
+        location: "Studio 2",
+        status: "open",
+      },
+    ]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: 1,
+        date: "2026-05-02",
+        startTime: "10:00",
+        endTime: "11:00",
+        capacity: 10,
+        location: "Studio 2",
+      }),
+    });
+
+    const response = await PUT(request);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.id).toBe(1);
+    expect(body.date).toBe("2026-05-02");
+    expect(body.capacity).toBe(10);
+  });
+
+  it("returns 400 when id is missing", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: "2026-05-02",
+        startTime: "10:00",
+        endTime: "11:00",
+      }),
+    });
+
+    const response = await PUT(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Missing schedule ID");
+  });
+
+  it("returns 404 when schedule does not exist", async () => {
+    mockUpdateReturning.mockResolvedValue([]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: 999,
+        date: "2026-05-02",
+      }),
+    });
+
+    const response = await PUT(request);
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toBe("Schedule not found");
   });
 });
