@@ -1,0 +1,202 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Hoisted mocks
+const { mockSelectFrom, mockInnerJoin, mockWhere, mockCheckoutSessionsCreate } =
+  vi.hoisted(() => {
+    const mockWhere = vi.fn().mockResolvedValue([]);
+    const mockInnerJoin = vi.fn().mockReturnValue({ where: mockWhere });
+    const mockSelectFrom = vi
+      .fn()
+      .mockReturnValue({ innerJoin: mockInnerJoin });
+    const mockCheckoutSessionsCreate = vi
+      .fn()
+      .mockResolvedValue({ url: "https://checkout.stripe.com/test" });
+    return {
+      mockSelectFrom,
+      mockInnerJoin,
+      mockWhere,
+      mockCheckoutSessionsCreate,
+    };
+  });
+
+vi.mock("@/lib/stripe", () => ({
+  stripe: {
+    checkout: {
+      sessions: {
+        create: mockCheckoutSessionsCreate,
+      },
+    },
+  },
+}));
+
+vi.mock("@/lib/db", () => ({
+  db: {
+    select: vi.fn().mockReturnValue({ from: mockSelectFrom }),
+  },
+}));
+
+vi.mock("@/lib/db/schema", () => ({
+  classes: { id: "id" },
+  schedules: { id: "id", classId: "class_id" },
+}));
+
+vi.mock("drizzle-orm", () => ({
+  eq: vi.fn((...args: unknown[]) => args),
+}));
+
+import { POST } from "@/app/api/book/checkout/route";
+
+describe("POST /api/book/checkout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSelectFrom.mockReturnValue({ innerJoin: mockInnerJoin });
+    mockInnerJoin.mockReturnValue({ where: mockWhere });
+    mockWhere.mockResolvedValue([]);
+    mockCheckoutSessionsCreate.mockResolvedValue({
+      url: "https://checkout.stripe.com/test",
+    });
+  });
+
+  it("returns 400 when required fields are missing", async () => {
+    const request = new Request("http://localhost:3000/api/book/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scheduleId: 1 }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Missing required fields");
+  });
+
+  it("returns 404 when schedule is not found", async () => {
+    mockWhere.mockResolvedValue([]);
+
+    const request = new Request("http://localhost:3000/api/book/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 999,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toBe("Schedule not found");
+  });
+
+  it("returns 400 when schedule is not open", async () => {
+    mockWhere.mockResolvedValue([
+      {
+        schedules: {
+          id: 1,
+          status: "cancelled",
+          bookedCount: 0,
+          capacity: 8,
+        },
+        classes: { id: 1, title: "Morning Yoga", priceInPence: 1200 },
+      },
+    ]);
+
+    const request = new Request("http://localhost:3000/api/book/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 1,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Class is not available");
+  });
+
+  it("returns 400 when class is full", async () => {
+    mockWhere.mockResolvedValue([
+      {
+        schedules: { id: 1, status: "open", bookedCount: 8, capacity: 8 },
+        classes: { id: 1, title: "Morning Yoga", priceInPence: 1200 },
+      },
+    ]);
+
+    const request = new Request("http://localhost:3000/api/book/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 1,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Class is full");
+  });
+
+  it("returns checkout URL for valid booking", async () => {
+    mockWhere.mockResolvedValue([
+      {
+        schedules: {
+          id: 1,
+          status: "open",
+          bookedCount: 2,
+          capacity: 8,
+          date: "2026-05-01",
+          startTime: "09:00",
+          endTime: "10:00",
+        },
+        classes: { id: 1, title: "Morning Yoga", priceInPence: 1200 },
+      },
+    ]);
+
+    const request = new Request("http://localhost:3000/api/book/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 1,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.url).toBe("https://checkout.stripe.com/test");
+
+    // Verify Stripe was called with correct params
+    expect(mockCheckoutSessionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "payment",
+        customer_email: "jane@example.com",
+        line_items: [
+          expect.objectContaining({
+            price_data: expect.objectContaining({
+              currency: "gbp",
+              unit_amount: 1200,
+              product_data: expect.objectContaining({
+                name: "Morning Yoga",
+              }),
+            }),
+            quantity: 1,
+          }),
+        ],
+        metadata: expect.objectContaining({
+          type: "individual",
+          scheduleId: "1",
+          customerName: "Jane Doe",
+          customerEmail: "jane@example.com",
+        }),
+      }),
+    );
+  });
+});
