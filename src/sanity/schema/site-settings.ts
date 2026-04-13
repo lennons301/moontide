@@ -12,12 +12,6 @@ export const siteSettings = defineType({
       initialValue: "Moontide",
     }),
     defineField({
-      name: "logo",
-      title: "Logo",
-      type: "image",
-      options: { hotspot: true },
-    }),
-    defineField({
       name: "contactEmail",
       title: "Contact Email",
       type: "string",

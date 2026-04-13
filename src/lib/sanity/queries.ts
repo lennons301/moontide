@@ -1,6 +1,5 @@
 export const siteSettingsQuery = `*[_type == "siteSettings"][0]{
   title,
-  logo,
   contactEmail,
   instagramUrl,
   footerLinks
