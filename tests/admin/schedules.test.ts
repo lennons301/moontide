@@ -193,6 +193,116 @@ describe("POST /api/admin/schedules", () => {
     expect(body.error).toBe("Missing required fields");
   });
 
+  it("returns 201 with array of 3 schedules when repeatWeekly is true", async () => {
+    const recurringSchedules = [
+      {
+        id: 10,
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        capacity: 8,
+        bookedCount: 0,
+        location: null,
+        recurringRule: "weekly:test-uuid",
+        status: "open",
+      },
+      {
+        id: 11,
+        classId: 1,
+        date: "2026-05-08",
+        startTime: "09:00",
+        endTime: "10:00",
+        capacity: 8,
+        bookedCount: 0,
+        location: null,
+        recurringRule: "weekly:test-uuid",
+        status: "open",
+      },
+      {
+        id: 12,
+        classId: 1,
+        date: "2026-05-15",
+        startTime: "09:00",
+        endTime: "10:00",
+        capacity: 8,
+        bookedCount: 0,
+        location: null,
+        recurringRule: "weekly:test-uuid",
+        status: "open",
+      },
+    ];
+    mockReturning.mockResolvedValue(recurringSchedules);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        repeatWeekly: true,
+        numberOfWeeks: 3,
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(3);
+
+    // Verify dates are 7 days apart
+    expect(body[0].date).toBe("2026-05-01");
+    expect(body[1].date).toBe("2026-05-08");
+    expect(body[2].date).toBe("2026-05-15");
+
+    // Verify the insert was called with an array of 3 values
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ date: "2026-05-01" }),
+        expect.objectContaining({ date: "2026-05-08" }),
+        expect.objectContaining({ date: "2026-05-15" }),
+      ]),
+    );
+  });
+
+  it("returns single schedule when repeatWeekly is false", async () => {
+    mockReturning.mockResolvedValue([
+      {
+        id: 1,
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        capacity: 8,
+        bookedCount: 0,
+        location: null,
+        status: "open",
+      },
+    ]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        repeatWeekly: false,
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    // Single object, not array
+    expect(body.id).toBe(1);
+    expect(Array.isArray(body)).toBe(false);
+  });
+
   it("returns 400 when classId is missing", async () => {
     const request = new Request("http://localhost:3000/api/admin/schedules", {
       method: "POST",
