@@ -4,10 +4,47 @@ import { db } from "@/lib/db";
 import { classes, schedules } from "@/lib/db/schema";
 import { stripe } from "@/lib/stripe";
 
-export async function POST(request: Request) {
-  const { scheduleId, customerName, customerEmail } = await request.json();
+const BUNDLE_PRICE_PENCE = 7500; // £75 for 6 classes — Gabrielle to confirm
+const BUNDLE_CREDITS = 6;
 
-  if (!scheduleId || !customerName || !customerEmail) {
+export async function POST(request: Request) {
+  const body = await request.json();
+  const { type, scheduleId, customerName, customerEmail } = body;
+
+  if (!customerEmail) {
+    return NextResponse.json({ error: "Email is required" }, { status: 400 });
+  }
+
+  if (type === "bundle") {
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "gbp",
+            product_data: {
+              name: `${BUNDLE_CREDITS}-Class Bundle`,
+              description: `${BUNDLE_CREDITS} classes, valid for 90 days from purchase`,
+            },
+            unit_amount: BUNDLE_PRICE_PENCE,
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        type: "bundle",
+        customerEmail,
+      },
+      customer_email: customerEmail,
+      success_url: `${process.env.BETTER_AUTH_URL}/book/confirmation?session_id={CHECKOUT_SESSION_ID}&type=bundle`,
+      cancel_url: `${process.env.BETTER_AUTH_URL}/book/bundle`,
+    });
+
+    return NextResponse.json({ url: session.url });
+  }
+
+  // Individual class booking
+  if (!scheduleId || !customerName) {
     return NextResponse.json(
       { error: "Missing required fields" },
       { status: 400 },

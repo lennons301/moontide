@@ -57,11 +57,24 @@ describe("POST /api/book/checkout", () => {
     });
   });
 
-  it("returns 400 when required fields are missing", async () => {
+  it("returns 400 when email is missing", async () => {
     const request = new Request("http://localhost:3000/api/book/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scheduleId: 1 }),
+      body: JSON.stringify({ scheduleId: 1, customerName: "Jane Doe" }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Email is required");
+  });
+
+  it("returns 400 when individual booking fields are missing", async () => {
+    const request = new Request("http://localhost:3000/api/book/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customerEmail: "jane@example.com" }),
     });
 
     const response = await POST(request);
@@ -194,6 +207,47 @@ describe("POST /api/book/checkout", () => {
           type: "individual",
           scheduleId: "1",
           customerName: "Jane Doe",
+          customerEmail: "jane@example.com",
+        }),
+      }),
+    );
+  });
+
+  it("returns checkout URL for bundle purchase", async () => {
+    const request = new Request("http://localhost:3000/api/book/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "bundle",
+        customerEmail: "jane@example.com",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.url).toBe("https://checkout.stripe.com/test");
+
+    // Verify Stripe was called with bundle params
+    expect(mockCheckoutSessionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "payment",
+        customer_email: "jane@example.com",
+        line_items: [
+          expect.objectContaining({
+            price_data: expect.objectContaining({
+              currency: "gbp",
+              unit_amount: 7500,
+              product_data: expect.objectContaining({
+                name: "6-Class Bundle",
+                description: "6 classes, valid for 90 days from purchase",
+              }),
+            }),
+            quantity: 1,
+          }),
+        ],
+        metadata: expect.objectContaining({
+          type: "bundle",
           customerEmail: "jane@example.com",
         }),
       }),
