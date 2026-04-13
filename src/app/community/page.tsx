@@ -40,7 +40,7 @@ export default async function CommunityPage() {
   return (
     <>
       {/* Hero image */}
-      <div className="relative h-64 md:h-96 bg-shallow-water/30">
+      <div className="relative h-64 md:h-96 bg-ocean-light-blue/30">
         {imageUrl ? (
           <Image
             src={imageUrl}
@@ -56,12 +56,12 @@ export default async function CommunityPage() {
         )}
       </div>
 
-      <section className="py-12 px-6 bg-foam-white">
+      <section className="py-12 px-6 bg-dawn-light">
         <div className="max-w-2xl mx-auto">
-          <h1 className="text-3xl md:text-4xl font-semibold text-deep-current mb-3">
+          <h1 className="text-3xl md:text-4xl font-semibold text-deep-tide-blue mb-3">
             Creating Community
           </h1>
-          <div className="w-8 h-0.5 bg-lunar-gold mb-8" />
+          <div className="w-8 h-0.5 bg-bright-orange mb-8" />
 
           <div className="text-deep-ocean leading-relaxed mb-12 space-y-4">
             {service?.fullDescription ? (
@@ -78,9 +78,9 @@ export default async function CommunityPage() {
       </section>
 
       {/* Upcoming dates */}
-      <section className="py-12 px-6 bg-driftwood">
+      <section className="py-12 px-6 bg-soft-moonstone">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-xl font-semibold text-deep-current mb-6">
+          <h2 className="text-xl font-semibold text-deep-tide-blue mb-6">
             Upcoming Dates
           </h2>
 
@@ -89,9 +89,9 @@ export default async function CommunityPage() {
               {events.map((event) => (
                 <li
                   key={event._id}
-                  className="bg-foam-white rounded-md px-5 py-4 border border-driftwood"
+                  className="bg-dawn-light rounded-md px-5 py-4 border border-soft-moonstone"
                 >
-                  <p className="text-lunar-gold text-sm font-semibold mb-1">
+                  <p className="text-bright-orange text-sm font-semibold mb-1">
                     {event.date
                       ? new Date(event.date).toLocaleDateString("en-GB", {
                           weekday: "long",
@@ -101,7 +101,7 @@ export default async function CommunityPage() {
                         })
                       : "Date TBC"}
                   </p>
-                  <h3 className="text-deep-current font-semibold mb-1">
+                  <h3 className="text-deep-tide-blue font-semibold mb-1">
                     {event.title}
                   </h3>
                   {event.location && (

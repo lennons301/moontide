@@ -16,12 +16,12 @@ export default async function BookPage() {
     .where(and(gte(schedules.date, today), eq(schedules.status, "open")));
 
   return (
-    <section className="py-16 px-6 bg-foam-white">
+    <section className="py-16 px-6 bg-dawn-light">
       <div className="max-w-3xl mx-auto">
-        <h1 className="text-3xl md:text-4xl font-semibold text-deep-current text-center mb-3">
+        <h1 className="text-3xl md:text-4xl font-semibold text-deep-tide-blue text-center mb-3">
           Book a Class
         </h1>
-        <div className="w-8 h-0.5 bg-lunar-gold mx-auto mb-8" />
+        <div className="w-8 h-0.5 bg-bright-orange mx-auto mb-8" />
         <BookingClient schedules={upcoming} />
       </div>
     </section>

@@ -13,8 +13,8 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-foam-white">
-      <nav className="bg-deep-current text-foam-white px-6 py-3">
+    <div className="min-h-screen bg-dawn-light">
+      <nav className="bg-deep-tide-blue text-dawn-light px-6 py-3">
         <div className="flex items-center justify-between">
           <Link href="/admin" className="font-semibold tracking-wider text-sm">
             MOONTIDE ADMIN
@@ -24,7 +24,7 @@ export default function AdminLayout({
               <Link
                 key={link.href}
                 href={link.href}
-                className="hover:text-lunar-gold transition-colors"
+                className="hover:text-bright-orange transition-colors"
               >
                 {link.label}
               </Link>

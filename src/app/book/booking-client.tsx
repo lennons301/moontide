@@ -125,7 +125,7 @@ export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
         </p>
         <Link
           href="/contact"
-          className="inline-block bg-lunar-gold text-foam-white px-6 py-3 rounded-md font-semibold hover:bg-lunar-gold/90 transition-colors"
+          className="inline-block bg-bright-orange text-dawn-light px-6 py-3 rounded-md font-semibold hover:bg-bright-orange/90 transition-colors"
         >
           Contact Me
         </Link>
@@ -145,13 +145,13 @@ export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
             setSelected(null);
             setError(null);
           }}
-          className="text-shallow-water hover:text-deep-current transition-colors mb-6 text-sm font-medium"
+          className="text-ocean-light-blue hover:text-deep-tide-blue transition-colors mb-6 text-sm font-medium"
         >
           &larr; Back to classes
         </button>
 
-        <div className="bg-driftwood/40 rounded-lg p-6 mb-8">
-          <h2 className="font-heading text-xl text-deep-current mb-1">
+        <div className="bg-soft-moonstone/40 rounded-lg p-6 mb-8">
+          <h2 className="font-heading text-xl text-deep-tide-blue mb-1">
             {selected.classes.title}
           </h2>
           <p className="text-deep-ocean text-sm">
@@ -164,7 +164,7 @@ export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
               {selected.schedules.location}
             </p>
           )}
-          <p className="text-deep-current font-semibold mt-2">
+          <p className="text-deep-tide-blue font-semibold mt-2">
             {formatPrice(selected.classes.priceInPence)}
           </p>
           {spotsLeft < 3 && (
@@ -207,7 +207,7 @@ export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
               type="checkbox"
               checked={useBundle}
               onChange={(e) => setUseBundle(e.target.checked)}
-              className="h-4 w-4 rounded border-driftwood text-lunar-gold focus:ring-lunar-gold"
+              className="h-4 w-4 rounded border-soft-moonstone text-bright-orange focus:ring-bright-orange"
             />
             <Label htmlFor="use-bundle" className="cursor-pointer">
               I have a class bundle
@@ -219,7 +219,7 @@ export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
           <Button
             type="submit"
             disabled={loading}
-            className="w-full h-11 bg-lunar-gold text-foam-white hover:bg-lunar-gold/90 font-semibold text-base"
+            className="w-full h-11 bg-bright-orange text-dawn-light hover:bg-bright-orange/90 font-semibold text-base"
           >
             {loading ? "Processing..." : "Book This Class"}
           </Button>
@@ -238,11 +238,11 @@ export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
             key={item.schedules.id}
             type="button"
             onClick={() => setSelected(item)}
-            className="w-full text-left bg-driftwood/30 hover:bg-driftwood/50 rounded-lg p-5 transition-colors"
+            className="w-full text-left bg-soft-moonstone/30 hover:bg-soft-moonstone/50 rounded-lg p-5 transition-colors"
           >
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
-                <h2 className="font-heading text-lg text-deep-current">
+                <h2 className="font-heading text-lg text-deep-tide-blue">
                   {item.classes.title}
                 </h2>
                 <p className="text-deep-ocean text-sm">
@@ -257,7 +257,7 @@ export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
                 )}
               </div>
               <div className="flex items-center gap-4 sm:text-right">
-                <span className="font-semibold text-deep-current">
+                <span className="font-semibold text-deep-tide-blue">
                   {formatPrice(item.classes.priceInPence)}
                 </span>
                 {spotsLeft < 3 ? (
@@ -275,13 +275,13 @@ export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
         );
       })}
 
-      <div className="text-center pt-6 border-t border-driftwood/50 mt-8">
+      <div className="text-center pt-6 border-t border-soft-moonstone/50 mt-8">
         <p className="text-deep-ocean text-sm mb-3">
           Save with a bundle — 6 classes for just {formatPrice(7500)}
         </p>
         <Link
           href="/book/bundle"
-          className="text-lunar-gold hover:text-lunar-gold/80 font-medium text-sm transition-colors"
+          className="text-bright-orange hover:text-bright-orange/80 font-medium text-sm transition-colors"
         >
           Purchase a bundle &rarr;
         </Link>

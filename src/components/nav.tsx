@@ -8,7 +8,7 @@ export function Nav() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 bg-foam-white border-b border-driftwood">
+    <header className="sticky top-0 z-50 bg-dawn-light border-b border-soft-moonstone">
       <div className="flex items-center justify-between px-6 py-4">
         <button
           type="button"
@@ -16,13 +16,13 @@ export function Nav() {
           className="flex flex-col gap-[5px] p-2"
           aria-label="Open menu"
         >
-          <span className="block w-5 h-0.5 bg-deep-current" />
-          <span className="block w-5 h-0.5 bg-deep-current" />
-          <span className="block w-5 h-0.5 bg-deep-current" />
+          <span className="block w-5 h-0.5 bg-deep-tide-blue" />
+          <span className="block w-5 h-0.5 bg-deep-tide-blue" />
+          <span className="block w-5 h-0.5 bg-deep-tide-blue" />
         </button>
         <Link
           href="/"
-          className="text-lg font-semibold tracking-widest text-deep-current"
+          className="text-lg font-semibold tracking-widest text-deep-tide-blue"
         >
           MOONTIDE
         </Link>

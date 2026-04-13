@@ -30,12 +30,12 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-foam-white flex items-center justify-center px-6">
+    <div className="min-h-screen bg-dawn-light flex items-center justify-center px-6">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-semibold text-deep-current text-center mb-1">
+        <h1 className="text-2xl font-semibold text-deep-tide-blue text-center mb-1">
           Moontide Admin
         </h1>
-        <div className="w-8 h-0.5 bg-lunar-gold mx-auto mb-8" />
+        <div className="w-8 h-0.5 bg-bright-orange mx-auto mb-8" />
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="email">Email</Label>
@@ -63,7 +63,7 @@ export default function AdminLoginPage() {
           <Button
             type="submit"
             disabled={loading}
-            className="w-full bg-lunar-gold text-deep-current hover:bg-lunar-gold/90 font-semibold"
+            className="w-full bg-bright-orange text-deep-tide-blue hover:bg-bright-orange/90 font-semibold"
           >
             {loading ? "Signing in..." : "Sign In"}
           </Button>

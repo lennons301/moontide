@@ -54,7 +54,7 @@ export default function BookingsPage() {
     const colours: Record<string, string> = {
       confirmed: "bg-seagrass/20 text-seagrass",
       cancelled: "bg-red-100 text-red-700",
-      waitlisted: "bg-shallow-water/20 text-shallow-water",
+      waitlisted: "bg-ocean-light-blue/20 text-ocean-light-blue",
     };
     return (
       <span
@@ -79,13 +79,13 @@ export default function BookingsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold text-deep-current">
+      <h1 className="mb-6 text-2xl font-semibold text-deep-tide-blue">
         Bookings
       </h1>
 
-      <div className="overflow-x-auto rounded-lg border border-driftwood/30 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-lg border border-soft-moonstone/30 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-driftwood/20 bg-foam-white text-xs uppercase tracking-wider text-deep-ocean">
+          <thead className="border-b border-soft-moonstone/20 bg-dawn-light text-xs uppercase tracking-wider text-deep-ocean">
             <tr>
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Class</th>
@@ -95,12 +95,12 @@ export default function BookingsPage() {
               <th className="px-4 py-3">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-driftwood/10">
+          <tbody className="divide-y divide-soft-moonstone/10">
             {loading ? (
               <tr>
                 <td
                   colSpan={6}
-                  className="px-4 py-8 text-center text-driftwood"
+                  className="px-4 py-8 text-center text-soft-moonstone"
                 >
                   Loading...
                 </td>
@@ -109,7 +109,7 @@ export default function BookingsPage() {
               <tr>
                 <td
                   colSpan={6}
-                  className="px-4 py-8 text-center text-driftwood"
+                  className="px-4 py-8 text-center text-soft-moonstone"
                 >
                   No bookings yet.
                 </td>
@@ -118,17 +118,17 @@ export default function BookingsPage() {
               bookingList.map((item) => (
                 <tr
                   key={item.bookings.id}
-                  className="hover:bg-shallow-water/10"
+                  className="hover:bg-ocean-light-blue/10"
                 >
                   <td className="px-4 py-3">
-                    <div className="font-medium text-deep-current">
+                    <div className="font-medium text-deep-tide-blue">
                       {item.bookings.customerName}
                     </div>
                     <div className="text-xs text-deep-ocean/60">
                       {item.bookings.customerEmail}
                     </div>
                   </td>
-                  <td className="px-4 py-3 font-medium text-deep-current">
+                  <td className="px-4 py-3 font-medium text-deep-tide-blue">
                     {item.classes.title}
                   </td>
                   <td className="px-4 py-3">

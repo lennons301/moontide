@@ -44,15 +44,15 @@ export default function BookBundlePage() {
   }
 
   return (
-    <section className="py-16 px-6 bg-foam-white">
+    <section className="py-16 px-6 bg-dawn-light">
       <div className="max-w-lg mx-auto">
-        <h1 className="text-3xl md:text-4xl font-semibold text-deep-current text-center mb-3">
+        <h1 className="text-3xl md:text-4xl font-semibold text-deep-tide-blue text-center mb-3">
           Six Class Bundle
         </h1>
-        <div className="w-8 h-0.5 bg-lunar-gold mx-auto mb-8" />
+        <div className="w-8 h-0.5 bg-bright-orange mx-auto mb-8" />
 
-        <div className="bg-driftwood/30 rounded-lg p-8 text-center mb-8">
-          <p className="text-4xl font-heading text-deep-current mb-2">
+        <div className="bg-soft-moonstone/30 rounded-lg p-8 text-center mb-8">
+          <p className="text-4xl font-heading text-deep-tide-blue mb-2">
             &pound;75
           </p>
           <p className="text-deep-ocean">
@@ -79,7 +79,7 @@ export default function BookBundlePage() {
           <Button
             type="submit"
             disabled={loading}
-            className="w-full h-11 bg-lunar-gold text-foam-white hover:bg-lunar-gold/90 font-semibold text-base"
+            className="w-full h-11 bg-bright-orange text-dawn-light hover:bg-bright-orange/90 font-semibold text-base"
           >
             {loading ? "Processing..." : "Purchase Bundle"}
           </Button>
@@ -93,7 +93,7 @@ export default function BookBundlePage() {
         <div className="text-center mt-8">
           <Link
             href="/book"
-            className="text-shallow-water hover:text-deep-current transition-colors text-sm font-medium"
+            className="text-ocean-light-blue hover:text-deep-tide-blue transition-colors text-sm font-medium"
           >
             &larr; Back to classes
           </Link>

@@ -33,12 +33,12 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-driftwood">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-driftwood">
+    <div className="fixed inset-0 z-50 bg-soft-moonstone">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-soft-moonstone">
         <button
           type="button"
           onClick={onClose}
-          className="p-2 text-deep-current"
+          className="p-2 text-deep-tide-blue"
           aria-label="Close menu"
         >
           <svg
@@ -54,7 +54,7 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
             <line x1="16" y1="4" x2="4" y2="16" />
           </svg>
         </button>
-        <span className="text-lg font-semibold tracking-widest text-deep-current">
+        <span className="text-lg font-semibold tracking-widest text-deep-tide-blue">
           MOONTIDE
         </span>
       </div>
@@ -66,7 +66,7 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
                 <Link
                   href={item.href!}
                   onClick={onClose}
-                  className="block text-lg text-deep-ocean hover:text-lunar-gold transition-colors"
+                  className="block text-lg text-deep-ocean hover:text-bright-orange transition-colors"
                 >
                   {item.label}
                 </Link>
@@ -75,7 +75,7 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
                   <button
                     type="button"
                     onClick={() => setClassesOpen(!classesOpen)}
-                    className="flex items-center gap-2 text-lg text-deep-ocean hover:text-lunar-gold transition-colors"
+                    className="flex items-center gap-2 text-lg text-deep-ocean hover:text-bright-orange transition-colors"
                   >
                     {item.label}
                     <svg
@@ -98,7 +98,7 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
                           <Link
                             href={child.href}
                             onClick={onClose}
-                            className="block text-base text-deep-ocean/70 hover:text-lunar-gold transition-colors"
+                            className="block text-base text-deep-ocean/70 hover:text-bright-orange transition-colors"
                           >
                             {child.label}
                           </Link>

@@ -50,21 +50,21 @@ export default async function AboutPage() {
   return (
     <>
       {/* Hero */}
-      <section className="py-16 px-6 bg-foam-white">
+      <section className="py-16 px-6 bg-dawn-light">
         <div className="max-w-2xl mx-auto text-center">
-          <h1 className="text-3xl md:text-4xl font-semibold text-deep-current mb-3">
+          <h1 className="text-3xl md:text-4xl font-semibold text-deep-tide-blue mb-3">
             About Moontide
           </h1>
-          <div className="w-8 h-0.5 bg-lunar-gold mx-auto" />
+          <div className="w-8 h-0.5 bg-bright-orange mx-auto" />
         </div>
       </section>
 
       {/* Bio */}
-      <section className="py-12 px-6 bg-driftwood">
+      <section className="py-12 px-6 bg-soft-moonstone">
         <div className="max-w-2xl mx-auto">
           <div className="flex flex-col items-center md:flex-row md:items-start gap-8">
             {/* Photo */}
-            <div className="relative w-32 h-32 rounded-full overflow-hidden shrink-0 bg-shallow-water/40">
+            <div className="relative w-32 h-32 rounded-full overflow-hidden shrink-0 bg-ocean-light-blue/40">
               {photoUrl ? (
                 <Image
                   src={photoUrl}
@@ -81,7 +81,7 @@ export default async function AboutPage() {
 
             {/* Bio text */}
             <div>
-              <h2 className="text-xl font-semibold text-deep-current mb-4">
+              <h2 className="text-xl font-semibold text-deep-tide-blue mb-4">
                 About Me
               </h2>
               {trainer?.bio ? (
@@ -114,15 +114,15 @@ export default async function AboutPage() {
       </section>
 
       {/* Qualifications */}
-      <section className="py-12 px-6 bg-foam-white">
+      <section className="py-12 px-6 bg-dawn-light">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-xl font-semibold text-deep-current mb-6">
+          <h2 className="text-xl font-semibold text-deep-tide-blue mb-6">
             Gabrielle&apos;s Trainings
           </h2>
           <ul className="space-y-4">
             {qualifications.map((q, i) => (
               <li key={i} className="flex gap-4 items-start">
-                <span className="text-lunar-gold font-semibold text-sm mt-0.5 shrink-0 w-10">
+                <span className="text-bright-orange font-semibold text-sm mt-0.5 shrink-0 w-10">
                   {q.year}
                 </span>
                 <span className="text-deep-ocean leading-relaxed">
@@ -135,9 +135,9 @@ export default async function AboutPage() {
       </section>
 
       {/* Services */}
-      <section className="py-12 px-6 bg-driftwood">
+      <section className="py-12 px-6 bg-soft-moonstone">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-xl font-semibold text-deep-current mb-6">
+          <h2 className="text-xl font-semibold text-deep-tide-blue mb-6">
             Services
           </h2>
           <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -145,7 +145,7 @@ export default async function AboutPage() {
               <li key={s.href}>
                 <Link
                   href={s.href}
-                  className="block px-4 py-3 bg-foam-white rounded-md text-deep-ocean hover:text-lunar-gold hover:bg-foam-white/80 transition-colors border border-driftwood text-sm font-medium"
+                  className="block px-4 py-3 bg-dawn-light rounded-md text-deep-ocean hover:text-bright-orange hover:bg-dawn-light/80 transition-colors border border-soft-moonstone text-sm font-medium"
                 >
                   {s.label} &rarr;
                 </Link>

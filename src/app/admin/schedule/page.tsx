@@ -99,7 +99,7 @@ export default function SchedulePage() {
   function statusBadge(status: string) {
     const colours: Record<string, string> = {
       open: "bg-seagrass/20 text-seagrass",
-      full: "bg-lunar-gold/20 text-lunar-gold",
+      full: "bg-bright-orange/20 text-bright-orange",
       cancelled: "bg-red-100 text-red-700",
     };
     return (
@@ -114,7 +114,7 @@ export default function SchedulePage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-deep-current">Schedule</h1>
+        <h1 className="text-2xl font-semibold text-deep-tide-blue">Schedule</h1>
         <Button onClick={() => setShowForm(!showForm)}>
           {showForm ? "Cancel" : "New Class"}
         </Button>
@@ -123,7 +123,7 @@ export default function SchedulePage() {
       {showForm && (
         <form
           onSubmit={handleSubmit}
-          className="mb-8 rounded-lg border border-driftwood/30 bg-white p-6 shadow-sm"
+          className="mb-8 rounded-lg border border-soft-moonstone/30 bg-white p-6 shadow-sm"
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -219,9 +219,9 @@ export default function SchedulePage() {
         </form>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-driftwood/30 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-lg border border-soft-moonstone/30 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-driftwood/20 bg-foam-white text-xs uppercase tracking-wider text-deep-ocean">
+          <thead className="border-b border-soft-moonstone/20 bg-dawn-light text-xs uppercase tracking-wider text-deep-ocean">
             <tr>
               <th className="px-4 py-3">Class</th>
               <th className="px-4 py-3">Date</th>
@@ -231,12 +231,12 @@ export default function SchedulePage() {
               <th className="px-4 py-3">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-driftwood/10">
+          <tbody className="divide-y divide-soft-moonstone/10">
             {scheduleList.length === 0 ? (
               <tr>
                 <td
                   colSpan={6}
-                  className="px-4 py-8 text-center text-driftwood"
+                  className="px-4 py-8 text-center text-soft-moonstone"
                 >
                   No scheduled classes yet.
                 </td>
@@ -245,9 +245,9 @@ export default function SchedulePage() {
               scheduleList.map((item) => (
                 <tr
                   key={item.schedules.id}
-                  className="hover:bg-shallow-water/10"
+                  className="hover:bg-ocean-light-blue/10"
                 >
-                  <td className="px-4 py-3 font-medium text-deep-current">
+                  <td className="px-4 py-3 font-medium text-deep-tide-blue">
                     {item.classes.title}
                   </td>
                   <td className="px-4 py-3">{item.schedules.date}</td>

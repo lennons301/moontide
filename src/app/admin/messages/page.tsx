@@ -52,8 +52,8 @@ export default function MessagesPage() {
           &larr; Back to messages
         </Button>
 
-        <div className="rounded-lg border border-driftwood/30 bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-deep-current">
+        <div className="rounded-lg border border-soft-moonstone/30 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-semibold text-deep-tide-blue">
             {selected.subject}
           </h2>
           <div className="mt-2 text-sm text-deep-ocean/60">
@@ -73,16 +73,16 @@ export default function MessagesPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold text-deep-current">
+      <h1 className="mb-6 text-2xl font-semibold text-deep-tide-blue">
         Messages
       </h1>
 
       {loading ? (
-        <div className="rounded-lg border border-driftwood/30 bg-white p-8 text-center text-driftwood shadow-sm">
+        <div className="rounded-lg border border-soft-moonstone/30 bg-white p-8 text-center text-soft-moonstone shadow-sm">
           Loading...
         </div>
       ) : messages.length === 0 ? (
-        <div className="rounded-lg border border-driftwood/30 bg-white p-8 text-center text-driftwood shadow-sm">
+        <div className="rounded-lg border border-soft-moonstone/30 bg-white p-8 text-center text-soft-moonstone shadow-sm">
           No messages yet.
         </div>
       ) : (
@@ -94,14 +94,14 @@ export default function MessagesPage() {
               onClick={() => setSelectedId(msg.id)}
               className={`w-full rounded-lg border p-4 text-left transition-colors ${
                 msg.read
-                  ? "border-driftwood/30 bg-white hover:bg-foam-white"
-                  : "border-lunar-gold/30 bg-lunar-gold/5 hover:bg-lunar-gold/10"
+                  ? "border-soft-moonstone/30 bg-white hover:bg-dawn-light"
+                  : "border-bright-orange/30 bg-bright-orange/5 hover:bg-bright-orange/10"
               }`}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <div
-                    className={`truncate text-sm ${msg.read ? "text-deep-ocean" : "font-bold text-deep-current"}`}
+                    className={`truncate text-sm ${msg.read ? "text-deep-ocean" : "font-bold text-deep-tide-blue"}`}
                   >
                     {msg.subject}
                   </div>

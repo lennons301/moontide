@@ -32,7 +32,7 @@ export default function BundlesPage() {
     const colours: Record<string, string> = {
       active: "bg-seagrass/20 text-seagrass",
       expired: "bg-red-100 text-red-700",
-      exhausted: "bg-shallow-water/20 text-shallow-water",
+      exhausted: "bg-ocean-light-blue/20 text-ocean-light-blue",
     };
     return (
       <span
@@ -53,11 +53,13 @@ export default function BundlesPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold text-deep-current">Bundles</h1>
+      <h1 className="mb-6 text-2xl font-semibold text-deep-tide-blue">
+        Bundles
+      </h1>
 
-      <div className="overflow-x-auto rounded-lg border border-driftwood/30 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-lg border border-soft-moonstone/30 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-driftwood/20 bg-foam-white text-xs uppercase tracking-wider text-deep-ocean">
+          <thead className="border-b border-soft-moonstone/20 bg-dawn-light text-xs uppercase tracking-wider text-deep-ocean">
             <tr>
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Purchased</th>
@@ -66,12 +68,12 @@ export default function BundlesPage() {
               <th className="px-4 py-3">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-driftwood/10">
+          <tbody className="divide-y divide-soft-moonstone/10">
             {loading ? (
               <tr>
                 <td
                   colSpan={5}
-                  className="px-4 py-8 text-center text-driftwood"
+                  className="px-4 py-8 text-center text-soft-moonstone"
                 >
                   Loading...
                 </td>
@@ -80,15 +82,15 @@ export default function BundlesPage() {
               <tr>
                 <td
                   colSpan={5}
-                  className="px-4 py-8 text-center text-driftwood"
+                  className="px-4 py-8 text-center text-soft-moonstone"
                 >
                   No bundles yet.
                 </td>
               </tr>
             ) : (
               bundleList.map((bundle) => (
-                <tr key={bundle.id} className="hover:bg-shallow-water/10">
-                  <td className="px-4 py-3 font-medium text-deep-current">
+                <tr key={bundle.id} className="hover:bg-ocean-light-blue/10">
+                  <td className="px-4 py-3 font-medium text-deep-tide-blue">
                     {bundle.customerEmail}
                   </td>
                   <td className="px-4 py-3">

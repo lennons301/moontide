@@ -28,7 +28,7 @@ function MoonCycle() {
       width="56"
       height="56"
       viewBox="0 0 56 56"
-      className="mb-3 text-deep-current"
+      className="mb-3 text-deep-tide-blue"
     >
       <title>Six moon phases in a circle</title>
       {/* Full moon — 12 o'clock: filled circle */}
@@ -125,36 +125,36 @@ function MoonCycle() {
 
 export function BookingOptions() {
   return (
-    <section className="bg-white py-16 px-6 border-t border-driftwood">
+    <section className="bg-white py-16 px-6 border-t border-soft-moonstone">
       <div className="max-w-2xl mx-auto text-center">
-        <h2 className="text-xl font-semibold text-deep-current mb-1">
+        <h2 className="text-xl font-semibold text-deep-tide-blue mb-1">
           Book a class
         </h2>
-        <div className="w-8 h-0.5 bg-lunar-gold mx-auto mb-8" />
+        <div className="w-8 h-0.5 bg-bright-orange mx-auto mb-8" />
         <div className="grid grid-cols-2 gap-4 max-w-sm mx-auto items-end">
           <Link
             href="/book"
-            className="flex flex-col items-center justify-end p-6 border border-driftwood rounded-lg hover:border-lunar-gold transition-colors"
+            className="flex flex-col items-center justify-end p-6 border border-soft-moonstone rounded-lg hover:border-bright-orange transition-colors"
           >
             <svg
               width="56"
               height="56"
               viewBox="0 0 56 56"
-              className="mb-3 text-deep-current"
+              className="mb-3 text-deep-tide-blue"
             >
               <title>Full moon</title>
               <circle cx="28" cy="28" r="18" fill="currentColor" />
             </svg>
-            <span className="text-sm font-semibold text-deep-current">
+            <span className="text-sm font-semibold text-deep-tide-blue">
               Individual Class
             </span>
           </Link>
           <Link
             href="/book/bundle"
-            className="flex flex-col items-center justify-end p-6 border border-driftwood rounded-lg hover:border-lunar-gold transition-colors"
+            className="flex flex-col items-center justify-end p-6 border border-soft-moonstone rounded-lg hover:border-bright-orange transition-colors"
           >
             <MoonCycle />
-            <span className="text-sm font-semibold text-deep-current">
+            <span className="text-sm font-semibold text-deep-tide-blue">
               Six Class Bundle
             </span>
           </Link>

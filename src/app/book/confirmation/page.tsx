@@ -12,7 +12,7 @@ export default async function ConfirmationPage({
   const isBundle = type === "bundle";
 
   return (
-    <section className="py-16 px-6 bg-foam-white">
+    <section className="py-16 px-6 bg-dawn-light">
       <div className="max-w-lg mx-auto text-center">
         <div className="w-16 h-16 rounded-full bg-seagrass/20 flex items-center justify-center mx-auto mb-6">
           <svg
@@ -32,10 +32,10 @@ export default async function ConfirmationPage({
           </svg>
         </div>
 
-        <h1 className="text-3xl md:text-4xl font-semibold text-deep-current mb-3">
+        <h1 className="text-3xl md:text-4xl font-semibold text-deep-tide-blue mb-3">
           {isBundle ? "Bundle Purchased!" : "Booking Confirmed!"}
         </h1>
-        <div className="w-8 h-0.5 bg-lunar-gold mx-auto mb-6" />
+        <div className="w-8 h-0.5 bg-bright-orange mx-auto mb-6" />
 
         <p className="text-deep-ocean leading-relaxed mb-8">
           {isBundle
@@ -46,13 +46,13 @@ export default async function ConfirmationPage({
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link
             href="/book"
-            className="inline-block bg-lunar-gold text-foam-white px-6 py-3 rounded-md font-semibold hover:bg-lunar-gold/90 transition-colors"
+            className="inline-block bg-bright-orange text-dawn-light px-6 py-3 rounded-md font-semibold hover:bg-bright-orange/90 transition-colors"
           >
             {isBundle ? "Book a Class" : "Book Another"}
           </Link>
           <Link
             href="/"
-            className="inline-block border border-driftwood text-deep-current px-6 py-3 rounded-md font-semibold hover:bg-driftwood/30 transition-colors"
+            className="inline-block border border-soft-moonstone text-deep-tide-blue px-6 py-3 rounded-md font-semibold hover:bg-soft-moonstone/30 transition-colors"
           >
             Home
           </Link>
