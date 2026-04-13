@@ -8,6 +8,13 @@
       "when": 1775809496529,
       "tag": "0000_awesome_zombie",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776063553706,
+      "tag": "0001_fancy_gressill",
+      "breakpoints": true
     }
   ]
 }
