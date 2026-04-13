@@ -1,0 +1,274 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+interface ClassType {
+  id: number;
+  slug: string;
+  title: string;
+  category: string;
+  bookingType: string;
+  active: boolean;
+  priceInPence: number;
+}
+
+interface Schedule {
+  schedules: {
+    id: number;
+    classId: number;
+    date: string;
+    startTime: string;
+    endTime: string;
+    capacity: number;
+    bookedCount: number;
+    location: string | null;
+    recurringRule: string | null;
+    status: string;
+  };
+  classes: ClassType;
+}
+
+export default function SchedulePage() {
+  const [scheduleList, setScheduleList] = useState<Schedule[]>([]);
+  const [classTypes, setClassTypes] = useState<ClassType[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [formData, setFormData] = useState({
+    classId: "",
+    date: "",
+    startTime: "",
+    endTime: "",
+    capacity: "8",
+    location: "",
+  });
+
+  const fetchSchedules = useCallback(async () => {
+    const res = await fetch("/api/admin/schedules");
+    const data = await res.json();
+    setScheduleList(data);
+  }, []);
+
+  const fetchClassTypes = useCallback(async () => {
+    const res = await fetch("/api/admin/classes");
+    const data = await res.json();
+    setClassTypes(data);
+  }, []);
+
+  useEffect(() => {
+    fetchSchedules();
+    fetchClassTypes();
+  }, [fetchSchedules, fetchClassTypes]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+
+    const res = await fetch("/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classId: Number(formData.classId),
+        date: formData.date,
+        startTime: formData.startTime,
+        endTime: formData.endTime,
+        capacity: Number(formData.capacity),
+        location: formData.location || null,
+      }),
+    });
+
+    if (res.ok) {
+      setFormData({
+        classId: "",
+        date: "",
+        startTime: "",
+        endTime: "",
+        capacity: "8",
+        location: "",
+      });
+      setShowForm(false);
+      await fetchSchedules();
+    }
+
+    setSubmitting(false);
+  }
+
+  function statusBadge(status: string) {
+    const colours: Record<string, string> = {
+      open: "bg-seagrass/20 text-seagrass",
+      full: "bg-lunar-gold/20 text-lunar-gold",
+      cancelled: "bg-red-100 text-red-700",
+    };
+    return (
+      <span
+        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colours[status] || "bg-gray-100 text-gray-600"}`}
+      >
+        {status}
+      </span>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-semibold text-deep-current">Schedule</h1>
+        <Button onClick={() => setShowForm(!showForm)}>
+          {showForm ? "Cancel" : "New Class"}
+        </Button>
+      </div>
+
+      {showForm && (
+        <form
+          onSubmit={handleSubmit}
+          className="mb-8 rounded-lg border border-driftwood/30 bg-white p-6 shadow-sm"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="classId">Class Type</Label>
+              <select
+                id="classId"
+                value={formData.classId}
+                onChange={(e) =>
+                  setFormData({ ...formData, classId: e.target.value })
+                }
+                className="mt-1 h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                required
+              >
+                <option value="">Select a class</option>
+                {classTypes.map((ct) => (
+                  <option key={ct.id} value={ct.id}>
+                    {ct.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="date">Date</Label>
+              <Input
+                id="date"
+                type="date"
+                value={formData.date}
+                onChange={(e) =>
+                  setFormData({ ...formData, date: e.target.value })
+                }
+                className="mt-1"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="startTime">Start Time</Label>
+              <Input
+                id="startTime"
+                type="time"
+                value={formData.startTime}
+                onChange={(e) =>
+                  setFormData({ ...formData, startTime: e.target.value })
+                }
+                className="mt-1"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="endTime">End Time</Label>
+              <Input
+                id="endTime"
+                type="time"
+                value={formData.endTime}
+                onChange={(e) =>
+                  setFormData({ ...formData, endTime: e.target.value })
+                }
+                className="mt-1"
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="capacity">Capacity</Label>
+              <Input
+                id="capacity"
+                type="number"
+                min="1"
+                value={formData.capacity}
+                onChange={(e) =>
+                  setFormData({ ...formData, capacity: e.target.value })
+                }
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="location">Location (optional)</Label>
+              <Input
+                id="location"
+                type="text"
+                value={formData.location}
+                onChange={(e) =>
+                  setFormData({ ...formData, location: e.target.value })
+                }
+                className="mt-1"
+                placeholder="e.g. Studio 1, Hove"
+              />
+            </div>
+          </div>
+          <div className="mt-4">
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Creating..." : "Create Schedule"}
+            </Button>
+          </div>
+        </form>
+      )}
+
+      <div className="overflow-x-auto rounded-lg border border-driftwood/30 bg-white shadow-sm">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-driftwood/20 bg-foam-white text-xs uppercase tracking-wider text-deep-ocean">
+            <tr>
+              <th className="px-4 py-3">Class</th>
+              <th className="px-4 py-3">Date</th>
+              <th className="px-4 py-3">Time</th>
+              <th className="px-4 py-3">Location</th>
+              <th className="px-4 py-3">Booked</th>
+              <th className="px-4 py-3">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-driftwood/10">
+            {scheduleList.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="px-4 py-8 text-center text-driftwood"
+                >
+                  No scheduled classes yet.
+                </td>
+              </tr>
+            ) : (
+              scheduleList.map((item) => (
+                <tr
+                  key={item.schedules.id}
+                  className="hover:bg-shallow-water/10"
+                >
+                  <td className="px-4 py-3 font-medium text-deep-current">
+                    {item.classes.title}
+                  </td>
+                  <td className="px-4 py-3">{item.schedules.date}</td>
+                  <td className="px-4 py-3">
+                    {item.schedules.startTime} - {item.schedules.endTime}
+                  </td>
+                  <td className="px-4 py-3">
+                    {item.schedules.location || "-"}
+                  </td>
+                  <td className="px-4 py-3">
+                    {item.schedules.bookedCount}/{item.schedules.capacity}
+                  </td>
+                  <td className="px-4 py-3">
+                    {statusBadge(item.schedules.status)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

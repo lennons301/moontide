@@ -1,0 +1,212 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Hoisted mocks
+const {
+  mockSelectFrom,
+  mockInnerJoin,
+  mockOrderBy,
+  mockInsertValues,
+  mockReturning,
+} = vi.hoisted(() => {
+  const mockOrderBy = vi.fn().mockResolvedValue([]);
+  const mockInnerJoin = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
+  const mockSelectFrom = vi.fn().mockReturnValue({ innerJoin: mockInnerJoin });
+  const mockReturning = vi.fn().mockResolvedValue([
+    {
+      id: 1,
+      classId: 1,
+      date: "2026-05-01",
+      startTime: "09:00",
+      endTime: "10:00",
+      capacity: 8,
+    },
+  ]);
+  const mockInsertValues = vi
+    .fn()
+    .mockReturnValue({ returning: mockReturning });
+  return {
+    mockSelectFrom,
+    mockInnerJoin,
+    mockOrderBy,
+    mockInsertValues,
+    mockReturning,
+  };
+});
+
+vi.mock("@/lib/db", () => ({
+  db: {
+    select: vi.fn().mockReturnValue({
+      from: mockSelectFrom,
+    }),
+    insert: vi.fn().mockReturnValue({
+      values: mockInsertValues,
+    }),
+  },
+}));
+
+vi.mock("@/lib/db/schema", () => ({
+  classes: { id: "id", active: "active" },
+  schedules: { id: "id", classId: "class_id" },
+}));
+
+vi.mock("drizzle-orm", () => ({
+  eq: vi.fn((...args: unknown[]) => args),
+  desc: vi.fn((col: unknown) => col),
+}));
+
+import { GET, POST } from "@/app/api/admin/schedules/route";
+
+describe("GET /api/admin/schedules", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSelectFrom.mockReturnValue({ innerJoin: mockInnerJoin });
+    mockInnerJoin.mockReturnValue({ orderBy: mockOrderBy });
+    mockOrderBy.mockResolvedValue([]);
+  });
+
+  it("returns 200 with schedule list", async () => {
+    const mockSchedules = [
+      {
+        schedules: {
+          id: 1,
+          classId: 1,
+          date: "2026-05-01",
+          startTime: "09:00",
+          endTime: "10:00",
+          capacity: 8,
+          bookedCount: 3,
+          location: "Studio 1",
+          status: "open",
+        },
+        classes: {
+          id: 1,
+          slug: "prenatal",
+          title: "Prenatal Yoga",
+          category: "class",
+          bookingType: "stripe",
+          active: true,
+          priceInPence: 1500,
+        },
+      },
+    ];
+    mockOrderBy.mockResolvedValue(mockSchedules);
+
+    const response = await GET();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual(mockSchedules);
+  });
+
+  it("returns 200 with empty list when no schedules", async () => {
+    mockOrderBy.mockResolvedValue([]);
+
+    const response = await GET();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual([]);
+  });
+});
+
+describe("POST /api/admin/schedules", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockInsertValues.mockReturnValue({ returning: mockReturning });
+    mockReturning.mockResolvedValue([
+      {
+        id: 1,
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        capacity: 8,
+        bookedCount: 0,
+        location: null,
+        status: "open",
+      },
+    ]);
+  });
+
+  it("returns 201 when creating a schedule", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.id).toBe(1);
+    expect(body.classId).toBe(1);
+  });
+
+  it("returns 201 with custom capacity and location", async () => {
+    mockReturning.mockResolvedValue([
+      {
+        id: 2,
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        capacity: 12,
+        bookedCount: 0,
+        location: "Studio 1, Hove",
+        status: "open",
+      },
+    ]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        capacity: 12,
+        location: "Studio 1, Hove",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.capacity).toBe(12);
+    expect(body.location).toBe("Studio 1, Hove");
+  });
+
+  it("returns 400 when required fields are missing", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ classId: 1 }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Missing required fields");
+  });
+
+  it("returns 400 when classId is missing", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Missing required fields");
+  });
+});
