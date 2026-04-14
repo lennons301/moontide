@@ -27,11 +27,16 @@ function ClassGrid({ services }: { services: Service[] }) {
             ) : (
               <div className="absolute inset-0 bg-gradient-to-b from-ocean-light-blue/20 to-ocean-light-blue/40" />
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-deep-tide-blue/60 to-transparent" />
-            <div className="absolute inset-0 flex items-center justify-center p-3">
-              <h3 className="text-base md:text-xl font-semibold text-dawn-light text-center font-[family-name:var(--font-heading)]">
+            <div className="absolute inset-0 bg-gradient-to-t from-deep-tide-blue/60 to-transparent group-hover:from-deep-tide-blue/80 group-hover:to-deep-tide-blue/40 transition-all duration-300" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+              <h3 className="text-base md:text-xl font-semibold text-dawn-light font-[family-name:var(--font-heading)]">
                 {service.title}
               </h3>
+              {service.shortDescription && (
+                <p className="text-dawn-light/0 group-hover:text-dawn-light/90 text-sm leading-relaxed mt-2 max-w-[90%] transition-colors duration-300">
+                  {service.shortDescription}
+                </p>
+              )}
             </div>
           </Link>
         );
