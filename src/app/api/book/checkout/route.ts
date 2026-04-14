@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { classes, schedules } from "@/lib/db/schema";
 import { getStripe } from "@/lib/stripe";
 
-const BUNDLE_PRICE_PENCE = 7500; // £75 for 6 classes — Gabrielle to confirm
+const BUNDLE_PRICE_PENCE = 6600;
 const BUNDLE_CREDITS = 6;
 
 export async function POST(request: Request) {
