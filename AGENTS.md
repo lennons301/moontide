@@ -124,7 +124,7 @@ drizzle/
 - **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on proxy for page access).
 - **Stripe webhook:** At `/api/stripe/webhook` — reads raw body for signature verification, never parse JSON before verifying.
 - **Booking flow:** `/api/book/checkout` (Stripe Checkout) and `/api/book/redeem` (bundle credit). Checkout handles both individual and bundle purchases via `type` field.
-- **Prices in pence:** Class prices stored in `classes.priceInPence`. Bundle price is a constant in the checkout route (£75 / 7500 pence for 6 classes).
+- **Prices in pence:** Class prices stored in `classes.priceInPence` (£12.50 / 1250 pence). Bundle price is a constant in the checkout route (£66 / 6600 pence for 6 classes).
 - **Bundle redemption:** Email-based lookup, no customer auth required. 90-day expiry from purchase.
 - **DB transactions:** Multi-step mutations (e.g., booking insert + count increment) wrapped in `db.transaction()` for atomicity.
 - **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI — all tests use mocks.
