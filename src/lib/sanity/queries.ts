@@ -39,7 +39,9 @@ export const communityEventsQuery = `*[_type == "communityEvent"] | order(date a
 export const trainerQuery = `*[_type == "trainer"][0]{
   _id,
   name,
+  shortBio,
   bio,
   photo,
+  heroImage,
   qualifications
 }`;

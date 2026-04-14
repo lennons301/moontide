@@ -31,7 +31,9 @@ export interface CommunityEvent {
 export interface Trainer {
   _id: string;
   name: string;
+  shortBio?: string;
   bio?: PortableTextBlock[];
   photo?: Image;
+  heroImage?: Image;
   qualifications?: { year: string; description: string }[];
 }
