@@ -3,27 +3,40 @@ import { BookingOptions } from "@/components/booking-options";
 import { ContactForm } from "@/components/contact-form";
 import { Hero } from "@/components/hero";
 import { ServicesSection } from "@/components/services-section";
-import { sanityClient } from "@/lib/sanity/client";
-import { servicesQuery, trainerQuery } from "@/lib/sanity/queries";
-import type { Service, Trainer } from "@/lib/sanity/types";
+import { sanityClient, urlFor } from "@/lib/sanity/client";
+import {
+  servicesQuery,
+  siteSettingsQuery,
+  trainerQuery,
+} from "@/lib/sanity/queries";
+import type { Service, SiteSettings, Trainer } from "@/lib/sanity/types";
 
 export const revalidate = 3600;
 
 export default async function HomePage() {
-  const [services, trainer] = await Promise.all([
+  const [services, trainer, siteSettings] = await Promise.all([
     sanityClient.fetch<Service[]>(servicesQuery),
     sanityClient.fetch<Trainer | null>(trainerQuery),
+    sanityClient.fetch<SiteSettings | null>(siteSettingsQuery),
   ]);
+
+  const photoUrl = trainer?.photo
+    ? urlFor(trainer.photo).width(160).height(160).url()
+    : undefined;
 
   return (
     <>
-      <Hero />
+      <Hero tagline={siteSettings?.heroTagline ?? undefined} />
       <BookingOptions />
       <ServicesSection services={services} />
       {trainer && (
         <AboutPreview
           name={trainer.name}
-          shortBio="Yoga teacher and transformational coach supporting women through every phase of life."
+          shortBio={
+            trainer.shortBio ??
+            "Yoga teacher and transformational coach supporting women through every phase of life."
+          }
+          photoUrl={photoUrl}
         />
       )}
       <section className="py-16 px-6 bg-dawn-light">

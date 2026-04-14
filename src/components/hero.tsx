@@ -1,11 +1,18 @@
 import Image from "next/image";
 import Link from "next/link";
 
+const fallbackTagline = `moontide
+/ˈmuːn.taɪd/ · noun
+The pull of the moon on the tides — a reminder that change is natural, cyclical, and part of who we are.`;
+
 interface HeroProps {
   imageUrl?: string;
+  tagline?: string;
 }
 
-export function Hero({ imageUrl }: HeroProps) {
+export function Hero({ imageUrl, tagline }: HeroProps) {
+  const lines = (tagline || fallbackTagline).split("\n").filter(Boolean);
+
   return (
     <section className="relative min-h-[70vh] flex items-center justify-center">
       {imageUrl ? (
@@ -31,12 +38,22 @@ export function Hero({ imageUrl }: HeroProps) {
         <h1 className="text-4xl md:text-5xl font-light tracking-[0.12em] text-deep-tide-blue mb-4">
           Moontide
         </h1>
-        <p className="text-deep-ocean max-w-md mx-auto mb-2 italic">moontide</p>
-        <p className="text-sm text-deep-ocean mb-1">/ˈmuːn.taɪd/ · noun</p>
-        <p className="text-deep-ocean max-w-sm mx-auto mb-8 leading-relaxed">
-          The pull of the moon on the tides — a reminder that change is natural,
-          cyclical, and part of who we are.
-        </p>
+        <div className="max-w-md mx-auto mb-8 space-y-1">
+          {lines.map((line, i) => (
+            <p
+              key={i}
+              className={
+                i === 0
+                  ? "text-deep-ocean italic"
+                  : i === 1
+                    ? "text-sm text-deep-ocean"
+                    : "text-deep-ocean leading-relaxed"
+              }
+            >
+              {line}
+            </p>
+          ))}
+        </div>
         <div className="flex gap-3 justify-center flex-wrap">
           <Link
             href="/book"
