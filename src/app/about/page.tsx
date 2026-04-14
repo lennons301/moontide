@@ -49,8 +49,29 @@ export default async function AboutPage() {
     ? urlFor(trainer.photo).width(320).height(320).url()
     : null;
 
+  const heroImageUrl = trainer?.heroImage
+    ? urlFor(trainer.heroImage).width(1200).height(500).url()
+    : null;
+
   return (
     <>
+      {/* Hero image */}
+      <div className="relative h-64 md:h-96 bg-ocean-light-blue/30">
+        {heroImageUrl ? (
+          <Image
+            src={heroImageUrl}
+            alt="About Moontide"
+            fill
+            className="object-cover"
+            priority
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-deep-ocean/40">
+            [ Photography — about ]
+          </div>
+        )}
+      </div>
+
       {/* Hero */}
       <section className="py-16 px-6 bg-dawn-light">
         <div className="max-w-2xl mx-auto text-center">
