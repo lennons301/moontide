@@ -12,6 +12,20 @@ export const trainer = defineType({
       validation: (rule) => rule.required(),
     }),
     defineField({
+      name: "shortBio",
+      title: "Short Bio",
+      type: "string",
+      description:
+        "One-liner shown on the homepage about section (e.g. 'Yoga teacher and transformational coach...')",
+    }),
+    defineField({
+      name: "heroImage",
+      title: "Hero Image",
+      type: "image",
+      options: { hotspot: true },
+      description: "Banner image shown at the top of the About page",
+    }),
+    defineField({
       name: "bio",
       title: "Bio",
       type: "array",

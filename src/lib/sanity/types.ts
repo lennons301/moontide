@@ -2,6 +2,7 @@ import type { Image, PortableTextBlock } from "sanity";
 
 export interface SiteSettings {
   title: string;
+  heroTagline?: string;
   contactEmail: string;
   instagramUrl?: string;
   footerLinks?: { label: string; href: string }[];
@@ -30,7 +31,9 @@ export interface CommunityEvent {
 export interface Trainer {
   _id: string;
   name: string;
+  shortBio?: string;
   bio?: PortableTextBlock[];
   photo?: Image;
+  heroImage?: Image;
   qualifications?: { year: string; description: string }[];
 }
