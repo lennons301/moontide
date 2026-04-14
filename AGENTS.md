@@ -51,6 +51,7 @@ src/
         bookings/         # GET all bookings
         bundles/          # GET all bundles
         messages/         # GET contact submissions
+      revalidate/           # Sanity webhook for on-demand ISR revalidation
     admin/
       login/              # Admin login page
       schedule/           # Schedule management (CRUD)
@@ -128,6 +129,7 @@ drizzle/
 - **DB transactions:** Multi-step mutations (e.g., booking insert + count increment) wrapped in `db.transaction()` for atomicity.
 - **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI — all tests use mocks.
 - **Secrets sync:** Doppler-Vercel integration auto-syncs secrets. Doppler `prd` → Vercel Production, Doppler `stg` → Vercel Preview. Never manually set env vars in Vercel that Doppler manages.
+- **CMS revalidation:** Sanity webhook POSTs to `/api/revalidate` on publish. Handler verifies `SANITY_WEBHOOK_SECRET` header, maps document types to paths, calls `revalidatePath()`. All CMS pages also have `revalidate = 3600` as a fallback.
 
 ## Environments
 

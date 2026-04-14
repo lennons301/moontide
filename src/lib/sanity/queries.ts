@@ -27,14 +27,6 @@ export const serviceBySlugQuery = `*[_type == "service" && slug.current == $slug
   bookingType
 }`;
 
-export const pageBySlugQuery = `*[_type == "page" && slug.current == $slug][0]{
-  _id,
-  title,
-  slug,
-  heroImage,
-  content
-}`;
-
 export const communityEventsQuery = `*[_type == "communityEvent"] | order(date asc){
   _id,
   title,

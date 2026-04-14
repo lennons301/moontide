@@ -7,6 +7,8 @@ import type { CommunityEvent, Service } from "@/lib/sanity/types";
 
 export const metadata: Metadata = { title: "Creating Community — Moontide" };
 
+export const revalidate = 3600;
+
 const fallbackDescription = `Connection is at the heart of everything I do. Creating Community is about bringing women together to share, to grow and to be seen — away from the relentless pace of everyday life.
 
 Gatherings take the form of seasonal rituals, workshops, day retreats and online events. Each one is thoughtfully held, weaving together movement, reflection, conversation and rest.

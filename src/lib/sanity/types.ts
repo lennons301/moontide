@@ -7,14 +7,6 @@ export interface SiteSettings {
   footerLinks?: { label: string; href: string }[];
 }
 
-export interface Page {
-  _id: string;
-  title: string;
-  slug: { current: string };
-  heroImage?: Image;
-  content?: PortableTextBlock[];
-}
-
 export interface Service {
   _id: string;
   title: string;

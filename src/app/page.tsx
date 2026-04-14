@@ -7,7 +7,7 @@ import { sanityClient } from "@/lib/sanity/client";
 import { servicesQuery, trainerQuery } from "@/lib/sanity/queries";
 import type { Service, Trainer } from "@/lib/sanity/types";
 
-export const revalidate = 60; // Revalidate CMS content every 60 seconds
+export const revalidate = 3600;
 
 export default async function HomePage() {
   const [services, trainer] = await Promise.all([
