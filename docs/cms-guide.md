@@ -41,8 +41,10 @@ The trainer profile appears on the **homepage** (about section) and the **About 
 
 **What you can change:**
 - **Name**
+- **Short bio** — one-liner shown on the homepage about section
 - **Bio** — rich text shown on the About page
-- **Photo** — shown on the About page
+- **Photo** — circular portrait shown on the About page
+- **Hero image** — banner image shown at the top of the About page
 - **Qualifications** — list of year + description, shown on the About page
 
 ### Community Events
@@ -62,11 +64,12 @@ Events are shown in date order (earliest first). Past events remain visible unti
 Global settings for the website.
 
 **What you can change:**
+- **Hero tagline** — the text shown below the Moontide logo on the homepage (the pronunciation and definition). Use line breaks to separate lines: first line appears in italics, second line in small text, remaining lines as normal text.
 - **Contact email**
 - **Instagram URL**
 - **Footer links**
 
-> **Note:** Site Settings are not currently wired into the website — changes here won't appear yet. This will be connected in a future update.
+> **Note:** Contact email, Instagram URL, and footer links are not currently wired into the website — changes to these fields won't appear yet. The hero tagline is live.
 
 ---
 
@@ -75,7 +78,7 @@ Global settings for the website.
 These parts of the website are built into the code and need a developer to change:
 
 - Navigation menu links and structure
-- Page layouts, section order, and design
+- Page layouts and section order
 - The booking page (driven by the database, not Sanity)
 - Contact form
 - Terms and conditions page
