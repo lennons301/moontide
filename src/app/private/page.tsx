@@ -8,6 +8,8 @@ import type { Service } from "@/lib/sanity/types";
 
 export const metadata: Metadata = { title: "Private Classes — Moontide" };
 
+export const revalidate = 3600;
+
 export default async function PrivatePage() {
   let service: Service | null = null;
   try {

@@ -8,6 +8,8 @@ import type { Trainer } from "@/lib/sanity/types";
 
 export const metadata: Metadata = { title: "About — Moontide" };
 
+export const revalidate = 3600;
+
 const fallbackQualifications = [
   {
     year: "2024",

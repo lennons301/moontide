@@ -6,6 +6,8 @@ import { sanityClient, urlFor } from "@/lib/sanity/client";
 import { serviceBySlugQuery } from "@/lib/sanity/queries";
 import type { Service } from "@/lib/sanity/types";
 
+export const revalidate = 3600;
+
 const knownSlugs = ["prenatal", "postnatal", "baby-yoga", "vinyasa"];
 
 const fallbackContent: Record<string, { title: string; description: string }> =

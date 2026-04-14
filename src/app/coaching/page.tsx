@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   title: "Transformational Coaching — Moontide",
 };
 
+export const revalidate = 3600;
+
 const fallbackDescription = `Life is full of transitions — some chosen, some not. Transformational coaching offers a dedicated space to explore what is shifting in your life, to identify what you truly want, and to move forward with clarity and confidence.
 
 Working one-to-one, we will draw on a range of embodied and somatic practices alongside coaching methodologies to support you in reconnecting with your own wisdom. Whether you are navigating a career change, a shift in identity, a relationship transition or simply a sense that something needs to change, coaching can help you find your way.
