@@ -88,7 +88,7 @@ src/
   sanity/
     schema/               # Sanity document schemas (siteSettings, service, page, trainer, communityEvent)
     structure.ts          # Sanity Studio desk structure
-  middleware.ts             # Admin route protection (/admin/* except /admin/login)
+  proxy.ts                  # Admin route protection (/admin/* except /admin/login)
 scripts/
   seed-sanity.ts          # CMS seed script
   seed-classes.ts         # Seed class types (prenatal, postnatal, baby-yoga, vinyasa)
@@ -119,13 +119,15 @@ drizzle/
 - **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
 - **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
 - **Linting:** Biome runs on pre-commit via husky. Run `just lint` to check/fix manually.
-- **Auth:** Better Auth protects `/admin/*` routes via middleware. Login at `/admin/login`.
-- **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on middleware for page access).
+- **Auth:** Better Auth protects `/admin/*` routes via proxy. Login at `/admin/login`.
+- **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on proxy for page access).
 - **Stripe webhook:** At `/api/stripe/webhook` — reads raw body for signature verification, never parse JSON before verifying.
 - **Booking flow:** `/api/book/checkout` (Stripe Checkout) and `/api/book/redeem` (bundle credit). Checkout handles both individual and bundle purchases via `type` field.
 - **Prices in pence:** Class prices stored in `classes.priceInPence`. Bundle price is a constant in the checkout route (£75 / 7500 pence for 6 classes).
 - **Bundle redemption:** Email-based lookup, no customer auth required. 90-day expiry from purchase.
 - **DB transactions:** Multi-step mutations (e.g., booking insert + count increment) wrapped in `db.transaction()` for atomicity.
+- **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI — all tests use mocks.
+- **Secrets sync:** Doppler-Vercel integration auto-syncs secrets. Doppler `prd` → Vercel Production, Doppler `stg` → Vercel Preview. Never manually set env vars in Vercel that Doppler manages.
 
 ## Environments
 
