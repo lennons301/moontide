@@ -18,6 +18,14 @@ export const siteSettings = defineType({
       initialValue: "gwaring5@googlemail.com",
     }),
     defineField({
+      name: "heroTagline",
+      title: "Hero Tagline",
+      type: "text",
+      rows: 4,
+      description:
+        "Text shown below the logo on the homepage. Use line breaks to separate lines (e.g. pronunciation on one line, definition on the next).",
+    }),
+    defineField({
       name: "instagramUrl",
       title: "Instagram URL",
       type: "url",

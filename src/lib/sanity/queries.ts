@@ -1,5 +1,6 @@
 export const siteSettingsQuery = `*[_type == "siteSettings"][0]{
   title,
+  heroTagline,
   contactEmail,
   instagramUrl,
   footerLinks

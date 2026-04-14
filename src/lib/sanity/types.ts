@@ -2,6 +2,7 @@ import type { Image, PortableTextBlock } from "sanity";
 
 export interface SiteSettings {
   title: string;
+  heroTagline?: string;
   contactEmail: string;
   instagramUrl?: string;
   footerLinks?: { label: string; href: string }[];
