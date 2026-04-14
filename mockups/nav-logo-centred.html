@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nav Logo Mockup — Centred</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: system-ui, sans-serif; background: #f9f7f4; }
+
+            /* Nav bar */
+            header {
+              position: sticky; top: 0; z-index: 50;
+              background: #faf9f6;
+              border-bottom: 1px solid #c4a882;
+              padding: 0.75rem 1.5rem;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+            }
+
+            /* Burger */
+            .burger { display: flex; flex-direction: column; gap: 5px; padding: 0.5rem; width: 2.5rem; background: none; border: none; cursor: pointer; }
+            .burger span { display: block; width: 1.25rem; height: 2px; background: #1a3a4a; }
+
+            /* Centred logo */
+            .logo-link {
+              position: absolute;
+              left: 50%;
+              transform: translateX(-50%);
+            }
+            .logo-link img {
+              height: 48px;
+              width: auto;
+            }
+
+            /* Right spacer to balance burger */
+            .spacer { width: 2.5rem; }
+
+            /* Page body placeholder */
+            .page-body {
+              max-width: 48rem;
+              margin: 2rem auto;
+              padding: 0 1.5rem;
+              color: #1a3a4a;
+            }
+            .page-body h1 { font-size: 1.5rem; margin-bottom: 1rem; letter-spacing: 0.1em; }
+            .page-body p { line-height: 1.6; color: #4a7a8a; }
+
+            .note {
+              margin-top: 2rem;
+              padding: 1rem;
+              background: #fff3cd;
+              border: 1px solid #e0c36a;
+              border-radius: 0.5rem;
+              font-size: 0.85rem;
+              color: #664d03;
+            }
+  </style>
+</head>
+<body>
+  <header>
+    <button type="button" class="burger" aria-label="Open menu">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+    <a href="/" class="logo-link">
+      <img src="../public/images/moontide-logo.png" alt="Moontide Yoga" />
+    </a>
+    <div class="spacer" aria-hidden="true"></div>
+  </header>
+
+  <div class="page-body">
+    <h1>Nav Logo Mockup</h1>
+    <p>
+      Logo centred in the nav bar, burger menu stays left, right side balanced
+      with a spacer. This keeps the layout symmetrical and puts the brand
+      front and centre.
+    </p>
+    <div class="note">
+      <strong>Note:</strong> The logo currently has a solid blue background.
+      A transparent-background PNG (or SVG) would blend cleanly into the
+      white nav bar.
+    </div>
+  </div>
+</body>
+</html>
