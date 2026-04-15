@@ -38,10 +38,12 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/db/schema", () => ({
   classes: { id: "id" },
   schedules: { id: "id", classId: "class_id" },
+  bundleConfig: { id: "id", active: "active" },
 }));
 
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((...args: unknown[]) => args),
+  and: vi.fn((...args: unknown[]) => args),
 }));
 
 import { POST } from "@/app/api/book/checkout/route";
@@ -214,11 +216,27 @@ describe("POST /api/book/checkout", () => {
   });
 
   it("returns checkout URL for bundle purchase", async () => {
+    // Mock bundleConfig query — selectFrom is called for bundle config lookup
+    mockSelectFrom.mockReturnValueOnce({
+      innerJoin: mockInnerJoin,
+      where: vi.fn().mockResolvedValue([
+        {
+          id: 1,
+          name: "6-Class Bundle",
+          priceInPence: 6600,
+          credits: 6,
+          expiryDays: 90,
+          active: true,
+        },
+      ]),
+    });
+
     const request = new Request("http://localhost:3000/api/book/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         type: "bundle",
+        bundleConfigId: 1,
         customerEmail: "jane@example.com",
       }),
     });
@@ -228,7 +246,7 @@ describe("POST /api/book/checkout", () => {
     const body = await response.json();
     expect(body.url).toBe("https://checkout.stripe.com/test");
 
-    // Verify Stripe was called with bundle params
+    // Verify Stripe was called with DB-sourced bundle params
     expect(mockCheckoutSessionsCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: "payment",
@@ -248,9 +266,32 @@ describe("POST /api/book/checkout", () => {
         ],
         metadata: expect.objectContaining({
           type: "bundle",
+          bundleConfigId: "1",
           customerEmail: "jane@example.com",
         }),
       }),
     );
+  });
+
+  it("returns 400 when bundle config not found", async () => {
+    mockSelectFrom.mockReturnValueOnce({
+      innerJoin: mockInnerJoin,
+      where: vi.fn().mockResolvedValue([]),
+    });
+
+    const request = new Request("http://localhost:3000/api/book/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "bundle",
+        bundleConfigId: 999,
+        customerEmail: "jane@example.com",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Bundle configuration not found");
   });
 });

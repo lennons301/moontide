@@ -1,7 +1,7 @@
 import { and, eq, gte } from "drizzle-orm";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
-import { classes, schedules } from "@/lib/db/schema";
+import { bundleConfig, classes, schedules } from "@/lib/db/schema";
 import { BookingClient } from "./booking-client";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,13 @@ export default async function BookPage() {
     .innerJoin(classes, eq(schedules.classId, classes.id))
     .where(and(gte(schedules.date, today), eq(schedules.status, "open")));
 
+  const activeBundles = await db
+    .select()
+    .from(bundleConfig)
+    .where(eq(bundleConfig.active, true));
+
+  const activeBundleConfig = activeBundles[0] ?? null;
+
   return (
     <section className="py-16 px-6 bg-dawn-light">
       <div className="max-w-3xl mx-auto">
@@ -22,7 +29,7 @@ export default async function BookPage() {
           Book a Class
         </h1>
         <div className="w-8 h-0.5 bg-bright-orange mx-auto mb-8" />
-        <BookingClient schedules={upcoming} />
+        <BookingClient schedules={upcoming} bundleConfig={activeBundleConfig} />
       </div>
     </section>
   );

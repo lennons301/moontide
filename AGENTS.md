@@ -48,6 +48,7 @@ src/
       admin/
         schedules/        # CRUD API for class schedules
         classes/          # GET active class types
+        pricing/          # GET/PUT class prices and bundle config
         bookings/         # GET all bookings
         bundles/          # GET all bundles
         messages/         # GET contact submissions
@@ -55,6 +56,7 @@ src/
     admin/
       login/              # Admin login page
       schedule/           # Schedule management (CRUD)
+      pricing/            # Manage class prices and bundle config
       bookings/           # View bookings
       bundles/            # View bundles
       messages/           # Contact message inbox
@@ -79,7 +81,7 @@ src/
     stripe.ts             # Stripe client singleton
     db/
       index.ts            # Drizzle client (postgres.js driver)
-      schema.ts           # Drizzle schema (all tables + re-exports auth-schema)
+      schema.ts           # Drizzle schema (all tables including bundleConfig + re-exports auth-schema)
       auth-schema.ts      # Better Auth tables (user, session, account, verification)
     sanity/
       client.ts           # Sanity client + urlFor() image helper
@@ -100,6 +102,7 @@ tests/
   api/book-checkout.test.ts   # Checkout session tests
   api/book-redeem.test.ts     # Bundle redemption tests
   admin/schedules.test.ts     # Admin schedule API tests
+  api/admin-pricing.test.ts   # Admin pricing API tests
   lib/email.test.ts       # Email helper tests
 drizzle/
   migrations/             # Generated Drizzle migrations
@@ -124,8 +127,9 @@ drizzle/
 - **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on proxy for page access).
 - **Stripe webhook:** At `/api/stripe/webhook` — reads raw body for signature verification, never parse JSON before verifying.
 - **Booking flow:** `/api/book/checkout` (Stripe Checkout) and `/api/book/redeem` (bundle credit). Checkout handles both individual and bundle purchases via `type` field.
-- **Prices in pence:** Class prices stored in `classes.priceInPence` (£12.50 / 1250 pence). Bundle price is a constant in the checkout route (£66 / 6600 pence for 6 classes).
-- **Bundle redemption:** Email-based lookup, no customer auth required. 90-day expiry from purchase.
+- **Prices in pence:** Class prices stored in `classes.priceInPence`. Bundle config (price, credits, expiry) stored in `bundleConfig` table — editable via admin UI at `/admin/pricing`.
+- **Bundle config:** The `bundleConfig` table holds bundle products (price, credits, expiry days). Checkout attaches `bundleConfigId` to Stripe session metadata; webhook reads it back to set credits and expiry on the purchased bundle. Changes only affect new purchases.
+- **Bundle redemption:** Email-based lookup, no customer auth required. Expiry set per-bundle from config at purchase time.
 - **DB transactions:** Multi-step mutations (e.g., booking insert + count increment) wrapped in `db.transaction()` for atomicity.
 - **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI — all tests use mocks.
 - **Secrets sync:** Doppler-Vercel integration auto-syncs secrets. Doppler `prd` → Vercel Production, Doppler `stg` → Vercel Preview. Never manually set env vars in Vercel that Doppler manages.
