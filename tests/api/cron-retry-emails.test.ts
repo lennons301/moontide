@@ -6,6 +6,9 @@ const {
   mockSelectInnerJoin,
   mockUpdateSet,
   mockUpdateWhere,
+  mockSendBookingConfirmation,
+  mockSendBundleConfirmation,
+  mockSendBookingNotification,
 } = vi.hoisted(() => {
   const mockSelectWhere = vi.fn().mockResolvedValue([]);
   const mockSelectInnerJoin = vi
@@ -17,12 +20,24 @@ const {
   });
   const mockUpdateWhere = vi.fn().mockResolvedValue([]);
   const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
+  const mockSendBookingConfirmation = vi
+    .fn()
+    .mockResolvedValue({ success: true });
+  const mockSendBundleConfirmation = vi
+    .fn()
+    .mockResolvedValue({ success: true });
+  const mockSendBookingNotification = vi
+    .fn()
+    .mockResolvedValue({ success: true });
   return {
     mockSelectFrom,
     mockSelectWhere,
     mockSelectInnerJoin,
     mockUpdateSet,
     mockUpdateWhere,
+    mockSendBookingConfirmation,
+    mockSendBundleConfirmation,
+    mockSendBookingNotification,
   };
 });
 
@@ -59,14 +74,6 @@ vi.mock("drizzle-orm", () => ({
   gte: vi.fn((...args: unknown[]) => args),
 }));
 
-const mockSendBookingConfirmation = vi
-  .fn()
-  .mockResolvedValue({ success: true });
-const mockSendBundleConfirmation = vi.fn().mockResolvedValue({ success: true });
-const mockSendBookingNotification = vi
-  .fn()
-  .mockResolvedValue({ success: true });
-
 vi.mock("@/lib/email", () => ({
   sendBookingConfirmation: mockSendBookingConfirmation,
   sendBundleConfirmation: mockSendBundleConfirmation,
@@ -84,7 +91,10 @@ describe("POST /api/cron/retry-emails", () => {
       where: mockSelectWhere,
     });
     mockSelectWhere.mockResolvedValue([]);
-    mockSelectInnerJoin.mockReturnValue({ where: mockSelectWhere });
+    mockSelectInnerJoin.mockReturnValue({
+      innerJoin: mockSelectInnerJoin,
+      where: mockSelectWhere,
+    });
     mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
   });
 
