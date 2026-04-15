@@ -86,6 +86,17 @@ export const bundles = pgTable("bundles", {
   status: bundleStatus("status").notNull().default("active"),
 });
 
+export const bundleConfig = pgTable("bundle_config", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  priceInPence: integer("price_in_pence").notNull(),
+  credits: integer("credits").notNull(),
+  expiryDays: integer("expiry_days").notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const bookings = pgTable("bookings", {
   id: serial("id").primaryKey(),
   scheduleId: integer("schedule_id")
