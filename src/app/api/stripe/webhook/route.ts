@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { bookings, bundles, schedules } from "@/lib/db/schema";
+import { bookings, bundleConfig, bundles, schedules } from "@/lib/db/schema";
 import { getStripe } from "@/lib/stripe";
 
 export async function POST(request: Request) {
@@ -28,7 +28,6 @@ export async function POST(request: Request) {
     const metadata = session.metadata;
 
     if (metadata?.type === "individual") {
-      // Individual class booking
       const scheduleId = Number.parseInt(metadata.scheduleId, 10);
       await db.transaction(async (tx) => {
         await tx.insert(bookings).values({
@@ -43,11 +42,23 @@ export async function POST(request: Request) {
           .where(eq(schedules.id, scheduleId));
       });
     } else if (metadata?.type === "bundle") {
-      // Bundle purchase
+      const configId = Number.parseInt(metadata.bundleConfigId, 10);
+      const configs = await db
+        .select()
+        .from(bundleConfig)
+        .where(eq(bundleConfig.id, configId));
+
+      const config = configs[0];
+      const credits = config?.credits ?? 6;
+      const expiryDays = config?.expiryDays ?? 90;
+
       const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 90);
+      expiresAt.setDate(expiresAt.getDate() + expiryDays);
+
       await db.insert(bundles).values({
         customerEmail: metadata.customerEmail,
+        creditsTotal: credits,
+        creditsRemaining: credits,
         stripePaymentId: session.id,
         expiresAt,
       });
