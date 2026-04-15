@@ -6,6 +6,7 @@ const footerLinks = [
   { label: "Baby Massage", href: "/classes/baby-yoga" },
   { label: "Private", href: "/private" },
   { label: "T&Cs", href: "/terms" },
+  { label: "Privacy", href: "/privacy" },
 ];
 
 export function Footer({ instagramUrl }: { instagramUrl?: string }) {
