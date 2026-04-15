@@ -11,6 +11,7 @@ interface Bundle {
   purchasedAt: string;
   expiresAt: string;
   status: string;
+  emailSent: boolean;
 }
 
 export default function BundlesPage() {
@@ -100,7 +101,14 @@ export default function BundlesPage() {
                   <td className="px-4 py-3">
                     {bundle.creditsRemaining}/{bundle.creditsTotal}
                   </td>
-                  <td className="px-4 py-3">{statusBadge(bundle.status)}</td>
+                  <td className="px-4 py-3">
+                    {statusBadge(bundle.status)}
+                    {!bundle.emailSent && (
+                      <span className="ml-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-bright-orange/20 text-bright-orange">
+                        email unsent
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))
             )}
