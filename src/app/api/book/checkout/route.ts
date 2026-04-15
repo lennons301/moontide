@@ -1,22 +1,36 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { classes, schedules } from "@/lib/db/schema";
+import { bundleConfig, classes, schedules } from "@/lib/db/schema";
 import { getStripe } from "@/lib/stripe";
-
-const BUNDLE_PRICE_PENCE = 7500; // £75 for 6 classes — Gabrielle to confirm
-const BUNDLE_CREDITS = 6;
 
 export async function POST(request: Request) {
   const stripe = getStripe();
   const body = await request.json();
-  const { type, scheduleId, customerName, customerEmail } = body;
+  const { type, scheduleId, customerName, customerEmail, bundleConfigId } =
+    body;
 
   if (!customerEmail) {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });
   }
 
   if (type === "bundle") {
+    const configs = await db
+      .select()
+      .from(bundleConfig)
+      .where(
+        and(eq(bundleConfig.id, bundleConfigId), eq(bundleConfig.active, true)),
+      );
+
+    if (configs.length === 0) {
+      return NextResponse.json(
+        { error: "Bundle configuration not found" },
+        { status: 400 },
+      );
+    }
+
+    const config = configs[0];
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: [
@@ -24,16 +38,17 @@ export async function POST(request: Request) {
           price_data: {
             currency: "gbp",
             product_data: {
-              name: `${BUNDLE_CREDITS}-Class Bundle`,
-              description: `${BUNDLE_CREDITS} classes, valid for 90 days from purchase`,
+              name: config.name,
+              description: `${config.credits} classes, valid for ${config.expiryDays} days from purchase`,
             },
-            unit_amount: BUNDLE_PRICE_PENCE,
+            unit_amount: config.priceInPence,
           },
           quantity: 1,
         },
       ],
       metadata: {
         type: "bundle",
+        bundleConfigId: String(config.id),
         customerEmail,
       },
       customer_email: customerEmail,
