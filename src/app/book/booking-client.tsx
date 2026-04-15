@@ -115,7 +115,21 @@ function getTodayString() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
-export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
+type BundleConfig = {
+  id: number;
+  name: string;
+  priceInPence: number;
+  credits: number;
+  expiryDays: number;
+} | null;
+
+export function BookingClient({
+  schedules,
+  bundleConfig,
+}: {
+  schedules: ScheduleRow[];
+  bundleConfig: BundleConfig;
+}) {
   const [selected, setSelected] = useState<ScheduleRow | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -345,20 +359,24 @@ export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
   return (
     <div className="space-y-6">
       {/* Bundle Banner */}
-      <div className="bg-bright-orange/10 border border-bright-orange/30 rounded-lg p-6 text-center">
-        <h2 className="text-deep-tide-blue font-heading text-xl mb-1">
-          Save with a 6-Class Bundle
-        </h2>
-        <p className="text-deep-ocean mb-4">
-          6 classes for {formatPrice(7500)} &middot; Valid 90 days
-        </p>
-        <Link
-          href="/book/bundle"
-          className="inline-block bg-bright-orange text-dawn-light px-6 py-3 rounded-md font-semibold hover:bg-bright-orange/90 transition-colors"
-        >
-          Purchase Bundle &rarr;
-        </Link>
-      </div>
+      {bundleConfig && (
+        <div className="bg-bright-orange/10 border border-bright-orange/30 rounded-lg p-6 text-center">
+          <h2 className="text-deep-tide-blue font-heading text-xl mb-1">
+            Save with a {bundleConfig.name}
+          </h2>
+          <p className="text-deep-ocean mb-4">
+            {bundleConfig.credits} classes for{" "}
+            {formatPrice(bundleConfig.priceInPence)} &middot; Valid{" "}
+            {bundleConfig.expiryDays} days
+          </p>
+          <Link
+            href="/book/bundle"
+            className="inline-block bg-bright-orange text-dawn-light px-6 py-3 rounded-md font-semibold hover:bg-bright-orange/90 transition-colors"
+          >
+            Purchase Bundle &rarr;
+          </Link>
+        </div>
+      )}
 
       {/* Month Calendar Grid */}
       <div className="bg-white border border-soft-moonstone rounded-lg p-4 sm:p-6">
