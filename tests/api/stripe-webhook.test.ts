@@ -11,6 +11,9 @@ const {
   mockBundleConfigWhere,
   mockBundleConfigFrom,
   mockBundleConfigSelect,
+  mockSendBookingConfirmation,
+  mockSendBundleConfirmation,
+  mockSendBookingNotification,
 } = vi.hoisted(() => {
   const mockInsertValues = vi.fn().mockResolvedValue([{ id: 1 }]);
   const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
@@ -28,6 +31,15 @@ const {
   const mockBundleConfigSelect = vi
     .fn()
     .mockReturnValue({ from: mockBundleConfigFrom });
+  const mockSendBookingConfirmation = vi
+    .fn()
+    .mockResolvedValue({ success: true });
+  const mockSendBundleConfirmation = vi
+    .fn()
+    .mockResolvedValue({ success: true });
+  const mockSendBookingNotification = vi
+    .fn()
+    .mockResolvedValue({ success: true });
   return {
     mockInsertValues,
     mockInsert,
@@ -38,6 +50,24 @@ const {
     mockBundleConfigWhere,
     mockBundleConfigFrom,
     mockBundleConfigSelect,
+    mockSendBookingConfirmation,
+    mockSendBundleConfirmation,
+    mockSendBookingNotification,
+  };
+});
+
+vi.mock("@/lib/email", () => ({
+  sendBookingConfirmation: mockSendBookingConfirmation,
+  sendBundleConfirmation: mockSendBundleConfirmation,
+  sendBookingNotification: mockSendBookingNotification,
+}));
+
+vi.mock("next/server", async () => {
+  const actual =
+    await vi.importActual<typeof import("next/server")>("next/server");
+  return {
+    ...actual,
+    after: vi.fn((fn: () => Promise<void>) => fn()),
   };
 });
 
@@ -66,6 +96,7 @@ vi.mock("@/lib/db/schema", () => ({
   bundles: { id: "id" },
   bundleConfig: { id: "id" },
   schedules: { id: "id", bookedCount: "booked_count" },
+  classes: { id: "id" },
 }));
 
 import type Stripe from "stripe";
@@ -88,6 +119,9 @@ describe("POST /api/stripe/webhook", () => {
     );
     mockBundleConfigWhere.mockResolvedValue([]);
     mockBundleConfigFrom.mockReturnValue({ where: mockBundleConfigWhere });
+    mockSendBookingConfirmation.mockResolvedValue({ success: true });
+    mockSendBundleConfirmation.mockResolvedValue({ success: true });
+    mockSendBookingNotification.mockResolvedValue({ success: true });
   });
 
   it("returns 400 when stripe-signature header is missing", async () => {
@@ -120,6 +154,25 @@ describe("POST /api/stripe/webhook", () => {
   });
 
   it("creates booking inside a transaction for individual purchase", async () => {
+    // Mock schedule+class query for email sending in after()
+    mockBundleConfigSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            {
+              schedules: {
+                date: "2026-05-01",
+                startTime: "09:00",
+                endTime: "10:00",
+                location: "Studio 1",
+              },
+              classes: { title: "Prenatal Yoga", priceInPence: 1250 },
+            },
+          ]),
+        }),
+      }),
+    });
+
     mockConstructEvent.mockReturnValue({
       type: "checkout.session.completed",
       data: {
@@ -142,6 +195,8 @@ describe("POST /api/stripe/webhook", () => {
     });
 
     const response = await POST(request);
+    // Flush microtasks so the after() callback completes
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(response.status).toBe(200);
 
     // Verify transaction was used
@@ -160,11 +215,26 @@ describe("POST /api/stripe/webhook", () => {
 
     // Verify schedule bookedCount was incremented
     expect(mockUpdate).toHaveBeenCalled();
+
+    // Verify email functions were called
+    expect(mockSendBookingConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+        classTitle: "Prenatal Yoga",
+      }),
+    );
+    expect(mockSendBookingNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "individual",
+        customerName: "Jane Doe",
+      }),
+    );
   });
 
   it("creates bundle record for bundle purchase", async () => {
     mockBundleConfigWhere.mockResolvedValue([
-      { id: 1, credits: 6, expiryDays: 90 },
+      { id: 1, name: "6-Class Bundle", credits: 6, expiryDays: 90 },
     ]);
 
     mockConstructEvent.mockReturnValue({
@@ -188,6 +258,8 @@ describe("POST /api/stripe/webhook", () => {
     });
 
     const response = await POST(request);
+    // Flush microtasks so the after() callback completes
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(response.status).toBe(200);
 
     expect(mockInsert).toHaveBeenCalled();
@@ -208,6 +280,20 @@ describe("POST /api/stripe/webhook", () => {
     expect(
       Math.abs(expiresAt.getTime() - expectedExpiry.getTime()),
     ).toBeLessThan(5000);
+
+    expect(mockSendBundleConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerEmail: "jane@example.com",
+        bundleName: "6-Class Bundle",
+        credits: 6,
+      }),
+    );
+    expect(mockSendBookingNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "bundle",
+        customerEmail: "jane@example.com",
+      }),
+    );
   });
 
   it("returns 500 when bundle config not found", async () => {

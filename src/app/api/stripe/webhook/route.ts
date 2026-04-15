@@ -1,7 +1,18 @@
 import { eq, sql } from "drizzle-orm";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { bookings, bundleConfig, bundles, schedules } from "@/lib/db/schema";
+import {
+  bookings,
+  bundleConfig,
+  bundles,
+  classes,
+  schedules,
+} from "@/lib/db/schema";
+import {
+  sendBookingConfirmation,
+  sendBookingNotification,
+  sendBundleConfirmation,
+} from "@/lib/email";
 import { getStripe } from "@/lib/stripe";
 
 export async function POST(request: Request) {
@@ -41,6 +52,50 @@ export async function POST(request: Request) {
           .set({ bookedCount: sql`${schedules.bookedCount} + 1` })
           .where(eq(schedules.id, scheduleId));
       });
+
+      after(async () => {
+        try {
+          const result = await db
+            .select()
+            .from(schedules)
+            .innerJoin(classes, eq(schedules.classId, classes.id))
+            .where(eq(schedules.id, scheduleId));
+
+          if (result.length > 0) {
+            const schedule = result[0].schedules;
+            const classInfo = result[0].classes;
+
+            await sendBookingConfirmation({
+              customerName: metadata.customerName,
+              customerEmail: metadata.customerEmail,
+              classTitle: classInfo.title,
+              date: schedule.date,
+              startTime: schedule.startTime,
+              endTime: schedule.endTime,
+              location: schedule.location,
+              priceInPence: classInfo.priceInPence,
+            });
+
+            await sendBookingNotification({
+              type: "individual",
+              customerName: metadata.customerName,
+              customerEmail: metadata.customerEmail,
+              classTitle: classInfo.title,
+              date: schedule.date,
+              startTime: schedule.startTime,
+              endTime: schedule.endTime,
+              location: schedule.location,
+            });
+
+            await db
+              .update(bookings)
+              .set({ emailSent: true })
+              .where(eq(bookings.stripePaymentId, session.id));
+          }
+        } catch (error) {
+          console.error("Failed to send booking confirmation email:", error);
+        }
+      });
     } else if (metadata?.type === "bundle") {
       const configId = Number.parseInt(metadata.bundleConfigId, 10);
       const configs = await db
@@ -68,6 +123,38 @@ export async function POST(request: Request) {
         creditsRemaining: config.credits,
         stripePaymentId: session.id,
         expiresAt,
+      });
+
+      const expiryDateFormatted = expiresAt.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+
+      after(async () => {
+        try {
+          await sendBundleConfirmation({
+            customerEmail: metadata.customerEmail,
+            bundleName: config.name,
+            credits: config.credits,
+            expiryDate: expiryDateFormatted,
+          });
+
+          await sendBookingNotification({
+            type: "bundle",
+            customerEmail: metadata.customerEmail,
+            bundleName: config.name,
+            credits: config.credits,
+            expiryDate: expiryDateFormatted,
+          });
+
+          await db
+            .update(bundles)
+            .set({ emailSent: true })
+            .where(eq(bundles.stripePaymentId, session.id));
+        } catch (error) {
+          console.error("Failed to send bundle confirmation email:", error);
+        }
       });
     }
   }
