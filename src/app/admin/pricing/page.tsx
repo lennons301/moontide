@@ -42,6 +42,7 @@ export default function PricingPage() {
     >
   >({});
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchPricing = useCallback(async () => {
     const res = await fetch("/api/admin/pricing");
@@ -172,6 +173,8 @@ export default function PricingPage() {
     if (bundleUpdatePayload.length > 0)
       payload.bundleConfigs = bundleUpdatePayload;
 
+    setError(null);
+
     const res = await fetch("/api/admin/pricing", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -180,6 +183,9 @@ export default function PricingPage() {
 
     if (res.ok) {
       await fetchPricing();
+    } else {
+      const data = await res.json();
+      setError(data.error || "Failed to save changes");
     }
 
     setSaving(false);
@@ -315,7 +321,8 @@ export default function PricingPage() {
         </div>
       ))}
 
-      {/* Save Button */}
+      {/* Error + Save */}
+      {error && <p className="text-red-600 text-sm mb-4 text-right">{error}</p>}
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={saving || !hasChanges}>
           {saving ? "Saving..." : "Save Changes"}

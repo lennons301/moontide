@@ -210,6 +210,36 @@ describe("POST /api/stripe/webhook", () => {
     ).toBeLessThan(5000);
   });
 
+  it("returns 500 when bundle config not found", async () => {
+    mockBundleConfigWhere.mockResolvedValue([]);
+
+    mockConstructEvent.mockReturnValue({
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_test_bundle_missing",
+          metadata: {
+            type: "bundle",
+            bundleConfigId: "999",
+            customerEmail: "jane@example.com",
+          },
+        },
+      },
+    } as unknown as Stripe.Event);
+
+    const request = new Request("http://localhost:3000/api/stripe/webhook", {
+      method: "POST",
+      headers: { "stripe-signature": "valid" },
+      body: "{}",
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toBe("Bundle config not found");
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
   it("returns 200 for unhandled event types", async () => {
     mockConstructEvent.mockReturnValue({
       type: "payment_intent.succeeded",

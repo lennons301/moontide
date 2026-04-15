@@ -49,16 +49,23 @@ export async function POST(request: Request) {
         .where(eq(bundleConfig.id, configId));
 
       const config = configs[0];
-      const credits = config?.credits ?? 6;
-      const expiryDays = config?.expiryDays ?? 90;
+      if (!config) {
+        console.error(
+          `Bundle config not found for id: ${configId}, session: ${session.id}`,
+        );
+        return NextResponse.json(
+          { error: "Bundle config not found" },
+          { status: 500 },
+        );
+      }
 
       const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + expiryDays);
+      expiresAt.setDate(expiresAt.getDate() + config.expiryDays);
 
       await db.insert(bundles).values({
         customerEmail: metadata.customerEmail,
-        creditsTotal: credits,
-        creditsRemaining: credits,
+        creditsTotal: config.credits,
+        creditsRemaining: config.credits,
         stripePaymentId: session.id,
         expiresAt,
       });
