@@ -84,6 +84,7 @@ export const bundles = pgTable("bundles", {
   purchasedAt: timestamp("purchased_at").defaultNow().notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   status: bundleStatus("status").notNull().default("active"),
+  emailSent: boolean("email_sent").default(false).notNull(),
 });
 
 export const bundleConfig = pgTable("bundle_config", {
@@ -108,6 +109,7 @@ export const bookings = pgTable("bookings", {
   bundleId: integer("bundle_id").references(() => bundles.id),
   status: bookingStatus("status").notNull().default("confirmed"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  emailSent: boolean("email_sent").default(false).notNull(),
 });
 
 // Re-export Better Auth tables
