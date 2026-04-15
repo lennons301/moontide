@@ -1,0 +1,26 @@
+@startuml context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title System Context — Moontide
+
+Person(customer, "Customer", "Women seeking yoga, coaching, and wellbeing classes")
+Person(admin, "Gabrielle", "Business owner and sole admin")
+
+System(moontide, "Moontide", "Wellbeing website for booking yoga classes, purchasing bundles, and contacting Gabrielle")
+
+System_Ext(stripe, "Stripe", "Payment processing via hosted Checkout")
+System_Ext(sanity, "Sanity CMS", "Editorial content: services, trainers, site settings")
+System_Ext(neon, "Neon Postgres", "Bookings, bundles, schedules, contact submissions, auth")
+System_Ext(resend, "Resend", "Transactional email delivery")
+System_Ext(doppler, "Doppler", "Secrets management, synced to Vercel")
+System_Ext(vercel, "Vercel", "Hosting, CDN, serverless functions, cron")
+
+Rel(customer, moontide, "Browses classes, books, purchases bundles", "HTTPS")
+Rel(admin, moontide, "Manages schedule, pricing, views bookings", "HTTPS")
+Rel(moontide, stripe, "Creates checkout sessions, receives webhooks", "HTTPS")
+Rel(moontide, sanity, "Fetches content, hosts embedded Studio", "HTTPS")
+Rel(moontide, neon, "Reads/writes transactional data", "SQL over TLS")
+Rel(moontide, resend, "Sends confirmation and notification emails", "HTTPS")
+Rel(doppler, vercel, "Syncs secrets to environment variables", "HTTPS")
+
+@enduml

@@ -1,0 +1,38 @@
+@startuml containers
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Container Diagram — Moontide
+
+Person(customer, "Customer", "Books classes and purchases bundles")
+Person(admin, "Gabrielle", "Manages schedule, pricing, bookings")
+
+System_Boundary(moontide, "Moontide") {
+    Container(web, "Web App", "Next.js App Router, React 19", "Public pages: classes, booking calendar, bundle purchase, contact, privacy, terms")
+    Container(api, "API Routes", "Next.js Route Handlers", "Checkout, webhook, booking, redemption, contact, admin CRUD, cron retry, revalidation")
+    Container(studio, "Sanity Studio", "Embedded at /studio", "CMS editing interface for editorial content")
+    Container(proxy, "Auth Proxy", "Next.js proxy.ts", "Protects /admin/* routes via Better Auth session check")
+    Container(admin_ui, "Admin UI", "Next.js client components", "Schedule CRUD, pricing editor, bookings/bundles viewer, manual email resend")
+}
+
+System_Ext(stripe, "Stripe", "Hosted Checkout + webhooks")
+System_Ext(sanity, "Sanity CMS", "Content API (GROQ)")
+System_Ext(resend, "Resend", "Email delivery")
+ContainerDb(db, "Neon Postgres", "PostgreSQL", "classes, schedules, bookings, bundles, bundleConfig, contactSubmissions, auth tables")
+
+Rel(customer, web, "Browses, books classes", "HTTPS")
+Rel(admin, proxy, "Accesses admin", "HTTPS")
+Rel(proxy, admin_ui, "Forwards authenticated requests")
+Rel(admin, studio, "Edits CMS content", "HTTPS")
+
+Rel(web, api, "Server components fetch data, client forms POST", "Internal")
+Rel(web, sanity, "Fetches editorial content", "HTTPS")
+Rel(admin_ui, api, "CRUD operations", "Fetch API")
+
+Rel(api, db, "Reads/writes via Drizzle ORM", "postgres.js")
+Rel(api, stripe, "Creates checkout sessions", "HTTPS")
+Rel(stripe, api, "Sends checkout.session.completed webhook", "HTTPS")
+Rel(api, resend, "Sends confirmation + notification emails", "HTTPS")
+Rel(api, sanity, "Revalidation webhook handler", "HTTPS")
+Rel(studio, sanity, "Reads/writes content", "HTTPS")
+
+@enduml
