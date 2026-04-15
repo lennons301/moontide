@@ -70,6 +70,17 @@ export default function BookingsPage() {
     return row.bookings.bundleId ? "Bundle" : "Stripe";
   }
 
+  async function handleResendEmail(bookingId: number) {
+    const res = await fetch("/api/admin/resend-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "booking", id: bookingId }),
+    });
+    if (res.ok) {
+      await fetchBookings();
+    }
+  }
+
   function formatDate(dateStr: string) {
     return new Date(dateStr).toLocaleDateString("en-GB", {
       day: "numeric",
@@ -142,9 +153,13 @@ export default function BookingsPage() {
                   <td className="px-4 py-3">
                     {statusBadge(item.bookings.status)}
                     {!item.bookings.emailSent && (
-                      <span className="ml-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-bright-orange/20 text-bright-orange">
-                        email unsent
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleResendEmail(item.bookings.id)}
+                        className="ml-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-bright-orange/20 text-bright-orange hover:bg-bright-orange/30 transition-colors cursor-pointer"
+                      >
+                        resend email
+                      </button>
                     )}
                   </td>
                 </tr>
