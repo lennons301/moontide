@@ -8,6 +8,9 @@ const {
   mockUpdateSet,
   mockUpdate,
   mockTransaction,
+  mockBundleConfigWhere,
+  mockBundleConfigFrom,
+  mockBundleConfigSelect,
 } = vi.hoisted(() => {
   const mockInsertValues = vi.fn().mockResolvedValue([{ id: 1 }]);
   const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
@@ -18,6 +21,13 @@ const {
     const tx = { insert: mockInsert, update: mockUpdate };
     await fn(tx);
   });
+  const mockBundleConfigWhere = vi.fn().mockResolvedValue([]);
+  const mockBundleConfigFrom = vi
+    .fn()
+    .mockReturnValue({ where: mockBundleConfigWhere });
+  const mockBundleConfigSelect = vi
+    .fn()
+    .mockReturnValue({ from: mockBundleConfigFrom });
   return {
     mockInsertValues,
     mockInsert,
@@ -25,6 +35,9 @@ const {
     mockUpdateSet,
     mockUpdate,
     mockTransaction,
+    mockBundleConfigWhere,
+    mockBundleConfigFrom,
+    mockBundleConfigSelect,
   };
 });
 
@@ -44,12 +57,14 @@ vi.mock("@/lib/db", () => ({
     insert: mockInsert,
     update: mockUpdate,
     transaction: mockTransaction,
+    select: mockBundleConfigSelect,
   },
 }));
 
 vi.mock("@/lib/db/schema", () => ({
   bookings: { id: "id", scheduleId: "schedule_id" },
   bundles: { id: "id" },
+  bundleConfig: { id: "id" },
   schedules: { id: "id", bookedCount: "booked_count" },
 }));
 
@@ -71,6 +86,8 @@ describe("POST /api/stripe/webhook", () => {
         await fn(tx);
       },
     );
+    mockBundleConfigWhere.mockResolvedValue([]);
+    mockBundleConfigFrom.mockReturnValue({ where: mockBundleConfigWhere });
   });
 
   it("returns 400 when stripe-signature header is missing", async () => {
@@ -146,6 +163,10 @@ describe("POST /api/stripe/webhook", () => {
   });
 
   it("creates bundle record for bundle purchase", async () => {
+    mockBundleConfigWhere.mockResolvedValue([
+      { id: 1, credits: 6, expiryDays: 90 },
+    ]);
+
     mockConstructEvent.mockReturnValue({
       type: "checkout.session.completed",
       data: {
@@ -153,6 +174,7 @@ describe("POST /api/stripe/webhook", () => {
           id: "cs_test_bundle_456",
           metadata: {
             type: "bundle",
+            bundleConfigId: "1",
             customerEmail: "jane@example.com",
           },
         },
@@ -168,12 +190,13 @@ describe("POST /api/stripe/webhook", () => {
     const response = await POST(request);
     expect(response.status).toBe(200);
 
-    // Verify db.insert was called for the bundle
     expect(mockInsert).toHaveBeenCalled();
     expect(mockInsertValues).toHaveBeenCalledWith(
       expect.objectContaining({
         customerEmail: "jane@example.com",
         stripePaymentId: "cs_test_bundle_456",
+        creditsTotal: 6,
+        creditsRemaining: 6,
       }),
     );
 
@@ -182,10 +205,39 @@ describe("POST /api/stripe/webhook", () => {
     const expiresAt = callArgs.expiresAt as Date;
     const expectedExpiry = new Date();
     expectedExpiry.setDate(expectedExpiry.getDate() + 90);
-    // Allow 5 seconds tolerance
     expect(
       Math.abs(expiresAt.getTime() - expectedExpiry.getTime()),
     ).toBeLessThan(5000);
+  });
+
+  it("returns 500 when bundle config not found", async () => {
+    mockBundleConfigWhere.mockResolvedValue([]);
+
+    mockConstructEvent.mockReturnValue({
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_test_bundle_missing",
+          metadata: {
+            type: "bundle",
+            bundleConfigId: "999",
+            customerEmail: "jane@example.com",
+          },
+        },
+      },
+    } as unknown as Stripe.Event);
+
+    const request = new Request("http://localhost:3000/api/stripe/webhook", {
+      method: "POST",
+      headers: { "stripe-signature": "valid" },
+      body: "{}",
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toBe("Bundle config not found");
+    expect(mockInsert).not.toHaveBeenCalled();
   });
 
   it("returns 200 for unhandled event types", async () => {

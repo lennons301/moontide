@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const adminLinks = [
   { label: "Schedule", href: "/admin/schedule" },
+  { label: "Pricing", href: "/admin/pricing" },
   { label: "Bookings", href: "/admin/bookings" },
   { label: "Bundles", href: "/admin/bundles" },
   { label: "Messages", href: "/admin/messages" },
