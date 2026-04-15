@@ -50,3 +50,7 @@ db-seed-cms:
 # Open Drizzle Studio
 db-studio:
     doppler run -- pnpm run db:studio
+
+# Forward Stripe webhooks to local dev server
+stripe-listen:
+    stripe listen --forward-to localhost:3000/api/stripe/webhook

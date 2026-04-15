@@ -350,7 +350,7 @@ export function BookingClient({ schedules }: { schedules: ScheduleRow[] }) {
           Save with a 6-Class Bundle
         </h2>
         <p className="text-deep-ocean mb-4">
-          6 classes for {formatPrice(7500)} &middot; Valid 90 days
+          6 classes for {formatPrice(6600)} &middot; Valid 90 days
         </p>
         <Link
           href="/book/bundle"

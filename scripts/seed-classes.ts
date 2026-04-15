@@ -13,28 +13,28 @@ async function seed() {
       title: "Prenatal Yoga",
       category: "class" as const,
       bookingType: "stripe" as const,
-      priceInPence: 1500,
+      priceInPence: 1250,
     },
     {
       slug: "postnatal",
       title: "Postnatal Yoga",
       category: "class" as const,
       bookingType: "stripe" as const,
-      priceInPence: 1500,
+      priceInPence: 1250,
     },
     {
       slug: "baby-yoga",
       title: "Baby Yoga & Massage",
       category: "class" as const,
       bookingType: "stripe" as const,
-      priceInPence: 1500,
+      priceInPence: 1250,
     },
     {
       slug: "vinyasa",
       title: "Vinyasa Yoga Seasonal Flow",
       category: "class" as const,
       bookingType: "stripe" as const,
-      priceInPence: 1500,
+      priceInPence: 1250,
     },
   ];
 

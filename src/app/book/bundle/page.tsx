@@ -53,7 +53,7 @@ export default function BookBundlePage() {
 
         <div className="bg-soft-moonstone/30 rounded-lg p-8 text-center mb-8">
           <p className="text-4xl font-heading text-deep-tide-blue mb-2">
-            &pound;75
+            &pound;66
           </p>
           <p className="text-deep-ocean">
             6 classes &middot; Valid for 90 days

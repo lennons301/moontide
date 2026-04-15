@@ -237,7 +237,7 @@ describe("POST /api/book/checkout", () => {
           expect.objectContaining({
             price_data: expect.objectContaining({
               currency: "gbp",
-              unit_amount: 7500,
+              unit_amount: 6600,
               product_data: expect.objectContaining({
                 name: "6-Class Bundle",
                 description: "6 classes, valid for 90 days from purchase",
