@@ -11,6 +11,7 @@ interface Bundle {
   purchasedAt: string;
   expiresAt: string;
   status: string;
+  emailSent: boolean;
 }
 
 export default function BundlesPage() {
@@ -41,6 +42,17 @@ export default function BundlesPage() {
         {status}
       </span>
     );
+  }
+
+  async function handleResendEmail(bundleId: number) {
+    const res = await fetch("/api/admin/resend-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "bundle", id: bundleId }),
+    });
+    if (res.ok) {
+      await fetchBundles();
+    }
   }
 
   function formatDate(dateStr: string) {
@@ -100,7 +112,18 @@ export default function BundlesPage() {
                   <td className="px-4 py-3">
                     {bundle.creditsRemaining}/{bundle.creditsTotal}
                   </td>
-                  <td className="px-4 py-3">{statusBadge(bundle.status)}</td>
+                  <td className="px-4 py-3">
+                    {statusBadge(bundle.status)}
+                    {!bundle.emailSent && (
+                      <button
+                        type="button"
+                        onClick={() => handleResendEmail(bundle.id)}
+                        className="ml-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-bright-orange/20 text-bright-orange hover:bg-bright-orange/30 transition-colors cursor-pointer"
+                      >
+                        resend email
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))
             )}

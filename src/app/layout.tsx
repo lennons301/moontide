@@ -6,6 +6,9 @@ import {
 } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Nav } from "@/components/nav";
+import { sanityClient } from "@/lib/sanity/client";
+import { siteSettingsQuery } from "@/lib/sanity/queries";
+import type { SiteSettings } from "@/lib/sanity/types";
 import "./globals.css";
 
 const playfair = Playfair_Display({
@@ -33,11 +36,15 @@ export const metadata: Metadata = {
     "Wellbeing for women navigating change through yoga, coaching and embodied connection.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const siteSettings = await sanityClient.fetch<SiteSettings | null>(
+    siteSettingsQuery,
+  );
+
   return (
     <html
       lang="en"
@@ -46,7 +53,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Nav />
         <main className="flex-1">{children}</main>
-        <Footer />
+        <Footer instagramUrl={siteSettings?.instagramUrl} />
       </body>
     </html>
   );
