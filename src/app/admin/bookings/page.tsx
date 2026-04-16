@@ -12,6 +12,7 @@ interface BookingRow {
     bundleId: number | null;
     status: string;
     createdAt: string;
+    emailSent: boolean;
   };
   schedules: {
     id: number;
@@ -81,6 +82,17 @@ export default function BookingsPage() {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: bookingId, status: "cancelled" }),
+    });
+    if (res.ok) {
+      await fetchBookings();
+    }
+  }
+
+  async function handleResendEmail(bookingId: number) {
+    const res = await fetch("/api/admin/resend-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "booking", id: bookingId }),
     });
     if (res.ok) {
       await fetchBookings();
@@ -159,6 +171,15 @@ export default function BookingsPage() {
                   <td className="px-4 py-3">{paymentType(item)}</td>
                   <td className="px-4 py-3">
                     {statusBadge(item.bookings.status)}
+                    {!item.bookings.emailSent && (
+                      <button
+                        type="button"
+                        onClick={() => handleResendEmail(item.bookings.id)}
+                        className="ml-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-bright-orange/20 text-bright-orange hover:bg-bright-orange/30 transition-colors cursor-pointer"
+                      >
+                        resend email
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {item.bookings.status === "confirmed" && (
