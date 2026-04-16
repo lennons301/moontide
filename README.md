@@ -73,7 +73,7 @@ Editorial content is managed in Sanity. The embedded Studio is available at `/st
 |-------------|----------|---------|-----|
 | dev | Local Docker Postgres | Doppler dev | localhost:3000 |
 | stg | Neon staging branch | Doppler stg | Vercel preview |
-| prd | Neon production | Doppler prd | moontide-six.vercel.app (domain TBC) |
+| prd | Neon production | Doppler prd | gabriellemoontide.co.uk |
 
 ## CI/CD
 
