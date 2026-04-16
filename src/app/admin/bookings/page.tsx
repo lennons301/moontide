@@ -69,6 +69,24 @@ export default function BookingsPage() {
     return row.bookings.bundleId ? "Bundle" : "Stripe";
   }
 
+  async function handleCancel(bookingId: number) {
+    if (
+      !window.confirm(
+        "Cancel this booking? The class slot will be freed. You'll need to refund in Stripe separately.",
+      )
+    ) {
+      return;
+    }
+    const res = await fetch("/api/admin/bookings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: bookingId, status: "cancelled" }),
+    });
+    if (res.ok) {
+      await fetchBookings();
+    }
+  }
+
   function formatDate(dateStr: string) {
     return new Date(dateStr).toLocaleDateString("en-GB", {
       day: "numeric",
@@ -93,13 +111,14 @@ export default function BookingsPage() {
               <th className="px-4 py-3">Time</th>
               <th className="px-4 py-3">Payment</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-soft-moonstone/10">
             {loading ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-8 text-center text-soft-moonstone"
                 >
                   Loading...
@@ -108,7 +127,7 @@ export default function BookingsPage() {
             ) : bookingList.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-8 text-center text-soft-moonstone"
                 >
                   No bookings yet.
@@ -140,6 +159,17 @@ export default function BookingsPage() {
                   <td className="px-4 py-3">{paymentType(item)}</td>
                   <td className="px-4 py-3">
                     {statusBadge(item.bookings.status)}
+                  </td>
+                  <td className="px-4 py-3">
+                    {item.bookings.status === "confirmed" && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancel(item.bookings.id)}
+                        className="text-red-600 hover:text-red-800 text-sm"
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))
