@@ -19,14 +19,18 @@ export default function AdminLoginPage() {
     setLoading(true);
     setError("");
 
-    const result = await authClient.signIn.email({ email, password });
-
-    if (result.error) {
-      setError("Invalid email or password");
-      setLoading(false);
-    } else {
-      router.push("/admin/schedule");
-    }
+    await authClient.signIn.email(
+      { email, password },
+      {
+        onSuccess: () => {
+          router.push("/admin/schedule");
+        },
+        onError: (ctx) => {
+          setError(ctx.error.message || "Invalid email or password");
+          setLoading(false);
+        },
+      },
+    );
   }
 
   return (
