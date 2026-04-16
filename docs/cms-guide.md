@@ -2,7 +2,7 @@
 
 A guide to editing content on the Moontide website using Sanity Studio.
 
-**Sanity Studio URL:** https://moontide-six.vercel.app/studio
+**Sanity Studio URL:** https://gabriellemoontide.co.uk/studio
 
 ---
 
@@ -20,13 +20,13 @@ Services are the main content type. Each one represents a page on the website.
 
 | Service (in Sanity) | Page on the website |
 |---------------------|---------------------|
-| prenatal | [/classes/prenatal](https://moontide-six.vercel.app/classes/prenatal) |
-| postnatal | [/classes/postnatal](https://moontide-six.vercel.app/classes/postnatal) |
-| baby-yoga | [/classes/baby-yoga](https://moontide-six.vercel.app/classes/baby-yoga) |
-| vinyasa | [/classes/vinyasa](https://moontide-six.vercel.app/classes/vinyasa) |
-| coaching | [/coaching](https://moontide-six.vercel.app/coaching) |
-| community | [/community](https://moontide-six.vercel.app/community) |
-| private | [/private](https://moontide-six.vercel.app/private) |
+| prenatal | [/classes/prenatal](https://gabriellemoontide.co.uk/classes/prenatal) |
+| postnatal | [/classes/postnatal](https://gabriellemoontide.co.uk/classes/postnatal) |
+| baby-yoga | [/classes/baby-yoga](https://gabriellemoontide.co.uk/classes/baby-yoga) |
+| vinyasa | [/classes/vinyasa](https://gabriellemoontide.co.uk/classes/vinyasa) |
+| coaching | [/coaching](https://gabriellemoontide.co.uk/coaching) |
+| community | [/community](https://gabriellemoontide.co.uk/community) |
+| private | [/private](https://gabriellemoontide.co.uk/private) |
 
 **What you can change for each service:**
 - **Title** — the heading shown on the page
