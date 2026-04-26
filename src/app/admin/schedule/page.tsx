@@ -77,7 +77,31 @@ export default function SchedulePage() {
     });
     if (res.ok) {
       await fetchSchedules();
+      return;
     }
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    window.alert(data.error || "Failed to delete schedule.");
+  }
+
+  async function handleCancelClass(id: number) {
+    if (
+      !window.confirm(
+        "Cancel this class? It will be hidden from the public calendar. Existing bookings remain — refund and notify customers separately.",
+      )
+    ) {
+      return;
+    }
+    const res = await fetch("/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: "cancelled" }),
+    });
+    if (res.ok) {
+      await fetchSchedules();
+      return;
+    }
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    window.alert(data.error || "Failed to cancel class.");
   }
 
   function handleEdit(item: Schedule) {
@@ -386,6 +410,15 @@ export default function SchedulePage() {
                     >
                       Edit
                     </button>
+                    {item.schedules.status !== "cancelled" && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelClass(item.schedules.id)}
+                        className="text-bright-orange hover:text-deep-tide-blue text-sm mr-3"
+                      >
+                        Cancel
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleDelete(item.schedules.id)}
