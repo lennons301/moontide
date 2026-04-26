@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { classes, schedules } from "@/lib/db/schema";
+import { bookings, classes, schedules } from "@/lib/db/schema";
 
 export async function GET() {
   const result = await db
@@ -164,6 +164,23 @@ export async function DELETE(request: Request) {
   if (!id) {
     return NextResponse.json({ error: "Missing schedule ID" }, { status: 400 });
   }
+
+  const existingBookings = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(eq(bookings.scheduleId, id))
+    .limit(1);
+
+  if (existingBookings.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          "Cannot delete a schedule that has bookings. Cancel the class instead.",
+      },
+      { status: 409 },
+    );
+  }
+
   await db.delete(schedules).where(eq(schedules.id, id));
   return NextResponse.json({ deleted: true });
 }

@@ -5,15 +5,24 @@ const {
   mockSelectFrom,
   mockInnerJoin,
   mockOrderBy,
+  mockSelectWhere,
+  mockSelectLimit,
   mockInsertValues,
   mockReturning,
   mockUpdateSet,
   mockUpdateWhere,
   mockUpdateReturning,
+  mockDeleteFrom,
+  mockDeleteWhere,
 } = vi.hoisted(() => {
   const mockOrderBy = vi.fn().mockResolvedValue([]);
   const mockInnerJoin = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
-  const mockSelectFrom = vi.fn().mockReturnValue({ innerJoin: mockInnerJoin });
+  const mockSelectLimit = vi.fn().mockResolvedValue([]);
+  const mockSelectWhere = vi.fn().mockReturnValue({ limit: mockSelectLimit });
+  const mockSelectFrom = vi.fn().mockReturnValue({
+    innerJoin: mockInnerJoin,
+    where: mockSelectWhere,
+  });
   const mockReturning = vi.fn().mockResolvedValue([
     {
       id: 1,
@@ -32,15 +41,21 @@ const {
     .fn()
     .mockReturnValue({ returning: mockUpdateReturning });
   const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
+  const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
+  const mockDeleteFrom = vi.fn().mockReturnValue({ where: mockDeleteWhere });
   return {
     mockSelectFrom,
     mockInnerJoin,
     mockOrderBy,
+    mockSelectWhere,
+    mockSelectLimit,
     mockInsertValues,
     mockReturning,
     mockUpdateSet,
     mockUpdateWhere,
     mockUpdateReturning,
+    mockDeleteFrom,
+    mockDeleteWhere,
   };
 });
 
@@ -55,12 +70,14 @@ vi.mock("@/lib/db", () => ({
     update: vi.fn().mockReturnValue({
       set: mockUpdateSet,
     }),
+    delete: mockDeleteFrom,
   },
 }));
 
 vi.mock("@/lib/db/schema", () => ({
   classes: { id: "id", active: "active" },
   schedules: { id: "id", classId: "class_id" },
+  bookings: { id: "id", scheduleId: "schedule_id" },
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -68,12 +85,15 @@ vi.mock("drizzle-orm", () => ({
   desc: vi.fn((col: unknown) => col),
 }));
 
-import { GET, POST, PUT } from "@/app/api/admin/schedules/route";
+import { DELETE, GET, POST, PUT } from "@/app/api/admin/schedules/route";
 
 describe("GET /api/admin/schedules", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSelectFrom.mockReturnValue({ innerJoin: mockInnerJoin });
+    mockSelectFrom.mockReturnValue({
+      innerJoin: mockInnerJoin,
+      where: mockSelectWhere,
+    });
     mockInnerJoin.mockReturnValue({ orderBy: mockOrderBy });
     mockOrderBy.mockResolvedValue([]);
   });
@@ -411,5 +431,64 @@ describe("PUT /api/admin/schedules", () => {
     expect(response.status).toBe(404);
     const body = await response.json();
     expect(body.error).toBe("Schedule not found");
+  });
+});
+
+describe("DELETE /api/admin/schedules", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSelectFrom.mockReturnValue({
+      innerJoin: mockInnerJoin,
+      where: mockSelectWhere,
+    });
+    mockSelectWhere.mockReturnValue({ limit: mockSelectLimit });
+    mockSelectLimit.mockResolvedValue([]);
+    mockDeleteFrom.mockReturnValue({ where: mockDeleteWhere });
+    mockDeleteWhere.mockResolvedValue(undefined);
+  });
+
+  it("returns 200 and deletes the schedule when no bookings exist", async () => {
+    mockSelectLimit.mockResolvedValue([]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: 1 }),
+    });
+
+    const response = await DELETE(request);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.deleted).toBe(true);
+    expect(mockDeleteFrom).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 409 and does not delete when any booking exists", async () => {
+    mockSelectLimit.mockResolvedValue([{ id: 42 }]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: 1 }),
+    });
+
+    const response = await DELETE(request);
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error).toMatch(/cancel the class instead/i);
+    expect(mockDeleteFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when id is missing", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    const response = await DELETE(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Missing schedule ID");
   });
 });
