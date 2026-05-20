@@ -358,25 +358,9 @@ export function BookingClient({
 
   return (
     <div className="space-y-6">
-      {/* Bundle Banner */}
-      {bundleConfig && (
-        <div className="bg-bright-orange/10 border border-bright-orange/30 rounded-lg p-6 text-center">
-          <h2 className="text-deep-tide-blue font-heading text-xl mb-1">
-            Save with a {bundleConfig.name}
-          </h2>
-          <p className="text-deep-ocean mb-4">
-            {bundleConfig.credits} classes for{" "}
-            {formatPrice(bundleConfig.priceInPence)} &middot; Valid{" "}
-            {bundleConfig.expiryDays} days
-          </p>
-          <Link
-            href="/book/bundle"
-            className="inline-block bg-bright-orange text-dawn-light px-6 py-3 rounded-md font-semibold hover:bg-bright-orange/90 transition-colors"
-          >
-            Purchase Bundle &rarr;
-          </Link>
-        </div>
-      )}
+      <p className="text-deep-ocean text-center">
+        Click a date to see available classes and book
+      </p>
 
       {/* Month Calendar Grid */}
       <div className="bg-white border border-soft-moonstone rounded-lg p-4 sm:p-6">
@@ -506,6 +490,26 @@ export function BookingClient({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Bundle Banner */}
+      {bundleConfig && (
+        <div className="bg-bright-orange/10 border border-bright-orange/30 rounded-lg p-6 text-center">
+          <h2 className="text-deep-tide-blue font-heading text-xl mb-1">
+            Save with a {bundleConfig.name}
+          </h2>
+          <p className="text-deep-ocean mb-4">
+            {bundleConfig.credits} classes for{" "}
+            {formatPrice(bundleConfig.priceInPence)} &middot; Valid{" "}
+            {bundleConfig.expiryDays} days
+          </p>
+          <Link
+            href="/book/bundle"
+            className="inline-block bg-bright-orange text-dawn-light px-6 py-3 rounded-md font-semibold hover:bg-bright-orange/90 transition-colors"
+          >
+            Purchase Bundle &rarr;
+          </Link>
         </div>
       )}
     </div>
