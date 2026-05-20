@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,25 +11,31 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    await authClient.signIn.email(
-      { email, password },
-      {
-        onSuccess: () => {
-          router.push("/admin/schedule");
+    try {
+      await authClient.signIn.email(
+        { email, password },
+        {
+          onSuccess: () => {
+            // Full reload so the just-set session cookie is in the jar for
+            // the next request, bypassing RSC prefetch/router cache.
+            window.location.assign("/admin/schedule");
+          },
+          onError: (ctx) => {
+            setError(ctx.error.message || "Invalid email or password");
+            setLoading(false);
+          },
         },
-        onError: (ctx) => {
-          setError(ctx.error.message || "Invalid email or password");
-          setLoading(false);
-        },
-      },
-    );
+      );
+    } catch {
+      setError("Something went wrong. Please try again.");
+      setLoading(false);
+    }
   }
 
   return (
