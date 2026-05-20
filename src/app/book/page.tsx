@@ -13,7 +13,8 @@ export default async function BookPage() {
     .select()
     .from(schedules)
     .innerJoin(classes, eq(schedules.classId, classes.id))
-    .where(and(gte(schedules.date, today), eq(schedules.status, "open")));
+    .where(and(gte(schedules.date, today), eq(schedules.status, "open")))
+    .orderBy(schedules.date, schedules.startTime);
 
   const activeBundles = await db
     .select()
