@@ -22,7 +22,6 @@ interface WaitlistPanelProps {
   scheduleId: number;
   classTitle: string;
   date: string;
-  onChanged?: () => void;
 }
 
 function formatRelative(createdAt: string) {
@@ -59,10 +58,10 @@ export function WaitlistPanel({
   scheduleId,
   classTitle,
   date,
-  onChanged,
 }: WaitlistPanelProps) {
   const [entries, setEntries] = useState<WaitlistEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchEntries = useCallback(async () => {
     setLoading(true);
@@ -70,8 +69,10 @@ export function WaitlistPanel({
     if (res.ok) {
       const data = (await res.json()) as WaitlistEntry[];
       setEntries(data);
+      setError(null);
     } else {
       setEntries([]);
+      setError("Failed to load waiting list.");
     }
     setLoading(false);
   }, [scheduleId]);
@@ -91,7 +92,8 @@ export function WaitlistPanel({
     });
     if (res.ok) {
       await fetchEntries();
-      onChanged?.();
+    } else {
+      window.alert("Failed to remove entry. Please try again.");
     }
   }
 
@@ -106,6 +108,8 @@ export function WaitlistPanel({
         <div className="px-4 pb-6">
           {loading ? (
             <p className="text-center text-soft-moonstone py-8">Loading...</p>
+          ) : error ? (
+            <p className="text-center text-red-600 py-8">{error}</p>
           ) : entries.length === 0 ? (
             <p className="text-center text-soft-moonstone py-8">
               Nobody on the waiting list yet.

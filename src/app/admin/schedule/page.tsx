@@ -466,7 +466,6 @@ export default function SchedulePage() {
           scheduleId={waitlistSchedule.schedules.id}
           classTitle={waitlistSchedule.classes.title}
           date={waitlistSchedule.schedules.date}
-          onChanged={fetchSchedules}
         />
       )}
     </div>
