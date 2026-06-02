@@ -275,4 +275,29 @@ describe("POST /api/book/waitlist", () => {
     expect(mockSendWaitlistNotification).not.toHaveBeenCalled();
     expect(mockUpdateSet).not.toHaveBeenCalled();
   });
+
+  it("normalises email to lowercase and trims whitespace before insert", async () => {
+    mockSelectFrom
+      .mockReturnValueOnce({ innerJoin: mockInnerJoin })
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ count: 1 }]),
+        }),
+      });
+
+    const response = await POST(
+      makeRequest({
+        scheduleId: 1,
+        customerName: "  Jane Doe  ",
+        customerEmail: "  Jane@Example.COM  ",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+      }),
+    );
+  });
 });

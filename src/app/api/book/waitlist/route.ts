@@ -22,6 +22,9 @@ export async function POST(request: Request) {
     );
   }
 
+  const normalisedName = customerName.trim();
+  const normalisedEmail = customerEmail.trim().toLowerCase();
+
   const result = await db
     .select()
     .from(schedules)
@@ -59,8 +62,8 @@ export async function POST(request: Request) {
       .insert(waitlistEntries)
       .values({
         scheduleId,
-        customerName,
-        customerEmail,
+        customerName: normalisedName,
+        customerEmail: normalisedEmail,
       })
       .returning({ id: waitlistEntries.id });
     insertedId = inserted[0]?.id ?? null;
@@ -83,8 +86,8 @@ export async function POST(request: Request) {
         const waitlistCount = countRows[0]?.count ?? 0;
 
         await sendWaitlistConfirmation({
-          customerName,
-          customerEmail,
+          customerName: normalisedName,
+          customerEmail: normalisedEmail,
           classTitle: classInfo.title,
           date: schedule.date,
           startTime: schedule.startTime,
@@ -92,8 +95,8 @@ export async function POST(request: Request) {
           location: schedule.location,
         });
         await sendWaitlistNotification({
-          customerName,
-          customerEmail,
+          customerName: normalisedName,
+          customerEmail: normalisedEmail,
           classTitle: classInfo.title,
           date: schedule.date,
           startTime: schedule.startTime,
