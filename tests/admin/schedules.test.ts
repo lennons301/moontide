@@ -78,11 +78,13 @@ vi.mock("@/lib/db/schema", () => ({
   classes: { id: "id", active: "active" },
   schedules: { id: "id", classId: "class_id" },
   bookings: { id: "id", scheduleId: "schedule_id" },
+  waitlistEntries: { id: "id", scheduleId: "schedule_id" },
 }));
 
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((...args: unknown[]) => args),
   desc: vi.fn((col: unknown) => col),
+  sql: vi.fn(),
 }));
 
 import { DELETE, GET, POST, PUT } from "@/app/api/admin/schedules/route";
@@ -90,10 +92,10 @@ import { DELETE, GET, POST, PUT } from "@/app/api/admin/schedules/route";
 describe("GET /api/admin/schedules", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSelectFrom.mockReturnValue({
-      innerJoin: mockInnerJoin,
-      where: mockSelectWhere,
-    });
+    mockSelectFrom.mockReset();
+    mockSelectFrom
+      .mockReturnValueOnce({ innerJoin: mockInnerJoin }) // schedules query
+      .mockReturnValue({ groupBy: vi.fn().mockResolvedValue([]) }); // waitlist count query (default: no entries)
     mockInnerJoin.mockReturnValue({ orderBy: mockOrderBy });
     mockOrderBy.mockResolvedValue([]);
   });
@@ -128,7 +130,10 @@ describe("GET /api/admin/schedules", () => {
     const response = await GET();
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toEqual(mockSchedules);
+    expect(body).toHaveLength(1);
+    expect(body[0].schedules).toEqual(mockSchedules[0].schedules);
+    expect(body[0].classes).toEqual(mockSchedules[0].classes);
+    expect(body[0].waitlistCount).toBe(0);
   });
 
   it("returns 200 with empty list when no schedules", async () => {
@@ -138,6 +143,75 @@ describe("GET /api/admin/schedules", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toEqual([]);
+  });
+
+  it("includes waitlistCount on each schedule row, defaulting to 0", async () => {
+    const mockSchedules = [
+      {
+        schedules: {
+          id: 1,
+          classId: 1,
+          date: "2026-05-01",
+          startTime: "09:00",
+          endTime: "10:00",
+          capacity: 8,
+          bookedCount: 8,
+          location: "Studio 1",
+          status: "full",
+        },
+        classes: {
+          id: 1,
+          slug: "prenatal",
+          title: "Prenatal Yoga",
+          category: "class",
+          bookingType: "stripe",
+          active: true,
+          priceInPence: 1500,
+        },
+      },
+      {
+        schedules: {
+          id: 2,
+          classId: 1,
+          date: "2026-05-08",
+          startTime: "09:00",
+          endTime: "10:00",
+          capacity: 8,
+          bookedCount: 3,
+          location: "Studio 1",
+          status: "open",
+        },
+        classes: {
+          id: 1,
+          slug: "prenatal",
+          title: "Prenatal Yoga",
+          category: "class",
+          bookingType: "stripe",
+          active: true,
+          priceInPence: 1500,
+        },
+      },
+    ];
+    mockOrderBy.mockResolvedValue(mockSchedules);
+
+    // The implementation does a second db.select() for waitlist counts:
+    //   db.select({ scheduleId, count }).from(waitlistEntries).groupBy(...)
+    // Reset mockSelectFrom so beforeEach's queued values don't interfere,
+    // then set up exactly the two calls GET will make.
+    const mockGroupBy = vi
+      .fn()
+      .mockResolvedValue([{ scheduleId: 1, count: 2 }]);
+    mockSelectFrom.mockReset();
+    mockSelectFrom
+      .mockReturnValueOnce({ innerJoin: mockInnerJoin }) // schedules query
+      .mockReturnValueOnce({ groupBy: mockGroupBy }); // waitlist count query
+
+    const response = await GET();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toHaveLength(2);
+    expect(body[0].waitlistCount).toBe(2);
+    expect(body[1].waitlistCount).toBe(0);
   });
 });
 
@@ -437,6 +511,7 @@ describe("PUT /api/admin/schedules", () => {
 describe("DELETE /api/admin/schedules", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSelectFrom.mockReset();
     mockSelectFrom.mockReturnValue({
       innerJoin: mockInnerJoin,
       where: mockSelectWhere,

@@ -1,15 +1,33 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { bookings, classes, schedules } from "@/lib/db/schema";
+import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 
 export async function GET() {
-  const result = await db
+  const scheduleRows = await db
     .select()
     .from(schedules)
     .innerJoin(classes, eq(schedules.classId, classes.id))
     .orderBy(desc(schedules.date));
-  return NextResponse.json(result);
+
+  const counts = await db
+    .select({
+      scheduleId: waitlistEntries.scheduleId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(waitlistEntries)
+    .groupBy(waitlistEntries.scheduleId);
+
+  const countByScheduleId = new Map<number, number>(
+    counts.map((c) => [c.scheduleId, c.count]),
+  );
+
+  const enriched = scheduleRows.map((row) => ({
+    ...row,
+    waitlistCount: countByScheduleId.get(row.schedules.id) ?? 0,
+  }));
+
+  return NextResponse.json(enriched);
 }
 
 export async function POST(request: Request) {
