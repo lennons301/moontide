@@ -36,6 +36,13 @@
       "when": 1776284763124,
       "tag": "0004_long_master_chief",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780410655024,
+      "tag": "0005_abandoned_komodo",
+      "breakpoints": true
     }
   ]
 }
