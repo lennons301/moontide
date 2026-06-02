@@ -53,15 +53,17 @@ export async function POST(request: Request) {
   }
 
   let isNewSignup = true;
+  let insertedId: number | null = null;
   try {
-    await db
+    const inserted = await db
       .insert(waitlistEntries)
       .values({
         scheduleId,
         customerName,
         customerEmail,
       })
-      .returning();
+      .returning({ id: waitlistEntries.id });
+    insertedId = inserted[0]?.id ?? null;
   } catch (err) {
     const code = (err as { code?: string })?.code;
     if (code === "23505") {
@@ -98,6 +100,12 @@ export async function POST(request: Request) {
           endTime: schedule.endTime,
           waitlistCount,
         });
+        if (insertedId !== null) {
+          await db
+            .update(waitlistEntries)
+            .set({ emailSent: true })
+            .where(eq(waitlistEntries.id, insertedId));
+        }
       } catch (e) {
         console.error("Waitlist email send failed", e);
       }

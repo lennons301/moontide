@@ -6,6 +6,8 @@ const {
   mockSelectWhere,
   mockInsertValues,
   mockInsertReturning,
+  mockUpdateSet,
+  mockUpdateWhere,
   mockSendWaitlistConfirmation,
   mockSendWaitlistNotification,
   mockAfter,
@@ -17,6 +19,8 @@ const {
   const mockInsertValues = vi
     .fn()
     .mockReturnValue({ returning: mockInsertReturning });
+  const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
+  const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
   const mockSendWaitlistConfirmation = vi
     .fn()
     .mockResolvedValue({ success: true });
@@ -30,6 +34,8 @@ const {
     mockSelectWhere,
     mockInsertValues,
     mockInsertReturning,
+    mockUpdateSet,
+    mockUpdateWhere,
     mockSendWaitlistConfirmation,
     mockSendWaitlistNotification,
     mockAfter,
@@ -40,6 +46,7 @@ vi.mock("@/lib/db", () => ({
   db: {
     select: vi.fn().mockReturnValue({ from: mockSelectFrom }),
     insert: vi.fn().mockReturnValue({ values: mockInsertValues }),
+    update: vi.fn().mockReturnValue({ set: mockUpdateSet }),
   },
 }));
 
@@ -104,6 +111,8 @@ describe("POST /api/book/waitlist", () => {
     mockSelectWhere.mockResolvedValue([SCHEDULE_ROW]);
     mockInsertValues.mockReturnValue({ returning: mockInsertReturning });
     mockInsertReturning.mockResolvedValue([{ id: 1 }]);
+    mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
+    mockUpdateWhere.mockResolvedValue(undefined);
     mockSendWaitlistConfirmation.mockResolvedValue({ success: true });
     mockSendWaitlistNotification.mockResolvedValue({ success: true });
   });
@@ -214,6 +223,7 @@ describe("POST /api/book/waitlist", () => {
         waitlistCount: 1,
       }),
     );
+    expect(mockUpdateSet).toHaveBeenCalledWith({ emailSent: true });
   });
 
   it("inserts when status='open' but bookedCount >= capacity", async () => {
@@ -263,5 +273,6 @@ describe("POST /api/book/waitlist", () => {
     expect(body.ok).toBe(true);
     expect(mockSendWaitlistConfirmation).not.toHaveBeenCalled();
     expect(mockSendWaitlistNotification).not.toHaveBeenCalled();
+    expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 });
