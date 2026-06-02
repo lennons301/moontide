@@ -1,4 +1,4 @@
-import { and, eq, gte } from "drizzle-orm";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { bundleConfig, classes, schedules } from "@/lib/db/schema";
@@ -13,7 +13,12 @@ export default async function BookPage() {
     .select()
     .from(schedules)
     .innerJoin(classes, eq(schedules.classId, classes.id))
-    .where(and(gte(schedules.date, today), eq(schedules.status, "open")))
+    .where(
+      and(
+        gte(schedules.date, today),
+        inArray(schedules.status, ["open", "full"]),
+      ),
+    )
     .orderBy(schedules.date, schedules.startTime);
 
   const activeBundles = await db

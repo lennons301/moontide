@@ -139,6 +139,94 @@ export async function sendBundleConfirmation(params: BundleConfirmationParams) {
   return { success: true };
 }
 
+interface WaitlistConfirmationParams {
+  customerName: string;
+  customerEmail: string;
+  classTitle: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  location: string | null;
+}
+
+export async function sendWaitlistConfirmation(
+  params: WaitlistConfirmationParams,
+) {
+  const {
+    customerName,
+    customerEmail,
+    classTitle,
+    date,
+    startTime,
+    endTime,
+    location,
+  } = params;
+  const formattedDate = new Date(date).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  const body = `
+    <p>Hi ${customerName},</p>
+    <p><strong>You're on the waiting list for ${classTitle}.</strong></p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;">
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">Class</td><td style="padding:4px 0;">${classTitle}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">Date</td><td style="padding:4px 0;">${formattedDate}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">Time</td><td style="padding:4px 0;">${startTime}–${endTime}</td></tr>
+      ${location ? `<tr><td style="padding:4px 12px 4px 0;color:#999;">Location</td><td style="padding:4px 0;">${location}</td></tr>` : ""}
+    </table>
+    <p>This class is currently full, but you're on the waiting list. If a spot opens up, Gabrielle will be in touch by email.</p>
+    <p>— Gabrielle</p>`;
+
+  const html = buildEmailHtml(body);
+
+  await resend.emails.send({
+    from: "Moontide <noreply@gabriellemoontide.co.uk>",
+    to: customerEmail,
+    subject: `You're on the waiting list — ${classTitle}`,
+    html,
+  });
+
+  return { success: true };
+}
+
+interface WaitlistNotificationParams {
+  customerName: string;
+  customerEmail: string;
+  classTitle: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  waitlistCount: number;
+}
+
+export async function sendWaitlistNotification(
+  params: WaitlistNotificationParams,
+) {
+  const {
+    customerName,
+    customerEmail,
+    classTitle,
+    date,
+    startTime,
+    endTime,
+    waitlistCount,
+  } = params;
+  const to = process.env.CONTACT_EMAIL || "gwaring5@googlemail.com";
+  const adminUrl = `${process.env.BETTER_AUTH_URL}/admin/schedule`;
+
+  await resend.emails.send({
+    from: "Moontide <noreply@gabriellemoontide.co.uk>",
+    to,
+    subject: `[Moontide] New waitlist signup: ${classTitle} ${date}`,
+    text: `New waitlist signup:\n\nCustomer: ${customerName} (${customerEmail})\nClass: ${classTitle}\nDate: ${date}\nTime: ${startTime}–${endTime}\n\nThere are now ${waitlistCount} ${waitlistCount === 1 ? "person" : "people"} on the waiting list for this class.\n\nView in admin: ${adminUrl}`,
+  });
+
+  return { success: true };
+}
+
 type BookingNotificationParams =
   | {
       type: "individual";

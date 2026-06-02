@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { WaitlistPanel } from "./waitlist-panel";
 
 interface ClassType {
   id: number;
@@ -29,6 +30,7 @@ interface Schedule {
     status: string;
   };
   classes: ClassType;
+  waitlistCount: number;
 }
 
 export default function SchedulePage() {
@@ -37,6 +39,10 @@ export default function SchedulePage() {
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [waitlistSchedule, setWaitlistSchedule] = useState<Schedule | null>(
+    null,
+  );
 
   const [formData, setFormData] = useState({
     classId: "",
@@ -400,7 +406,21 @@ export default function SchedulePage() {
                     {item.schedules.bookedCount}/{item.schedules.capacity}
                   </td>
                   <td className="px-4 py-3">
-                    {statusBadge(item.schedules.status)}
+                    <div className="flex flex-col gap-1">
+                      {statusBadge(item.schedules.status)}
+                      {item.waitlistCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWaitlistSchedule(item);
+                            setWaitlistOpen(true);
+                          }}
+                          className="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-ocean-light-blue/20 text-ocean-light-blue hover:bg-ocean-light-blue/30 transition-colors cursor-pointer w-fit"
+                        >
+                          Waitlist ({item.waitlistCount})
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <button
@@ -433,6 +453,21 @@ export default function SchedulePage() {
           </tbody>
         </table>
       </div>
+
+      {waitlistSchedule && (
+        <WaitlistPanel
+          open={waitlistOpen}
+          onOpenChange={(o) => {
+            setWaitlistOpen(o);
+            if (!o) {
+              fetchSchedules();
+            }
+          }}
+          scheduleId={waitlistSchedule.schedules.id}
+          classTitle={waitlistSchedule.classes.title}
+          date={waitlistSchedule.schedules.date}
+        />
+      )}
     </div>
   );
 }

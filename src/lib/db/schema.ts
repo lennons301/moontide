@@ -8,6 +8,7 @@ import {
   text,
   time,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // Enums
@@ -111,6 +112,26 @@ export const bookings = pgTable("bookings", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   emailSent: boolean("email_sent").default(false).notNull(),
 });
+
+export const waitlistEntries = pgTable(
+  "waitlist_entries",
+  {
+    id: serial("id").primaryKey(),
+    scheduleId: integer("schedule_id")
+      .references(() => schedules.id, { onDelete: "cascade" })
+      .notNull(),
+    customerName: text("customer_name").notNull(),
+    customerEmail: text("customer_email").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    emailSent: boolean("email_sent").default(false).notNull(),
+  },
+  (table) => ({
+    scheduleEmailUnique: uniqueIndex("waitlist_schedule_email_idx").on(
+      table.scheduleId,
+      table.customerEmail,
+    ),
+  }),
+);
 
 // Re-export Better Auth tables
 export {

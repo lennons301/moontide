@@ -115,6 +115,10 @@ function getTodayString() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
+function isScheduleFull(s: ScheduleRow["schedules"]) {
+  return s.status === "full" || s.bookedCount >= s.capacity;
+}
+
 type BundleConfig = {
   id: number;
   name: string;
@@ -224,6 +228,38 @@ export function BookingClient({
     }
   }
 
+  async function handleWaitlistSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selected) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/book/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scheduleId: selected.schedules.id,
+          customerName: name,
+          customerEmail: email,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Something went wrong");
+        setLoading(false);
+        return;
+      }
+
+      window.location.href = "/book/confirmation?type=waitlist";
+    } catch {
+      setError("Something went wrong. Please try again.");
+      setLoading(false);
+    }
+  }
+
   // Empty state
   if (schedules.length === 0) {
     return (
@@ -244,6 +280,7 @@ export function BookingClient({
 
   // Booking form view
   if (selected) {
+    const full = isScheduleFull(selected.schedules);
     const spotsLeft =
       selected.schedules.capacity - selected.schedules.bookedCount;
 
@@ -274,17 +311,29 @@ export function BookingClient({
               {selected.schedules.location}
             </p>
           )}
-          <p className="text-deep-tide-blue font-semibold mt-2">
-            {formatPrice(selected.classes.priceInPence)}
-          </p>
-          {spotsLeft < 3 && (
-            <p className="text-red-600 text-sm mt-1 font-medium">
-              Only {spotsLeft} {spotsLeft === 1 ? "spot" : "spots"} left
+          {full ? (
+            <p className="text-bright-orange font-medium mt-2">
+              This class is full. Join the waiting list and we'll be in touch if
+              a spot opens up.
             </p>
+          ) : (
+            <>
+              <p className="text-deep-tide-blue font-semibold mt-2">
+                {formatPrice(selected.classes.priceInPence)}
+              </p>
+              {spotsLeft < 3 && (
+                <p className="text-red-600 text-sm mt-1 font-medium">
+                  Only {spotsLeft} {spotsLeft === 1 ? "spot" : "spots"} left
+                </p>
+              )}
+            </>
           )}
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form
+          onSubmit={full ? handleWaitlistSubmit : handleSubmit}
+          className="space-y-5"
+        >
           <div className="space-y-2">
             <Label htmlFor="name">Name</Label>
             <Input
@@ -311,18 +360,20 @@ export function BookingClient({
             />
           </div>
 
-          <div className="flex items-center gap-3">
-            <input
-              id="use-bundle"
-              type="checkbox"
-              checked={useBundle}
-              onChange={(e) => setUseBundle(e.target.checked)}
-              className="h-4 w-4 rounded border-soft-moonstone text-bright-orange focus:ring-bright-orange"
-            />
-            <Label htmlFor="use-bundle" className="cursor-pointer">
-              I have a class bundle
-            </Label>
-          </div>
+          {!full && (
+            <div className="flex items-center gap-3">
+              <input
+                id="use-bundle"
+                type="checkbox"
+                checked={useBundle}
+                onChange={(e) => setUseBundle(e.target.checked)}
+                className="h-4 w-4 rounded border-soft-moonstone text-bright-orange focus:ring-bright-orange"
+              />
+              <Label htmlFor="use-bundle" className="cursor-pointer">
+                I have a class bundle
+              </Label>
+            </div>
+          )}
 
           {error && <p className="text-red-600 text-sm">{error}</p>}
 
@@ -331,7 +382,11 @@ export function BookingClient({
             disabled={loading}
             className="w-full h-11 bg-bright-orange text-dawn-light hover:bg-bright-orange/90 font-semibold text-base"
           >
-            {loading ? "Processing..." : "Book This Class"}
+            {loading
+              ? "Processing..."
+              : full
+                ? "Join waiting list"
+                : "Book This Class"}
           </Button>
         </form>
       </div>
@@ -455,6 +510,7 @@ export function BookingClient({
             {formatDate(selectedDate)}
           </h3>
           {classesForSelectedDate.map((item) => {
+            const full = isScheduleFull(item.schedules);
             const spotsLeft =
               item.schedules.capacity - item.schedules.bookedCount;
             return (
@@ -477,14 +533,27 @@ export function BookingClient({
                     </p>
                   </div>
                   <div className="flex items-center gap-4 sm:flex-col sm:items-end sm:gap-1">
-                    <span className="font-semibold text-deep-tide-blue">
-                      {formatPrice(item.classes.priceInPence)}
-                    </span>
-                    <span
-                      className={`text-sm ${spotsLeft < 3 ? "text-red-600 font-medium" : "text-deep-ocean"}`}
-                    >
-                      {spotsLeft} {spotsLeft === 1 ? "spot" : "spots"} left
-                    </span>
+                    {full ? (
+                      <>
+                        <span className="text-deep-ocean/60 text-sm line-through">
+                          {formatPrice(item.classes.priceInPence)}
+                        </span>
+                        <span className="text-bright-orange text-sm font-medium">
+                          Class full &middot; Join waiting list &rarr;
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-semibold text-deep-tide-blue">
+                          {formatPrice(item.classes.priceInPence)}
+                        </span>
+                        <span
+                          className={`text-sm ${spotsLeft < 3 ? "text-red-600 font-medium" : "text-deep-ocean"}`}
+                        >
+                          {spotsLeft} {spotsLeft === 1 ? "spot" : "spots"} left
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </button>

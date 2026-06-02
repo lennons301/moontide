@@ -17,6 +17,8 @@ import {
   sendBookingNotification,
   sendBundleConfirmation,
   sendContactEmail,
+  sendWaitlistConfirmation,
+  sendWaitlistNotification,
 } from "@/lib/email";
 
 describe("sendContactEmail", () => {
@@ -96,6 +98,38 @@ describe("sendBookingNotification", () => {
       bundleName: "6-Class Bundle",
       credits: 6,
       expiryDate: "30 Jul 2026",
+    });
+
+    expect(result).toEqual({ success: true });
+  });
+});
+
+describe("sendWaitlistConfirmation", () => {
+  it("sends HTML email to customer with class details", async () => {
+    const result = await sendWaitlistConfirmation({
+      customerName: "Jane Doe",
+      customerEmail: "jane@example.com",
+      classTitle: "Prenatal Yoga",
+      date: "2026-05-01",
+      startTime: "09:00",
+      endTime: "10:00",
+      location: "Studio 1, Hove",
+    });
+
+    expect(result).toEqual({ success: true });
+  });
+});
+
+describe("sendWaitlistNotification", () => {
+  it("sends plain text notification with waitlist signup details", async () => {
+    const result = await sendWaitlistNotification({
+      customerName: "Jane Doe",
+      customerEmail: "jane@example.com",
+      classTitle: "Prenatal Yoga",
+      date: "2026-05-01",
+      startTime: "09:00",
+      endTime: "10:00",
+      waitlistCount: 3,
     });
 
     expect(result).toEqual({ success: true });
