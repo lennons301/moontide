@@ -150,11 +150,11 @@ Note: the existing inline `New Class` form, edit handler, recurring schedule log
 sortKeys: {
   // ...
   received: (row) =>
-    (row.read ? "1_" : "0_") + row.createdAt,
+    (row.read ? "0_" : "1_") + row.createdAt,
 }
 ```
 
-…with `defaultSort = { key: "received", direction: "desc" }`. Unread rows always sort to the top regardless of `createdAt`; within each group, newest first. Other sortable columns ignore read-status (they just compare the named field).
+…with `defaultSort = { key: "received", direction: "desc" }`. With DESC ordering, the `"1_"` prefix on unread rows sorts above the `"0_"` prefix on read rows; within each group the `createdAt` portion sorts newer-first. Other sortable columns (From, Subject) use raw fields and ignore read-status. If the user explicitly clicks the Received header to flip direction to ASC, the composite still applies — read items come first within ASC and older within group. This is a deliberate trade-off: keeps the hook simple, and ASC-by-Received is an uncommon click.
 
 **Default filter state:** Status = `"All"`.
 
