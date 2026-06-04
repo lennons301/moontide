@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
+import { useTableControls } from "@/components/admin/use-table-controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +35,74 @@ interface Schedule {
   waitlistCount: number;
 }
 
+type StatusFilter = "all" | "open" | "full" | "cancelled";
+type TimeFilter = "upcoming" | "past" | "all";
+
+function todayString() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function PillGroup<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-xs text-deep-ocean/60">{label}:</span>
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+            value === opt.value
+              ? "bg-deep-tide-blue text-dawn-light"
+              : "bg-soft-moonstone/30 text-deep-ocean hover:bg-soft-moonstone/50"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  activeKey,
+  direction,
+  onClick,
+}: {
+  label: string;
+  sortKey: string;
+  activeKey: string;
+  direction: "asc" | "desc";
+  onClick: () => void;
+}) {
+  const active = sortKey === activeKey;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-deep-ocean hover:text-deep-tide-blue"
+    >
+      {label}
+      {active && (
+        <span aria-hidden="true">{direction === "asc" ? "↑" : "↓"}</span>
+      )}
+    </button>
+  );
+}
+
 export default function SchedulePage() {
   const [scheduleList, setScheduleList] = useState<Schedule[]>([]);
   const [classTypes, setClassTypes] = useState<ClassType[]>([]);
@@ -55,6 +125,10 @@ export default function SchedulePage() {
     numberOfWeeks: "6",
   });
 
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [classFilter, setClassFilter] = useState<string>("all");
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("upcoming");
+
   const fetchSchedules = useCallback(async () => {
     const res = await fetch("/api/admin/schedules");
     const data = await res.json();
@@ -71,6 +145,40 @@ export default function SchedulePage() {
     fetchSchedules();
     fetchClassTypes();
   }, [fetchSchedules, fetchClassTypes]);
+
+  const filters = useMemo(() => {
+    const today = todayString();
+    const map: Record<string, (row: Schedule) => boolean> = {};
+    if (statusFilter !== "all") {
+      map.status = (row) => row.schedules.status === statusFilter;
+    }
+    if (classFilter !== "all") {
+      const id = Number(classFilter);
+      map.class = (row) => row.classes.id === id;
+    }
+    if (timeFilter === "upcoming") {
+      map.time = (row) => row.schedules.date >= today;
+    } else if (timeFilter === "past") {
+      map.time = (row) => row.schedules.date < today;
+    }
+    return map;
+  }, [statusFilter, classFilter, timeFilter]);
+
+  const { rows, search, setSearch, sort, toggleSort, total } =
+    useTableControls<Schedule>({
+      rows: scheduleList,
+      sortKeys: {
+        class: (r) => r.classes.title,
+        date: (r) => r.schedules.date,
+        booked: (r) =>
+          r.schedules.capacity === 0
+            ? 0
+            : r.schedules.bookedCount / r.schedules.capacity,
+      },
+      searchFields: (r) => [r.classes.title, r.schedules.location ?? ""],
+      filters,
+      defaultSort: { key: "date", direction: "asc" },
+    });
 
   async function handleDelete(id: number) {
     if (!window.confirm("Are you sure you want to delete this schedule?")) {
@@ -363,17 +471,94 @@ export default function SchedulePage() {
         </form>
       )}
 
+      <AdminTableToolbar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search class title or location..."
+        showing={rows.length}
+        total={total}
+      >
+        <PillGroup
+          label="Status"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: "all", label: "All" },
+            { value: "open", label: "Open" },
+            { value: "full", label: "Full" },
+            { value: "cancelled", label: "Cancelled" },
+          ]}
+        />
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-deep-ocean/60">Class:</span>
+          <select
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+            className="h-7 rounded-full bg-soft-moonstone/30 px-2.5 text-xs text-deep-ocean focus:outline-none focus:ring-2 focus:ring-ring/50"
+          >
+            <option value="all">All</option>
+            {classTypes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.title}
+              </option>
+            ))}
+          </select>
+        </div>
+        <PillGroup
+          label="Time"
+          value={timeFilter}
+          onChange={setTimeFilter}
+          options={[
+            { value: "upcoming", label: "Upcoming" },
+            { value: "past", label: "Past" },
+            { value: "all", label: "All" },
+          ]}
+        />
+      </AdminTableToolbar>
+
       <div className="overflow-x-auto rounded-lg border border-soft-moonstone/30 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-soft-moonstone/20 bg-dawn-light text-xs uppercase tracking-wider text-deep-ocean">
+          <thead className="border-b border-soft-moonstone/20 bg-dawn-light">
             <tr>
-              <th className="px-4 py-3">Class</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">Time</th>
-              <th className="px-4 py-3">Location</th>
-              <th className="px-4 py-3">Booked</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Actions</th>
+              <th className="px-4 py-3">
+                <SortHeader
+                  label="Class"
+                  sortKey="class"
+                  activeKey={sort.key}
+                  direction={sort.direction}
+                  onClick={() => toggleSort("class")}
+                />
+              </th>
+              <th className="px-4 py-3">
+                <SortHeader
+                  label="Date"
+                  sortKey="date"
+                  activeKey={sort.key}
+                  direction={sort.direction}
+                  onClick={() => toggleSort("date")}
+                />
+              </th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
+                Time
+              </th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
+                Location
+              </th>
+              <th className="px-4 py-3">
+                <SortHeader
+                  label="Booked"
+                  sortKey="booked"
+                  activeKey={sort.key}
+                  direction={sort.direction}
+                  onClick={() => toggleSort("booked")}
+                />
+              </th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
+                Status
+              </th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-soft-moonstone/10">
@@ -386,8 +571,17 @@ export default function SchedulePage() {
                   No scheduled classes yet.
                 </td>
               </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="px-4 py-8 text-center text-soft-moonstone"
+                >
+                  No classes match the current filters.
+                </td>
+              </tr>
             ) : (
-              scheduleList.map((item) => (
+              rows.map((item) => (
                 <tr
                   key={item.schedules.id}
                   className="hover:bg-ocean-light-blue/10"
