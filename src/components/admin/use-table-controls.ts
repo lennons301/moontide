@@ -10,6 +10,11 @@ export interface SortState {
 export interface TableControlsConfig<T> {
   sortKeys: Record<string, (row: T) => string | number>;
   searchFields: (row: T) => string[];
+  /**
+   * Filter predicates composed with AND. Pass a stable reference (e.g. wrapped
+   * in useMemo at the call site) — a new object every render makes the hook's
+   * useMemo a no-op and re-derives rows on every render.
+   */
   filters?: Record<string, (row: T) => boolean>;
 }
 
@@ -46,6 +51,7 @@ export function deriveTableRows<T>(
     );
   }
 
+  // Unknown sort key → preserve current (post-filter) order rather than throwing.
   const compareFn = config.sortKeys[sort.key];
   if (compareFn) {
     const directionMultiplier = sort.direction === "asc" ? 1 : -1;
@@ -92,6 +98,8 @@ export function useTableControls<T>(
     [rows, search, sort, sortKeys, searchFields, filters],
   );
 
+  // Empty dep array is intentional: setSort is stable (React-guaranteed) and
+  // toggleSortState is a pure module-level fn — no closure over component state.
   const toggleSort = useCallback((key: string) => {
     setSort((current) => toggleSortState(current, key));
   }, []);
