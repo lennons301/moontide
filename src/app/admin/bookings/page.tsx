@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
+import { useTableControls } from "@/components/admin/use-table-controls";
 
 interface BookingRow {
   bookings: {
@@ -36,20 +38,141 @@ interface BookingRow {
   };
 }
 
+interface ClassType {
+  id: number;
+  title: string;
+}
+
+type StatusFilter = "all" | "confirmed" | "cancelled" | "waitlisted";
+type TimeFilter = "upcoming" | "past" | "all";
+
+function todayString() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function PillGroup<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-xs text-deep-ocean/60">{label}:</span>
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+            value === opt.value
+              ? "bg-deep-tide-blue text-dawn-light"
+              : "bg-soft-moonstone/30 text-deep-ocean hover:bg-soft-moonstone/50"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  activeKey,
+  direction,
+  onClick,
+}: {
+  label: string;
+  sortKey: string;
+  activeKey: string;
+  direction: "asc" | "desc";
+  onClick: () => void;
+}) {
+  const active = sortKey === activeKey;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-deep-ocean hover:text-deep-tide-blue"
+    >
+      {label}
+      {active && (
+        <span aria-hidden="true">{direction === "asc" ? "↑" : "↓"}</span>
+      )}
+    </button>
+  );
+}
+
 export default function BookingsPage() {
-  const [bookingList, setBookingList] = useState<BookingRow[]>([]);
+  const [allBookings, setAllBookings] = useState<BookingRow[]>([]);
+  const [classTypes, setClassTypes] = useState<ClassType[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [classFilter, setClassFilter] = useState<string>("all");
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("upcoming");
 
   const fetchBookings = useCallback(async () => {
     const res = await fetch("/api/admin/bookings");
     const data = await res.json();
-    setBookingList(data);
+    setAllBookings(data);
     setLoading(false);
   }, []);
 
   useEffect(() => {
     fetchBookings();
+    fetch("/api/admin/classes")
+      .then((r) => r.json())
+      .then((d) => setClassTypes(d));
   }, [fetchBookings]);
+
+  const filters = useMemo(() => {
+    const today = todayString();
+    const map: Record<string, (row: BookingRow) => boolean> = {};
+    if (statusFilter !== "all") {
+      map.status = (row) => row.bookings.status === statusFilter;
+    }
+    if (classFilter !== "all") {
+      const id = Number(classFilter);
+      map.class = (row) => row.classes.id === id;
+    }
+    if (timeFilter === "upcoming") {
+      map.time = (row) => row.schedules.date >= today;
+    } else if (timeFilter === "past") {
+      map.time = (row) => row.schedules.date < today;
+    }
+    return map;
+  }, [statusFilter, classFilter, timeFilter]);
+
+  const { rows, search, setSearch, sort, toggleSort, total } =
+    useTableControls<BookingRow>({
+      rows: allBookings,
+      sortKeys: {
+        customer: (r) => r.bookings.customerName,
+        class: (r) => r.classes.title,
+        date: (r) => r.schedules.date,
+        status: (r) => r.bookings.status,
+      },
+      searchFields: (r) => [r.bookings.customerName, r.bookings.customerEmail],
+      filters,
+      defaultSort: { key: "date", direction: "asc" },
+    });
 
   function statusBadge(status: string) {
     const colours: Record<string, string> = {
@@ -99,31 +222,106 @@ export default function BookingsPage() {
     }
   }
 
-  function formatDate(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  }
-
   return (
     <div>
       <h1 className="mb-6 text-2xl font-semibold text-deep-tide-blue">
         Bookings
       </h1>
 
+      <AdminTableToolbar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search name or email..."
+        showing={rows.length}
+        total={total}
+      >
+        <PillGroup
+          label="Status"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: "all", label: "All" },
+            { value: "confirmed", label: "Confirmed" },
+            { value: "cancelled", label: "Cancelled" },
+            { value: "waitlisted", label: "Waitlisted" },
+          ]}
+        />
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-deep-ocean/60">Class:</span>
+          <select
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+            className="h-7 rounded-full bg-soft-moonstone/30 px-2.5 text-xs text-deep-ocean focus:outline-none focus:ring-2 focus:ring-ring/50"
+          >
+            <option value="all">All</option>
+            {classTypes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.title}
+              </option>
+            ))}
+          </select>
+        </div>
+        <PillGroup
+          label="Time"
+          value={timeFilter}
+          onChange={setTimeFilter}
+          options={[
+            { value: "upcoming", label: "Upcoming" },
+            { value: "past", label: "Past" },
+            { value: "all", label: "All" },
+          ]}
+        />
+      </AdminTableToolbar>
+
       <div className="overflow-x-auto rounded-lg border border-soft-moonstone/30 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-soft-moonstone/20 bg-dawn-light text-xs uppercase tracking-wider text-deep-ocean">
+          <thead className="border-b border-soft-moonstone/20 bg-dawn-light">
             <tr>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Class</th>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">Time</th>
-              <th className="px-4 py-3">Payment</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Actions</th>
+              <th className="px-4 py-3">
+                <SortHeader
+                  label="Customer"
+                  sortKey="customer"
+                  activeKey={sort.key}
+                  direction={sort.direction}
+                  onClick={() => toggleSort("customer")}
+                />
+              </th>
+              <th className="px-4 py-3">
+                <SortHeader
+                  label="Class"
+                  sortKey="class"
+                  activeKey={sort.key}
+                  direction={sort.direction}
+                  onClick={() => toggleSort("class")}
+                />
+              </th>
+              <th className="px-4 py-3">
+                <SortHeader
+                  label="Date"
+                  sortKey="date"
+                  activeKey={sort.key}
+                  direction={sort.direction}
+                  onClick={() => toggleSort("date")}
+                />
+              </th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
+                Time
+              </th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
+                Payment
+              </th>
+              <th className="px-4 py-3">
+                <SortHeader
+                  label="Status"
+                  sortKey="status"
+                  activeKey={sort.key}
+                  direction={sort.direction}
+                  onClick={() => toggleSort("status")}
+                />
+              </th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-soft-moonstone/10">
@@ -136,17 +334,17 @@ export default function BookingsPage() {
                   Loading...
                 </td>
               </tr>
-            ) : bookingList.length === 0 ? (
+            ) : rows.length === 0 ? (
               <tr>
                 <td
                   colSpan={7}
                   className="px-4 py-8 text-center text-soft-moonstone"
                 >
-                  No bookings yet.
+                  No bookings match the current filters.
                 </td>
               </tr>
             ) : (
-              bookingList.map((item) => (
+              rows.map((item) => (
                 <tr
                   key={item.bookings.id}
                   className="hover:bg-ocean-light-blue/10"
