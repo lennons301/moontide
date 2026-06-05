@@ -17,6 +17,7 @@ import {
   sendBookingNotification,
   sendBundleConfirmation,
   sendContactEmail,
+  sendRescheduleNotification,
   sendWaitlistConfirmation,
   sendWaitlistNotification,
 } from "@/lib/email";
@@ -130,6 +131,25 @@ describe("sendWaitlistNotification", () => {
       startTime: "09:00",
       endTime: "10:00",
       waitlistCount: 3,
+    });
+
+    expect(result).toEqual({ success: true });
+  });
+});
+
+describe("sendRescheduleNotification", () => {
+  it("sends HTML email to customer with old and new class details", async () => {
+    const result = await sendRescheduleNotification({
+      customerName: "Jane Doe",
+      customerEmail: "jane@example.com",
+      classTitle: "Prenatal Yoga",
+      oldDate: "2026-06-09",
+      oldStartTime: "09:00",
+      oldEndTime: "10:00",
+      newDate: "2026-06-16",
+      newStartTime: "09:00",
+      newEndTime: "10:00",
+      newLocation: "Studio 1, Hove",
     });
 
     expect(result).toEqual({ success: true });

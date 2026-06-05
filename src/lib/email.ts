@@ -246,6 +246,70 @@ type BookingNotificationParams =
       expiryDate: string;
     };
 
+interface RescheduleNotificationParams {
+  customerName: string;
+  customerEmail: string;
+  classTitle: string;
+  oldDate: string;
+  oldStartTime: string;
+  oldEndTime: string;
+  newDate: string;
+  newStartTime: string;
+  newEndTime: string;
+  newLocation: string | null;
+}
+
+export async function sendRescheduleNotification(
+  params: RescheduleNotificationParams,
+) {
+  const {
+    customerName,
+    customerEmail,
+    classTitle,
+    oldDate,
+    oldStartTime,
+    oldEndTime,
+    newDate,
+    newStartTime,
+    newEndTime,
+    newLocation,
+  } = params;
+
+  const formatDate = (d: string) =>
+    new Date(d).toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+
+  const formattedOld = formatDate(oldDate);
+  const formattedNew = formatDate(newDate);
+
+  const body = `
+    <p>Hi ${customerName},</p>
+    <p><strong>Your booking has been moved to a new date.</strong></p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;">
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">Class</td><td style="padding:4px 0;">${classTitle}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">From</td><td style="padding:4px 0;">${formattedOld}, ${oldStartTime}–${oldEndTime}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">To</td><td style="padding:4px 0;">${formattedNew}, ${newStartTime}–${newEndTime}</td></tr>
+      ${newLocation ? `<tr><td style="padding:4px 12px 4px 0;color:#999;">Location</td><td style="padding:4px 0;">${newLocation}</td></tr>` : ""}
+    </table>
+    <p>If this isn't right, please get in touch and we'll sort it out.</p>
+    <p>— Gabrielle</p>`;
+
+  const html = buildEmailHtml(body);
+
+  await resend.emails.send({
+    from: "Moontide <noreply@gabriellemoontide.co.uk>",
+    to: customerEmail,
+    subject: `Your booking has been moved — ${classTitle}`,
+    html,
+  });
+
+  return { success: true };
+}
+
 export async function sendBookingNotification(
   params: BookingNotificationParams,
 ) {
