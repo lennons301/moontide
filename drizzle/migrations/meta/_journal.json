@@ -43,6 +43,13 @@
       "when": 1780410655024,
       "tag": "0005_abandoned_komodo",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780672250292,
+      "tag": "0006_nice_captain_britain",
+      "breakpoints": true
     }
   ]
 }
