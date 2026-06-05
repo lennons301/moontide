@@ -142,7 +142,7 @@ Note: the existing inline `New Class` form, edit handler, recurring schedule log
 
 **Search** matches `name`, `email`, `subject`, `message`.
 
-**Sortable columns:** From (by `name`), Subject (by `subject`), Received (by `createdAt`).
+**Sort:** Fixed composite ordering — unread first, then `createdAt DESC`. No clickable sort headers since the page renders a vertical card list, not a table.
 
 **Default sort:** composite — unread first, then `createdAt DESC`. Implemented in the hook config as:
 
