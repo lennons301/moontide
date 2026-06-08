@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
 import { useTableControls } from "@/components/admin/use-table-controls";
+import { RescheduleSheet } from "./reschedule-sheet";
 
 interface BookingRow {
   bookings: {
@@ -15,6 +16,8 @@ interface BookingRow {
     status: string;
     createdAt: string;
     emailSent: boolean;
+    originalScheduleId: number | null;
+    rescheduledAt: string | null;
   };
   schedules: {
     id: number;
@@ -43,6 +46,20 @@ interface ClassType {
   title: string;
 }
 
+interface ScheduleApiRow {
+  schedules: {
+    id: number;
+    classId: number;
+    date: string;
+    startTime: string;
+    endTime: string;
+    capacity: number;
+    bookedCount: number;
+    location: string | null;
+    status: string;
+  };
+}
+
 type StatusFilter = "all" | "confirmed" | "cancelled" | "waitlisted";
 type TimeFilter = "upcoming" | "past" | "all";
 
@@ -56,6 +73,16 @@ function formatDate(dateStr: string) {
     day: "numeric",
     month: "short",
     year: "numeric",
+  });
+}
+
+function formatDateTime(dateStr: string) {
+  return new Date(dateStr).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -123,6 +150,10 @@ export default function BookingsPage() {
   const [allBookings, setAllBookings] = useState<BookingRow[]>([]);
   const [classTypes, setClassTypes] = useState<ClassType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [allSchedules, setAllSchedules] = useState<ScheduleApiRow[]>([]);
+  const [reschedulingBooking, setReschedulingBooking] =
+    useState<BookingRow | null>(null);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [classFilter, setClassFilter] = useState<string>("all");
@@ -135,12 +166,21 @@ export default function BookingsPage() {
     setLoading(false);
   }, []);
 
+  const fetchSchedules = useCallback(async () => {
+    const res = await fetch("/api/admin/schedules");
+    if (res.ok) {
+      const data = await res.json();
+      setAllSchedules(data);
+    }
+  }, []);
+
   useEffect(() => {
     fetchBookings();
+    fetchSchedules();
     fetch("/api/admin/classes")
       .then((r) => r.json())
       .then((d) => setClassTypes(d));
-  }, [fetchBookings]);
+  }, [fetchBookings, fetchSchedules]);
 
   const filters = useMemo(() => {
     const today = todayString();
@@ -220,6 +260,16 @@ export default function BookingsPage() {
     if (res.ok) {
       await fetchBookings();
     }
+  }
+
+  function openReschedule(row: BookingRow) {
+    setReschedulingBooking(row);
+    setRescheduleOpen(true);
+  }
+
+  async function handleRescheduleMoved() {
+    await fetchBookings();
+    await fetchSchedules();
   }
 
   return (
@@ -361,7 +411,15 @@ export default function BookingsPage() {
                     {item.classes.title}
                   </td>
                   <td className="px-4 py-3">
-                    {formatDate(item.schedules.date)}
+                    <span>{formatDate(item.schedules.date)}</span>
+                    {item.bookings.rescheduledAt && (
+                      <span
+                        title={`Moved on ${formatDateTime(item.bookings.rescheduledAt)}`}
+                        className="ml-2 inline-block rounded-full bg-soft-moonstone/30 px-2 py-0.5 text-xs text-deep-ocean"
+                      >
+                        moved
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {item.schedules.startTime} - {item.schedules.endTime}
@@ -381,13 +439,22 @@ export default function BookingsPage() {
                   </td>
                   <td className="px-4 py-3">
                     {item.bookings.status === "confirmed" && (
-                      <button
-                        type="button"
-                        onClick={() => handleCancel(item.bookings.id)}
-                        className="text-red-600 hover:text-red-800 text-sm"
-                      >
-                        Cancel
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openReschedule(item)}
+                          className="text-ocean-light-blue hover:text-deep-tide-blue text-sm mr-3"
+                        >
+                          Reschedule
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCancel(item.bookings.id)}
+                          className="text-red-600 hover:text-red-800 text-sm"
+                        >
+                          Cancel
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>
@@ -396,6 +463,26 @@ export default function BookingsPage() {
           </tbody>
         </table>
       </div>
+
+      {reschedulingBooking && (
+        <RescheduleSheet
+          open={rescheduleOpen}
+          onOpenChange={(o) => {
+            setRescheduleOpen(o);
+            if (!o) setReschedulingBooking(null);
+          }}
+          bookingId={reschedulingBooking.bookings.id}
+          customerName={reschedulingBooking.bookings.customerName}
+          classTitle={reschedulingBooking.classes.title}
+          sourceScheduleId={reschedulingBooking.schedules.id}
+          sourceClassId={reschedulingBooking.classes.id}
+          sourceDate={reschedulingBooking.schedules.date}
+          sourceStartTime={reschedulingBooking.schedules.startTime}
+          sourceEndTime={reschedulingBooking.schedules.endTime}
+          allSchedules={allSchedules.map((s) => s.schedules)}
+          onMoved={handleRescheduleMoved}
+        />
+      )}
     </div>
   );
 }

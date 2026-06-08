@@ -111,6 +111,10 @@ export const bookings = pgTable("bookings", {
   status: bookingStatus("status").notNull().default("confirmed"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   emailSent: boolean("email_sent").default(false).notNull(),
+  originalScheduleId: integer("original_schedule_id").references(
+    () => schedules.id,
+  ),
+  rescheduledAt: timestamp("rescheduled_at"),
 });
 
 export const waitlistEntries = pgTable(

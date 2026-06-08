@@ -200,7 +200,7 @@ export default function SchedulePage() {
   async function handleCancelClass(id: number) {
     if (
       !window.confirm(
-        "Cancel this class? It will be hidden from the public calendar. Existing bookings remain — refund and notify customers separately.",
+        "Cancel this class? It will be hidden from the public calendar. Existing bookings remain — reschedule them individually from the Bookings page, or refund and notify customers separately.",
       )
     ) {
       return;
