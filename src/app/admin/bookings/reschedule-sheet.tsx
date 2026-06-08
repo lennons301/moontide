@@ -93,10 +93,10 @@ export function RescheduleSheet({
     if (res.ok) {
       onMoved();
       onOpenChange(false);
-    } else {
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(data.error ?? "Failed to reschedule. Please try again.");
+      return;
     }
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    setError(data.error ?? "Failed to reschedule. Please try again.");
     setSubmitting(false);
   }
 
