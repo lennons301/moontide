@@ -83,6 +83,12 @@ export async function PUT(request: Request) {
       .select()
       .from(schedules)
       .where(eq(schedules.id, booking.scheduleId));
+    if (sourceRows.length === 0) {
+      return NextResponse.json(
+        { error: "Source schedule not found" },
+        { status: 404 },
+      );
+    }
     const source = sourceRows[0];
 
     const targetRows = await db

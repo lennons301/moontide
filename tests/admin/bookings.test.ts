@@ -5,7 +5,6 @@ const {
   mockSelectWhere,
   mockTransaction,
   mockTxUpdateSet,
-  mockTxUpdateWhere,
   mockSendRescheduleNotification,
   mockAfter,
 } = vi.hoisted(() => {
@@ -28,7 +27,6 @@ const {
     mockSelectWhere,
     mockTransaction,
     mockTxUpdateSet,
-    mockTxUpdateWhere,
     mockSendRescheduleNotification,
     mockAfter,
   };
@@ -157,6 +155,7 @@ describe("PUT /api/admin/bookings — cancel branch (regression)", () => {
     expect(response.status).toBe(200);
     expect(mockTransaction).toHaveBeenCalled();
     expect(mockTxUpdateSet).toHaveBeenCalledWith({ status: "cancelled" });
+    expect(mockTxUpdateSet).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -265,6 +264,7 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
         newDate: "2026-06-16",
       }),
     );
+    expect(mockTxUpdateSet).toHaveBeenCalledTimes(3);
   });
 
   it("preserves originalScheduleId on second reschedule", async () => {
