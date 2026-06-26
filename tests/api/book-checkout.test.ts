@@ -39,11 +39,18 @@ vi.mock("@/lib/db/schema", () => ({
   classes: { id: "id" },
   schedules: { id: "id", classId: "class_id" },
   bundleConfig: { id: "id", active: "active" },
+  bookings: {
+    id: "id",
+    scheduleId: "schedule_id",
+    customerEmail: "customer_email",
+    status: "status",
+  },
 }));
 
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((...args: unknown[]) => args),
   and: vi.fn((...args: unknown[]) => args),
+  ne: vi.fn((...args: unknown[]) => args),
 }));
 
 import { POST } from "@/app/api/book/checkout/route";
@@ -51,7 +58,10 @@ import { POST } from "@/app/api/book/checkout/route";
 describe("POST /api/book/checkout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSelectFrom.mockReturnValue({ innerJoin: mockInnerJoin });
+    mockSelectFrom.mockReturnValue({
+      innerJoin: mockInnerJoin,
+      where: mockWhere,
+    });
     mockInnerJoin.mockReturnValue({ where: mockWhere });
     mockWhere.mockResolvedValue([]);
     mockCheckoutSessionsCreate.mockResolvedValue({
@@ -158,20 +168,22 @@ describe("POST /api/book/checkout", () => {
   });
 
   it("returns checkout URL for valid booking", async () => {
-    mockWhere.mockResolvedValue([
-      {
-        schedules: {
-          id: 1,
-          status: "open",
-          bookedCount: 2,
-          capacity: 8,
-          date: "2026-05-01",
-          startTime: "09:00",
-          endTime: "10:00",
+    mockWhere
+      .mockResolvedValueOnce([
+        {
+          schedules: {
+            id: 1,
+            status: "open",
+            bookedCount: 2,
+            capacity: 8,
+            date: "2026-05-01",
+            startTime: "09:00",
+            endTime: "10:00",
+          },
+          classes: { id: 1, title: "Morning Yoga", priceInPence: 1200 },
         },
-        classes: { id: 1, title: "Morning Yoga", priceInPence: 1200 },
-      },
-    ]);
+      ])
+      .mockResolvedValueOnce([]);
 
     const request = new Request("http://localhost:3000/api/book/checkout", {
       method: "POST",
@@ -213,6 +225,41 @@ describe("POST /api/book/checkout", () => {
         }),
       }),
     );
+  });
+
+  it("returns 409 when customer already has a booking for this schedule", async () => {
+    mockWhere
+      .mockResolvedValueOnce([
+        {
+          schedules: {
+            id: 1,
+            status: "open",
+            bookedCount: 2,
+            capacity: 8,
+            date: "2026-05-01",
+            startTime: "09:00",
+            endTime: "10:00",
+          },
+          classes: { id: 1, title: "Morning Yoga", priceInPence: 1200 },
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 99, status: "confirmed" }]);
+
+    const request = new Request("http://localhost:3000/api/book/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 1,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error).toBe("You already have a booking for this class");
+    expect(mockCheckoutSessionsCreate).not.toHaveBeenCalled();
   });
 
   it("returns checkout URL for bundle purchase", async () => {

@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { bundleConfig, classes, schedules } from "@/lib/db/schema";
+import { bookings, bundleConfig, classes, schedules } from "@/lib/db/schema";
 import { getStripe } from "@/lib/stripe";
 
 export async function POST(request: Request) {
@@ -89,6 +89,25 @@ export async function POST(request: Request) {
 
   if (schedule.bookedCount >= schedule.capacity) {
     return NextResponse.json({ error: "Class is full" }, { status: 400 });
+  }
+
+  // Prevent paying to book a class the customer is already booked onto.
+  const existingBooking = await db
+    .select()
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.scheduleId, scheduleId),
+        eq(bookings.customerEmail, customerEmail),
+        ne(bookings.status, "cancelled"),
+      ),
+    );
+
+  if (existingBooking.length > 0) {
+    return NextResponse.json(
+      { error: "You already have a booking for this class" },
+      { status: 409 },
+    );
   }
 
   const session = await stripe.checkout.sessions.create({

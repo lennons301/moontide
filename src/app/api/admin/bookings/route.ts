@@ -1,7 +1,7 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { bookings, classes, schedules } from "@/lib/db/schema";
+import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
 import { sendRescheduleNotification } from "@/lib/email";
 
 export async function GET() {
@@ -56,6 +56,18 @@ export async function PUT(request: Request) {
         .update(schedules)
         .set({ bookedCount: sql`GREATEST(${schedules.bookedCount} - 1, 0)` })
         .where(eq(schedules.id, existing[0].scheduleId));
+
+      // If the booking was paid for with a bundle credit, give the credit back
+      // (capped at the bundle total) and re-activate an exhausted bundle.
+      if (existing[0].bundleId) {
+        await tx
+          .update(bundles)
+          .set({
+            creditsRemaining: sql`LEAST(${bundles.creditsRemaining} + 1, ${bundles.creditsTotal})`,
+            status: sql`CASE WHEN ${bundles.status} = 'exhausted' THEN 'active'::bundle_status ELSE ${bundles.status} END`,
+          })
+          .where(eq(bundles.id, existing[0].bundleId));
+      }
     });
 
     return NextResponse.json({ success: true });

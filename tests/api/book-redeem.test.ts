@@ -55,7 +55,12 @@ vi.mock("@/lib/db/schema", () => ({
     creditsRemaining: "credits_remaining",
     expiresAt: "expires_at",
   },
-  bookings: { id: "id", scheduleId: "schedule_id" },
+  bookings: {
+    id: "id",
+    scheduleId: "schedule_id",
+    customerEmail: "customer_email",
+    status: "status",
+  },
   schedules: { id: "id", bookedCount: "booked_count" },
 }));
 
@@ -63,6 +68,7 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn((...args: unknown[]) => args),
   and: vi.fn((...args: unknown[]) => args),
   gt: vi.fn((...args: unknown[]) => args),
+  ne: vi.fn((...args: unknown[]) => args),
   sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
     strings,
     values,
@@ -126,16 +132,18 @@ describe("POST /api/book/redeem", () => {
   });
 
   it("returns 200 for valid bundle redemption", async () => {
-    mockSelectWhere.mockResolvedValue([
-      {
-        id: 10,
-        customerEmail: "jane@example.com",
-        creditsTotal: 6,
-        creditsRemaining: 4,
-        status: "active",
-        expiresAt: new Date("2026-12-31"),
-      },
-    ]);
+    mockSelectWhere
+      .mockResolvedValueOnce([
+        {
+          id: 10,
+          customerEmail: "jane@example.com",
+          creditsTotal: 6,
+          creditsRemaining: 4,
+          status: "active",
+          expiresAt: new Date("2026-12-31"),
+        },
+      ])
+      .mockResolvedValueOnce([]);
 
     const request = new Request("http://localhost:3000/api/book/redeem", {
       method: "POST",
@@ -177,17 +185,53 @@ describe("POST /api/book/redeem", () => {
     );
   });
 
-  it("sets bundle status to exhausted when credits reach 0", async () => {
-    mockSelectWhere.mockResolvedValue([
-      {
-        id: 10,
+  it("returns 409 when customer already has a booking for this schedule", async () => {
+    mockSelectWhere
+      .mockResolvedValueOnce([
+        {
+          id: 10,
+          customerEmail: "jane@example.com",
+          creditsTotal: 6,
+          creditsRemaining: 4,
+          status: "active",
+          expiresAt: new Date("2026-12-31"),
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 99, status: "confirmed" }]);
+
+    const request = new Request("http://localhost:3000/api/book/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 1,
+        customerName: "Jane Doe",
         customerEmail: "jane@example.com",
-        creditsTotal: 6,
-        creditsRemaining: 1,
-        status: "active",
-        expiresAt: new Date("2026-12-31"),
-      },
-    ]);
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error).toBe("You already have a booking for this class");
+
+    // No booking should be created and no credit spent
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("sets bundle status to exhausted when credits reach 0", async () => {
+    mockSelectWhere
+      .mockResolvedValueOnce([
+        {
+          id: 10,
+          customerEmail: "jane@example.com",
+          creditsTotal: 6,
+          creditsRemaining: 1,
+          status: "active",
+          expiresAt: new Date("2026-12-31"),
+        },
+      ])
+      .mockResolvedValueOnce([]);
 
     const request = new Request("http://localhost:3000/api/book/redeem", {
       method: "POST",

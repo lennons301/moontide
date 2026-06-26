@@ -1,4 +1,4 @@
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { bookings, bundles, schedules } from "@/lib/db/schema";
@@ -33,6 +33,26 @@ export async function POST(request: Request) {
   }
 
   const bundle = activeBundles[0];
+
+  // Prevent double-booking the same class with bundle credits.
+  const existingBooking = await db
+    .select()
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.scheduleId, scheduleId),
+        eq(bookings.customerEmail, customerEmail),
+        ne(bookings.status, "cancelled"),
+      ),
+    );
+
+  if (existingBooking.length > 0) {
+    return NextResponse.json(
+      { error: "You already have a booking for this class" },
+      { status: 409 },
+    );
+  }
+
   const newCredits = bundle.creditsRemaining - 1;
 
   await db.transaction(async (tx) => {
