@@ -50,6 +50,13 @@
       "when": 1780672250292,
       "tag": "0006_nice_captain_britain",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782485957460,
+      "tag": "0007_prevent_duplicate_active_bookings",
+      "breakpoints": true
     }
   ]
 }
