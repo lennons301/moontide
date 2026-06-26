@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -99,23 +100,33 @@ export const bundleConfig = pgTable("bundle_config", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const bookings = pgTable("bookings", {
-  id: serial("id").primaryKey(),
-  scheduleId: integer("schedule_id")
-    .references(() => schedules.id)
-    .notNull(),
-  customerName: text("customer_name").notNull(),
-  customerEmail: text("customer_email").notNull(),
-  stripePaymentId: text("stripe_payment_id"),
-  bundleId: integer("bundle_id").references(() => bundles.id),
-  status: bookingStatus("status").notNull().default("confirmed"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  emailSent: boolean("email_sent").default(false).notNull(),
-  originalScheduleId: integer("original_schedule_id").references(
-    () => schedules.id,
-  ),
-  rescheduledAt: timestamp("rescheduled_at"),
-});
+export const bookings = pgTable(
+  "bookings",
+  {
+    id: serial("id").primaryKey(),
+    scheduleId: integer("schedule_id")
+      .references(() => schedules.id)
+      .notNull(),
+    customerName: text("customer_name").notNull(),
+    customerEmail: text("customer_email").notNull(),
+    stripePaymentId: text("stripe_payment_id"),
+    bundleId: integer("bundle_id").references(() => bundles.id),
+    status: bookingStatus("status").notNull().default("confirmed"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    emailSent: boolean("email_sent").default(false).notNull(),
+    originalScheduleId: integer("original_schedule_id").references(
+      () => schedules.id,
+    ),
+    rescheduledAt: timestamp("rescheduled_at"),
+  },
+  (table) => ({
+    // One active (non-cancelled) booking per customer per schedule.
+    // Partial so a customer can re-book after cancelling.
+    scheduleEmailActiveUnique: uniqueIndex("bookings_schedule_email_active_idx")
+      .on(table.scheduleId, table.customerEmail)
+      .where(sql`${table.status} <> 'cancelled'`),
+  }),
+);
 
 export const waitlistEntries = pgTable(
   "waitlist_entries",

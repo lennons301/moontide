@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "bookings_schedule_email_active_idx" ON "bookings" USING btree ("schedule_id","customer_email") WHERE "bookings"."status" <> 'cancelled';
