@@ -92,7 +92,12 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/db/schema", () => ({
-  bookings: { id: "id", scheduleId: "schedule_id" },
+  bookings: {
+    id: "id",
+    scheduleId: "schedule_id",
+    customerEmail: "customer_email",
+    status: "status",
+  },
   bundles: { id: "id" },
   bundleConfig: { id: "id" },
   schedules: { id: "id", bookedCount: "booked_count" },
@@ -154,7 +159,13 @@ describe("POST /api/stripe/webhook", () => {
   });
 
   it("creates booking inside a transaction for individual purchase", async () => {
-    // Mock schedule+class query for email sending in after()
+    // 1st select() → existence check finds no current booking
+    mockBundleConfigSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    // 2nd select() → schedule+class query for email sending in after()
     mockBundleConfigSelect.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
@@ -230,6 +241,45 @@ describe("POST /api/stripe/webhook", () => {
         customerName: "Jane Doe",
       }),
     );
+  });
+
+  it("skips creating a duplicate individual booking when one already exists", async () => {
+    // 1st select() → existence check finds an active booking
+    mockBundleConfigSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ id: 99, status: "confirmed" }]),
+      }),
+    });
+
+    mockConstructEvent.mockReturnValue({
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_test_dupe",
+          metadata: {
+            type: "individual",
+            scheduleId: "1",
+            customerName: "Jane Doe",
+            customerEmail: "jane@example.com",
+          },
+        },
+      },
+    } as unknown as Stripe.Event);
+
+    const request = new Request("http://localhost:3000/api/stripe/webhook", {
+      method: "POST",
+      headers: { "stripe-signature": "valid" },
+      body: "{}",
+    });
+
+    const response = await POST(request);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(response.status).toBe(200);
+
+    // No second booking created, no seat counted, no email fired
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
   });
 
   it("creates bundle record for bundle purchase", async () => {

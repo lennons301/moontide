@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
@@ -40,6 +40,25 @@ export async function POST(request: Request) {
 
     if (metadata?.type === "individual") {
       const scheduleId = Number.parseInt(metadata.scheduleId, 10);
+
+      // Idempotency guard: Stripe may deliver an event more than once, and a
+      // customer may have an existing booking for this class. Don't create a
+      // duplicate or double-count the seat.
+      const existingBooking = await db
+        .select()
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.scheduleId, scheduleId),
+            eq(bookings.customerEmail, metadata.customerEmail),
+            ne(bookings.status, "cancelled"),
+          ),
+        );
+
+      if (existingBooking.length > 0) {
+        return NextResponse.json({ received: true });
+      }
+
       await db.transaction(async (tx) => {
         await tx.insert(bookings).values({
           scheduleId,

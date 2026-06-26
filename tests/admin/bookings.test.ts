@@ -40,9 +40,20 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/db/schema", () => ({
-  bookings: { id: "id", scheduleId: "schedule_id", status: "status" },
+  bookings: {
+    id: "id",
+    scheduleId: "schedule_id",
+    status: "status",
+    bundleId: "bundle_id",
+  },
   schedules: { id: "id", classId: "class_id", bookedCount: "booked_count" },
   classes: { id: "id" },
+  bundles: {
+    id: "id",
+    creditsRemaining: "credits_remaining",
+    creditsTotal: "credits_total",
+    status: "status",
+  },
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -156,6 +167,31 @@ describe("PUT /api/admin/bookings — cancel branch (regression)", () => {
     expect(mockTransaction).toHaveBeenCalled();
     expect(mockTxUpdateSet).toHaveBeenCalledWith({ status: "cancelled" });
     expect(mockTxUpdateSet).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not touch any bundle when cancelling a non-bundle booking", async () => {
+    mockSelectWhere.mockResolvedValueOnce([SAMPLE_BOOKING]);
+    await PUT(makeRequest({ id: 1, status: "cancelled" }));
+    const bundleUpdateCall = mockTxUpdateSet.mock.calls.find(
+      (c) => c[0] && typeof c[0] === "object" && "creditsRemaining" in c[0],
+    );
+    expect(bundleUpdateCall).toBeUndefined();
+  });
+
+  it("restores a bundle credit when cancelling a bundle-funded booking", async () => {
+    mockSelectWhere.mockResolvedValueOnce([{ ...SAMPLE_BOOKING, bundleId: 7 }]);
+    const response = await PUT(makeRequest({ id: 1, status: "cancelled" }));
+    expect(response.status).toBe(200);
+
+    // booking + schedule + bundle updates
+    expect(mockTxUpdateSet).toHaveBeenCalledTimes(3);
+
+    // The bundle update restores credits and re-activates the bundle
+    const bundleUpdateCall = mockTxUpdateSet.mock.calls.find(
+      (c) => c[0] && typeof c[0] === "object" && "creditsRemaining" in c[0],
+    );
+    expect(bundleUpdateCall).toBeDefined();
+    expect(bundleUpdateCall?.[0]).toHaveProperty("status");
   });
 });
 
