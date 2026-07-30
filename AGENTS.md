@@ -151,3 +151,21 @@ drizzle/
 
 Platform standards and choices: see ~/code/platform/
 This project's registry entry: products/moontide.yaml
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked as GitHub Issues on `lennons301/moontide`, operated via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Review gates
+
+Estate defaults plus a `payments` gate (Stripe, booking, pricing paths) — matching PRs get `human-signoff` and wait for a human merge. See `docs/agents/review-gates.yaml`.

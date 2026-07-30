@@ -1,0 +1,16 @@
+# Repo-specific human-sign-off gates — ADDITIVE extension of the estate
+# default (~/code/platform/standards/review-gates.yaml). A repo can add
+# gates, never remove estate ones. Same shape:
+#
+# human_signoff:
+#   <category>:
+#     - "<glob>"
+#
+# Moontide takes real money from real customers, so the money paths are
+# gated on top of the estate defaults (which already cover visual-ui,
+# data-migrations, auth and ci-secrets).
+human_signoff:
+  payments:
+    - "**/api/stripe/**"
+    - "**/api/book/**"
+    - "**/admin/pricing/**"
