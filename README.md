@@ -11,6 +11,7 @@ Wellbeing website for women navigating change through yoga, coaching, and embodi
 - **Payments:** Stripe Checkout + webhooks
 - **UI:** shadcn/ui + Tailwind CSS v4
 - **Email:** Resend
+- **Linting & formatting:** Biome
 - **Testing:** Vitest
 
 ## Prerequisites
