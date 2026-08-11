@@ -31,7 +31,7 @@ async function seed() {
     },
     {
       slug: "vinyasa",
-      title: "Vinyasa Yoga Seasonal Flow",
+      title: "Autumn Equinox Yin",
       category: "class" as const,
       bookingType: "stripe" as const,
       priceInPence: 1250,
