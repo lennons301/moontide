@@ -1,6 +1,6 @@
 {
-  "id": "ab5dfa55-7a24-4cae-9cba-d221043525f9",
-  "prevId": "2721a3ce-8dee-4e34-ad66-6f859a74ea1c",
+  "id": "cf890601-638e-446e-bd31-1dd363ca80e5",
+  "prevId": "ab5dfa55-7a24-4cae-9cba-d221043525f9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -454,6 +454,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "bundle_eligible": {
+          "name": "bundle_eligible",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         }
       },
       "indexes": {},

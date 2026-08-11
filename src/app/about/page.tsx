@@ -30,7 +30,7 @@ const services = [
   { label: "Prenatal Yoga", href: "/classes/prenatal" },
   { label: "Postnatal Yoga", href: "/classes/postnatal" },
   { label: "Baby Yoga & Massage", href: "/classes/baby-yoga" },
-  { label: "Vinyasa Yoga Seasonal Flow", href: "/classes/vinyasa" },
+  { label: "Autumn Equinox Yin", href: "/classes/vinyasa" },
   { label: "Transformational Coaching", href: "/coaching" },
   { label: "Creating Community", href: "/community" },
   { label: "Private Classes", href: "/private" },

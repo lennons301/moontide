@@ -12,7 +12,7 @@ const menuLinks = [
       { label: "Prenatal Yoga", href: "/classes/prenatal" },
       { label: "Postnatal Yoga", href: "/classes/postnatal" },
       { label: "Baby Yoga & Massage", href: "/classes/baby-yoga" },
-      { label: "Vinyasa Flow", href: "/classes/vinyasa" },
+      { label: "Autumn Equinox Yin", href: "/classes/vinyasa" },
     ],
   },
   { label: "Coaching", href: "/coaching" },

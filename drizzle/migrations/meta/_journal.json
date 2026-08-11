@@ -61,8 +61,15 @@
     {
       "idx": 8,
       "version": "7",
-      "when": 1786479960508,
-      "tag": "0008_class_bundle_eligible",
+      "when": 1786478966000,
+      "tag": "0008_rename_vinyasa_class_title",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786481764114,
+      "tag": "0009_class_bundle_eligible",
       "breakpoints": true
     }
   ]
