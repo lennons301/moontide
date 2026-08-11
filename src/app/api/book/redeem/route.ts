@@ -1,7 +1,7 @@
 import { and, eq, gt, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { bookings, bundles, schedules } from "@/lib/db/schema";
+import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
 
 export async function POST(request: Request) {
   const { scheduleId, customerName, customerEmail } = await request.json();
@@ -9,6 +9,24 @@ export async function POST(request: Request) {
   if (!scheduleId || !customerName || !customerEmail) {
     return NextResponse.json(
       { error: "Missing required fields" },
+      { status: 400 },
+    );
+  }
+
+  // Bundle credits may only be spent on classes flagged as bundle-eligible.
+  const scheduleRows = await db
+    .select({ bundleEligible: classes.bundleEligible })
+    .from(schedules)
+    .innerJoin(classes, eq(schedules.classId, classes.id))
+    .where(eq(schedules.id, scheduleId));
+
+  if (scheduleRows.length === 0) {
+    return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
+  }
+
+  if (!scheduleRows[0].bundleEligible) {
+    return NextResponse.json(
+      { error: "This class cannot be booked with a bundle" },
       { status: 400 },
     );
   }
