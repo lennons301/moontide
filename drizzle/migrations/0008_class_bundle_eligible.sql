@@ -1,0 +1,1 @@
+ALTER TABLE "classes" ADD COLUMN "bundle_eligible" boolean DEFAULT true NOT NULL;

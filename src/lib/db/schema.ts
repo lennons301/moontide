@@ -60,6 +60,8 @@ export const classes = pgTable("classes", {
   active: boolean("active").default(true).notNull(),
   priceInPence: integer("price_in_pence").notNull(),
   title: text("title").notNull(),
+  // Whether class bundle credits may be redeemed against this class.
+  bundleEligible: boolean("bundle_eligible").default(true).notNull(),
 });
 
 export const schedules = pgTable("schedules", {

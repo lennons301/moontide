@@ -57,6 +57,13 @@
       "when": 1782485957460,
       "tag": "0007_prevent_duplicate_active_bookings",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786479960508,
+      "tag": "0008_class_bundle_eligible",
+      "breakpoints": true
     }
   ]
 }
