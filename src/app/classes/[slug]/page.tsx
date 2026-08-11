@@ -28,7 +28,7 @@ const fallbackContent: Record<string, { title: string; description: string }> =
         "Bonding, relaxation and developmental support for you and your baby. Through gentle massage strokes and playful yoga-inspired movements, you will learn to read your baby's cues, support their physical development, and deepen your bond through touch.",
     },
     vinyasa: {
-      title: "Vinyasa Yoga Seasonal Flow",
+      title: "Autumn Equinox Yin",
       description:
         "Seasonal flow connecting your practice to nature's rhythms. Each series honours the qualities of the season — the stillness of winter, the renewal of spring, the abundance of summer, the release of autumn — weaving breath, movement and reflection into a practice that feels alive.",
     },

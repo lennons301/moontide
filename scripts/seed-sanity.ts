@@ -112,7 +112,7 @@ async function seed() {
     },
     {
       _id: "service-vinyasa",
-      title: "Vinyasa Yoga Seasonal Flow",
+      title: "Autumn Equinox Yin",
       slug: { _type: "slug", current: "vinyasa" },
       shortDescription:
         "Seasonal flow connecting your practice to nature's rhythms.",
