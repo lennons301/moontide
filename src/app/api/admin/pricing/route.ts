@@ -10,6 +10,7 @@ export async function GET() {
       title: classes.title,
       slug: classes.slug,
       priceInPence: classes.priceInPence,
+      bundleEligible: classes.bundleEligible,
     })
     .from(classes)
     .where(eq(classes.active, true));
@@ -27,7 +28,8 @@ export async function GET() {
 
 interface ClassUpdate {
   id: number;
-  priceInPence: number;
+  priceInPence?: number;
+  bundleEligible?: boolean;
 }
 
 interface BundleConfigUpdate {
@@ -48,9 +50,25 @@ export async function PUT(request: Request) {
   }
 
   // Validate class prices
-  if (classUpdates?.some((c) => c.priceInPence <= 0)) {
+  if (
+    classUpdates?.some(
+      (c) => c.priceInPence !== undefined && c.priceInPence <= 0,
+    )
+  ) {
     return NextResponse.json(
       { error: "Class prices must be greater than 0" },
+      { status: 400 },
+    );
+  }
+
+  // Every class update must change something
+  if (
+    classUpdates?.some(
+      (c) => c.priceInPence === undefined && c.bundleEligible === undefined,
+    )
+  ) {
+    return NextResponse.json(
+      { error: "Class updates must include a price or bundle eligibility" },
       { status: 400 },
     );
   }
@@ -82,10 +100,12 @@ export async function PUT(request: Request) {
   await db.transaction(async (tx) => {
     if (classUpdates) {
       for (const c of classUpdates) {
-        await tx
-          .update(classes)
-          .set({ priceInPence: c.priceInPence })
-          .where(eq(classes.id, c.id));
+        const fields: { priceInPence?: number; bundleEligible?: boolean } = {};
+        if (c.priceInPence !== undefined) fields.priceInPence = c.priceInPence;
+        if (c.bundleEligible !== undefined)
+          fields.bundleEligible = c.bundleEligible;
+
+        await tx.update(classes).set(fields).where(eq(classes.id, c.id));
       }
     }
 

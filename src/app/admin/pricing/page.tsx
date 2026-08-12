@@ -10,6 +10,7 @@ interface ClassPrice {
   title: string;
   slug: string;
   priceInPence: number;
+  bundleEligible: boolean;
 }
 
 interface BundleConfigRow {
@@ -35,6 +36,9 @@ export default function PricingPage() {
   const [classes, setClasses] = useState<ClassPrice[]>([]);
   const [bundleConfigs, setBundleConfigs] = useState<BundleConfigRow[]>([]);
   const [classEdits, setClassEdits] = useState<Record<number, string>>({});
+  const [eligibilityEdits, setEligibilityEdits] = useState<
+    Record<number, boolean>
+  >({});
   const [bundleEdits, setBundleEdits] = useState<
     Record<
       number,
@@ -50,6 +54,7 @@ export default function PricingPage() {
     setClasses(data.classes);
     setBundleConfigs(data.bundleConfigs);
     setClassEdits({});
+    setEligibilityEdits({});
     setBundleEdits({});
   }, []);
 
@@ -59,6 +64,10 @@ export default function PricingPage() {
 
   function getClassDisplayPrice(c: ClassPrice) {
     return classEdits[c.id] ?? penceToPounds(c.priceInPence);
+  }
+
+  function getClassBundleEligible(c: ClassPrice) {
+    return eligibilityEdits[c.id] ?? c.bundleEligible;
   }
 
   function getBundleDisplayValue(
@@ -82,6 +91,13 @@ export default function PricingPage() {
             `${c.title}: £${penceToPounds(c.priceInPence)} → £${penceToPounds(newPence)}`,
           );
         }
+      }
+
+      const eligible = eligibilityEdits[c.id];
+      if (eligible !== undefined && eligible !== c.bundleEligible) {
+        changes.push(
+          `${c.title}: ${eligible ? "now bookable" : "no longer bookable"} with a bundle`,
+        );
       }
     }
 
@@ -128,12 +144,27 @@ export default function PricingPage() {
     setSaving(true);
 
     const classUpdatePayload = classes
-      .filter((c) => classEdits[c.id] !== undefined)
-      .map((c) => ({ id: c.id, priceInPence: poundsToPence(classEdits[c.id]) }))
-      .filter((c) => {
-        const original = classes.find((cl) => cl.id === c.id);
-        return original && c.priceInPence !== original.priceInPence;
-      });
+      .map((c) => {
+        const update: {
+          id: number;
+          priceInPence?: number;
+          bundleEligible?: boolean;
+        } = { id: c.id };
+
+        if (classEdits[c.id] !== undefined) {
+          const newPence = poundsToPence(classEdits[c.id]);
+          if (newPence !== c.priceInPence) update.priceInPence = newPence;
+        }
+        const eligible = eligibilityEdits[c.id];
+        if (eligible !== undefined && eligible !== c.bundleEligible) {
+          update.bundleEligible = eligible;
+        }
+
+        return update;
+      })
+      .filter(
+        (u) => u.priceInPence !== undefined || u.bundleEligible !== undefined,
+      );
 
     const bundleUpdatePayload = bundleConfigs
       .filter((bc) => bundleEdits[bc.id])
@@ -211,6 +242,7 @@ export default function PricingPage() {
             <tr>
               <th className="px-5 py-3">Class</th>
               <th className="px-5 py-3 w-36">Price</th>
+              <th className="px-5 py-3 w-40">Bundle Eligible</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-soft-moonstone/10">
@@ -231,6 +263,28 @@ export default function PricingPage() {
                       }
                       className="w-24 h-8"
                     />
+                  </div>
+                </td>
+                <td className="px-5 py-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      id={`class-bundle-eligible-${c.id}`}
+                      type="checkbox"
+                      checked={getClassBundleEligible(c)}
+                      onChange={(e) =>
+                        setEligibilityEdits({
+                          ...eligibilityEdits,
+                          [c.id]: e.target.checked,
+                        })
+                      }
+                      className="h-4 w-4 rounded border-soft-moonstone text-bright-orange focus:ring-bright-orange"
+                    />
+                    <Label
+                      htmlFor={`class-bundle-eligible-${c.id}`}
+                      className="cursor-pointer text-deep-ocean/70 text-xs font-normal"
+                    >
+                      Bookable with a bundle
+                    </Label>
                   </div>
                 </td>
               </tr>

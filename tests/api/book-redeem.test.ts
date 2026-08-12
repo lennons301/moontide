@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   mockSelectFrom,
   mockSelectWhere,
+  mockInnerJoin,
   mockInsertValues,
   mockInsert,
   mockUpdateWhere,
@@ -12,7 +13,11 @@ const {
   mockTransaction,
 } = vi.hoisted(() => {
   const mockSelectWhere = vi.fn().mockResolvedValue([]);
-  const mockSelectFrom = vi.fn().mockReturnValue({ where: mockSelectWhere });
+  const mockInnerJoin = vi.fn().mockReturnValue({ where: mockSelectWhere });
+  const mockSelectFrom = vi.fn().mockReturnValue({
+    where: mockSelectWhere,
+    innerJoin: mockInnerJoin,
+  });
   const mockInsertValues = vi.fn().mockResolvedValue([{ id: 1 }]);
   const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
   const mockUpdateWhere = vi.fn().mockResolvedValue([]);
@@ -29,6 +34,7 @@ const {
   return {
     mockSelectFrom,
     mockSelectWhere,
+    mockInnerJoin,
     mockInsertValues,
     mockInsert,
     mockUpdateWhere,
@@ -61,7 +67,8 @@ vi.mock("@/lib/db/schema", () => ({
     customerEmail: "customer_email",
     status: "status",
   },
-  schedules: { id: "id", bookedCount: "booked_count" },
+  schedules: { id: "id", classId: "class_id", bookedCount: "booked_count" },
+  classes: { id: "id", bundleEligible: "bundle_eligible" },
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -80,7 +87,11 @@ import { POST } from "@/app/api/book/redeem/route";
 describe("POST /api/book/redeem", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSelectFrom.mockReturnValue({ where: mockSelectWhere });
+    mockInnerJoin.mockReturnValue({ where: mockSelectWhere });
+    mockSelectFrom.mockReturnValue({
+      where: mockSelectWhere,
+      innerJoin: mockInnerJoin,
+    });
     mockSelectWhere.mockResolvedValue([]);
     mockInsert.mockReturnValue({ values: mockInsertValues });
     mockInsertValues.mockResolvedValue([{ id: 1 }]);
@@ -112,8 +123,56 @@ describe("POST /api/book/redeem", () => {
     expect(body.error).toBe("Missing required fields");
   });
 
-  it("returns 404 when no active bundle found", async () => {
+  it("returns 404 when the schedule does not exist", async () => {
     mockSelectWhere.mockResolvedValue([]);
+
+    const request = new Request("http://localhost:3000/api/book/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 999,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toBe("Schedule not found");
+
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses to spend a credit on a class that is not bundle-eligible", async () => {
+    mockSelectWhere.mockResolvedValueOnce([{ bundleEligible: false }]);
+
+    const request = new Request("http://localhost:3000/api/book/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 1,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("This class cannot be booked with a bundle");
+
+    // No credit spent, no booking created
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when no active bundle found", async () => {
+    mockSelectWhere
+      .mockResolvedValueOnce([{ bundleEligible: true }])
+      .mockResolvedValueOnce([]);
 
     const request = new Request("http://localhost:3000/api/book/redeem", {
       method: "POST",
@@ -133,6 +192,7 @@ describe("POST /api/book/redeem", () => {
 
   it("returns 200 for valid bundle redemption", async () => {
     mockSelectWhere
+      .mockResolvedValueOnce([{ bundleEligible: true }])
       .mockResolvedValueOnce([
         {
           id: 10,
@@ -187,6 +247,7 @@ describe("POST /api/book/redeem", () => {
 
   it("returns 409 when customer already has a booking for this schedule", async () => {
     mockSelectWhere
+      .mockResolvedValueOnce([{ bundleEligible: true }])
       .mockResolvedValueOnce([
         {
           id: 10,
@@ -221,6 +282,7 @@ describe("POST /api/book/redeem", () => {
 
   it("sets bundle status to exhausted when credits reach 0", async () => {
     mockSelectWhere
+      .mockResolvedValueOnce([{ bundleEligible: true }])
       .mockResolvedValueOnce([
         {
           id: 10,

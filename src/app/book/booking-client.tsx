@@ -28,6 +28,7 @@ type ScheduleRow = {
     active: boolean;
     priceInPence: number;
     title: string;
+    bundleEligible: boolean;
   };
 };
 
@@ -176,7 +177,7 @@ export function BookingClient({
     setLoading(true);
     setError(null);
 
-    if (useBundle) {
+    if (useBundle && selected.classes.bundleEligible) {
       try {
         const res = await fetch("/api/book/redeem", {
           method: "POST",
@@ -360,7 +361,13 @@ export function BookingClient({
             />
           </div>
 
-          {!full && (
+          {!full && !selected.classes.bundleEligible && (
+            <p className="text-deep-ocean/70 text-sm">
+              This class can't be booked with a class bundle.
+            </p>
+          )}
+
+          {!full && selected.classes.bundleEligible && (
             <div className="flex items-center gap-3">
               <input
                 id="use-bundle"
