@@ -8,6 +8,7 @@ const {
   mockInsertValues,
   mockInsert,
   mockUpdateWhere,
+  mockUpdateReturning,
   mockUpdateSet,
   mockUpdate,
   mockTransaction,
@@ -20,7 +21,14 @@ const {
   });
   const mockInsertValues = vi.fn().mockResolvedValue([{ id: 1 }]);
   const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
-  const mockUpdateWhere = vi.fn().mockResolvedValue([]);
+  // The occupancy claim reads the row back via .returning(); the bundle update
+  // just awaits the where(), so the chain is awaitable and chainable.
+  const mockUpdateReturning = vi
+    .fn()
+    .mockResolvedValue([{ bookedCount: 1, capacity: 8 }]);
+  const mockUpdateWhere = vi.fn(() =>
+    Object.assign(Promise.resolve([]), { returning: mockUpdateReturning }),
+  );
   const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
   const mockUpdate = vi.fn().mockReturnValue({ set: mockUpdateSet });
   const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
@@ -38,6 +46,7 @@ const {
     mockInsertValues,
     mockInsert,
     mockUpdateWhere,
+    mockUpdateReturning,
     mockUpdateSet,
     mockUpdate,
     mockTransaction,
@@ -67,7 +76,12 @@ vi.mock("@/lib/db/schema", () => ({
     customerEmail: "customer_email",
     status: "status",
   },
-  schedules: { id: "id", classId: "class_id", bookedCount: "booked_count" },
+  schedules: {
+    id: "id",
+    classId: "class_id",
+    bookedCount: "booked_count",
+    capacity: "capacity",
+  },
   classes: { id: "id", bundleEligible: "bundle_eligible" },
 }));
 
@@ -75,6 +89,7 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn((...args: unknown[]) => args),
   and: vi.fn((...args: unknown[]) => args),
   gt: vi.fn((...args: unknown[]) => args),
+  lt: vi.fn((...args: unknown[]) => args),
   ne: vi.fn((...args: unknown[]) => args),
   sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
     strings,
@@ -97,7 +112,10 @@ describe("POST /api/book/redeem", () => {
     mockInsertValues.mockResolvedValue([{ id: 1 }]);
     mockUpdate.mockReturnValue({ set: mockUpdateSet });
     mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
-    mockUpdateWhere.mockResolvedValue([]);
+    mockUpdateWhere.mockImplementation(() =>
+      Object.assign(Promise.resolve([]), { returning: mockUpdateReturning }),
+    );
+    mockUpdateReturning.mockResolvedValue([{ bookedCount: 1, capacity: 8 }]);
     mockTransaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<void>) => {
         const tx = {
