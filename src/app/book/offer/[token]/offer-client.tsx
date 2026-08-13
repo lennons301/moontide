@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -16,6 +15,11 @@ interface OfferClientProps {
   deadline: string;
   creditsAvailable: number;
   bundleEligible: boolean;
+  priceInPence: number;
+}
+
+function formatPrice(pence: number) {
+  return `£${(pence / 100).toFixed(2)}`;
 }
 
 export function OfferClient({
@@ -30,40 +34,70 @@ export function OfferClient({
   deadline,
   creditsAvailable,
   bundleEligible,
+  priceInPence,
 }: OfferClientProps) {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<"credit" | "card" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const canUseCredit = bundleEligible && creditsAvailable > 0;
 
+  async function post(url: string) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId,
+        customerName,
+        customerEmail,
+        offerToken: token,
+      }),
+    });
+  }
+
+  async function readError(res: Response) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    setError(data.error || "Something went wrong. Please try again.");
+    setLoading(null);
+  }
+
   async function handleAccept() {
-    setLoading(true);
+    setLoading("credit");
     setError(null);
     try {
-      const res = await fetch("/api/book/redeem", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scheduleId,
-          customerName,
-          customerEmail,
-          offerToken: token,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        setError(data.error || "Something went wrong. Please try again.");
-        setLoading(false);
-        return;
-      }
+      const res = await post("/api/book/redeem");
+      if (!res.ok) return readError(res);
 
       window.location.href = "/book/confirmation";
     } catch {
       setError("Something went wrong. Please try again.");
-      setLoading(false);
+      setLoading(null);
+    }
+  }
+
+  /**
+   * Pay for the held seat by card. The token goes with the request: it is what
+   * lets checkout past the checks the recipient's own held seat would otherwise
+   * trip, and what tells the payment to convert that seat rather than book a
+   * second one.
+   */
+  async function handlePayByCard() {
+    setLoading("card");
+    setError(null);
+    try {
+      const res = await post("/api/book/checkout");
+      if (!res.ok) return readError(res);
+
+      const data = (await res.json()) as { url?: string };
+      if (!data.url) {
+        setError("Something went wrong. Please try again.");
+        setLoading(null);
+        return;
+      }
+
+      window.location.href = data.url;
+    } catch {
+      setError("Something went wrong. Please try again.");
+      setLoading(null);
     }
   }
 
@@ -104,33 +138,49 @@ export function OfferClient({
           <p className="text-deep-ocean mb-4">
             You have {creditsAvailable}{" "}
             {creditsAvailable === 1 ? "class credit" : "class credits"} on{" "}
-            {customerEmail}. Taking this place uses one of them.
+            {customerEmail}. Taking this place uses one of them, or you can pay
+            for it and keep them.
           </p>
           <Button
             type="button"
             onClick={handleAccept}
-            disabled={loading}
+            disabled={loading !== null}
             className="w-full"
           >
-            {loading ? "Booking..." : "Use a credit and take this place"}
+            {loading === "credit"
+              ? "Booking..."
+              : "Use a credit and take this place"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handlePayByCard}
+            disabled={loading !== null}
+            className="w-full mt-3"
+          >
+            {loading === "card"
+              ? "Taking you to payment..."
+              : `Pay ${formatPrice(priceInPence)} by card instead`}
           </Button>
         </>
       ) : (
-        <div className="rounded-lg border border-soft-moonstone/40 p-4">
-          <p className="text-deep-ocean">
+        <>
+          <p className="text-deep-ocean mb-4">
             {bundleEligible
-              ? `We couldn't find any class credits on ${customerEmail}.`
-              : "This class can't be booked with class credits."}{" "}
-            Get in touch with Gabrielle and she'll take it from there — the
-            place is still yours until the time above.
+              ? `We couldn't find any class credits on ${customerEmail}, so this place is ${formatPrice(priceInPence)}.`
+              : `This class can't be booked with class credits, so this place is ${formatPrice(priceInPence)}.`}
           </p>
-          <Link
-            href="/contact"
-            className="mt-4 inline-block bg-bright-orange text-dawn-light px-6 py-3 rounded-md font-semibold hover:bg-bright-orange/90 transition-colors"
+          <Button
+            type="button"
+            onClick={handlePayByCard}
+            disabled={loading !== null}
+            className="w-full"
           >
-            Contact Gabrielle
-          </Link>
-        </div>
+            {loading === "card"
+              ? "Taking you to payment..."
+              : `Pay ${formatPrice(priceInPence)} and take this place`}
+          </Button>
+        </>
       )}
     </div>
   );
