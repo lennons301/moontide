@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
 import { useTableControls } from "@/components/admin/use-table-controls";
+import { describeReleaseEffect } from "@/lib/bookings/transitions";
 import { RescheduleSheet } from "./reschedule-sheet";
 
 interface BookingRow {
@@ -18,6 +19,7 @@ interface BookingRow {
     emailSent: boolean;
     originalScheduleId: number | null;
     rescheduledAt: string | null;
+    releasedAt: string | null;
   };
   schedules: {
     id: number;
@@ -60,7 +62,12 @@ interface ScheduleApiRow {
   };
 }
 
-type StatusFilter = "all" | "confirmed" | "cancelled" | "waitlisted";
+type StatusFilter =
+  | "all"
+  | "confirmed"
+  | "cancelled"
+  | "waitlisted"
+  | "released";
 type TimeFilter = "upcoming" | "past" | "all";
 
 function todayString() {
@@ -84,6 +91,18 @@ function formatDateTime(dateStr: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatPrice(priceInPence: number) {
+  return `£${(priceInPence / 100).toFixed(2)}`;
+}
+
+function daysWaiting(releasedAt: string) {
+  const days = Math.floor(
+    (Date.now() - new Date(releasedAt).getTime()) / 86_400_000,
+  );
+  if (days <= 0) return "today";
+  return `${days} ${days === 1 ? "day" : "days"}`;
 }
 
 function PillGroup<T extends string>({
@@ -214,11 +233,26 @@ export default function BookingsPage() {
       defaultSort: { key: "date", direction: "asc" },
     });
 
+  // Released bookings are card payers who are owed a class: the seat is back,
+  // the money is not. Longest wait first.
+  const owedRows = useMemo(
+    () =>
+      allBookings
+        .filter((r) => r.bookings.status === "released")
+        .sort((a, b) =>
+          (a.bookings.releasedAt ?? "") < (b.bookings.releasedAt ?? "")
+            ? -1
+            : 1,
+        ),
+    [allBookings],
+  );
+
   function statusBadge(status: string) {
     const colours: Record<string, string> = {
       confirmed: "bg-seagrass/20 text-seagrass",
       cancelled: "bg-red-100 text-red-700",
       waitlisted: "bg-ocean-light-blue/20 text-ocean-light-blue",
+      released: "bg-bright-orange/20 text-bright-orange",
     };
     return (
       <span
@@ -251,6 +285,26 @@ export default function BookingsPage() {
     }
   }
 
+  async function handleRelease(row: BookingRow) {
+    const { summary, detail } = describeReleaseEffect(row.bookings);
+    if (
+      !window.confirm(
+        `Release ${row.bookings.customerName}'s seat on ${formatDate(row.schedules.date)}?\n\n${summary}\n\n${detail}`,
+      )
+    ) {
+      return;
+    }
+    const res = await fetch("/api/admin/bookings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: row.bookings.id, status: "released" }),
+    });
+    if (res.ok) {
+      await fetchBookings();
+      await fetchSchedules();
+    }
+  }
+
   async function handleResendEmail(bookingId: number) {
     const res = await fetch("/api/admin/resend-email", {
       method: "POST",
@@ -278,6 +332,62 @@ export default function BookingsPage() {
         Bookings
       </h1>
 
+      {owedRows.length > 0 && (
+        <section className="mb-6 rounded-lg border border-bright-orange/30 bg-bright-orange/5 p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-bright-orange">
+            Owed a class ({owedRows.length})
+          </h2>
+          <p className="mt-1 mb-3 text-xs text-deep-ocean/70">
+            Card payers whose seat you released. Nothing was refunded — they
+            stay here until you move them onto a new date. They cannot re-book
+            the class they were released from themselves, so the move is yours
+            to make.
+          </p>
+          <ul className="divide-y divide-bright-orange/20">
+            {owedRows.map((item) => (
+              <li
+                key={item.bookings.id}
+                className="flex flex-wrap items-center justify-between gap-3 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-deep-tide-blue">
+                    {item.bookings.customerName}{" "}
+                    <span className="font-normal text-deep-ocean/60">
+                      · {item.classes.title}
+                    </span>
+                  </p>
+                  <p className="text-xs text-deep-ocean/60">
+                    {item.bookings.customerEmail} · released from{" "}
+                    {formatDate(item.schedules.date)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span
+                    className="text-sm text-deep-ocean"
+                    title="Current price for this class"
+                  >
+                    Paid {formatPrice(item.classes.priceInPence)}
+                  </span>
+                  <span className="text-sm text-deep-ocean">
+                    Waiting{" "}
+                    {item.bookings.releasedAt
+                      ? daysWaiting(item.bookings.releasedAt)
+                      : "—"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => openReschedule(item)}
+                    className="text-sm text-ocean-light-blue hover:text-deep-tide-blue"
+                  >
+                    Reschedule
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <AdminTableToolbar
         search={search}
         onSearchChange={setSearch}
@@ -292,6 +402,7 @@ export default function BookingsPage() {
           options={[
             { value: "all", label: "All" },
             { value: "confirmed", label: "Confirmed" },
+            { value: "released", label: "Released" },
             { value: "cancelled", label: "Cancelled" },
             { value: "waitlisted", label: "Waitlisted" },
           ]}
@@ -438,7 +549,8 @@ export default function BookingsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {item.bookings.status === "confirmed" && (
+                    {(item.bookings.status === "confirmed" ||
+                      item.bookings.status === "released") && (
                       <>
                         <button
                           type="button"
@@ -447,6 +559,15 @@ export default function BookingsPage() {
                         >
                           Reschedule
                         </button>
+                        {item.bookings.status === "confirmed" && (
+                          <button
+                            type="button"
+                            onClick={() => handleRelease(item)}
+                            className="text-bright-orange hover:text-deep-tide-blue text-sm mr-3"
+                          >
+                            Release
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleCancel(item.bookings.id)}

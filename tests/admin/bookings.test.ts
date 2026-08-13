@@ -211,6 +211,57 @@ describe("PUT /api/admin/bookings — cancel branch (regression)", () => {
   });
 });
 
+describe("PUT /api/admin/bookings — release branch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSelectFrom.mockReturnValue({ where: mockSelectWhere });
+  });
+
+  it("returns 404 when booking not found", async () => {
+    mockSelectWhere.mockResolvedValueOnce([]);
+    const response = await PUT(makeRequest({ id: 999, status: "released" }));
+    expect(response.status).toBe(404);
+  });
+
+  it("returns 400 when the booking is already released", async () => {
+    mockSelectWhere.mockResolvedValueOnce([
+      { ...SAMPLE_BOOKING, status: "released" },
+    ]);
+    const response = await PUT(makeRequest({ id: 1, status: "released" }));
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Booking has already been released");
+  });
+
+  it("moves a card booking to released and frees the seat", async () => {
+    mockSelectWhere.mockResolvedValueOnce([SAMPLE_BOOKING]);
+    const response = await PUT(makeRequest({ id: 1, status: "released" }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.effect).toBe("class-owed");
+
+    // booking + schedule only: nothing is refunded and no bundle is touched
+    expect(mockTxUpdateSet).toHaveBeenCalledTimes(2);
+    const bookingUpdate = mockTxUpdateSet.mock.calls[0]?.[0];
+    expect(bookingUpdate.status).toBe("released");
+    expect(bookingUpdate.releasedAt).toBeInstanceOf(Date);
+  });
+
+  it("cancels a bundle booking and hands the credit back", async () => {
+    mockSelectWhere.mockResolvedValueOnce([{ ...SAMPLE_BOOKING, bundleId: 7 }]);
+    const response = await PUT(makeRequest({ id: 1, status: "released" }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.effect).toBe("bundle-credit-returned");
+
+    expect(mockTxUpdateSet.mock.calls[0]?.[0].status).toBe("cancelled");
+    const bundleUpdateCall = mockTxUpdateSet.mock.calls.find(
+      (c) => c[0] && typeof c[0] === "object" && "creditsRemaining" in c[0],
+    );
+    expect(bundleUpdateCall).toBeDefined();
+  });
+});
+
 describe("PUT /api/admin/bookings — reschedule branch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -317,6 +368,22 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
       }),
     );
     expect(mockTxUpdateSet).toHaveBeenCalledTimes(3);
+  });
+
+  it("increments the target only when moving a released booking, and confirms it", async () => {
+    mockSelectWhere
+      .mockResolvedValueOnce([{ ...SAMPLE_BOOKING, status: "released" }])
+      .mockResolvedValueOnce([SAMPLE_SOURCE])
+      .mockResolvedValueOnce([SAMPLE_TARGET])
+      .mockResolvedValueOnce([SAMPLE_CLASS]);
+    const response = await PUT(makeRequest({ id: 1, newScheduleId: 20 }));
+    expect(response.status).toBe(200);
+
+    // booking + target only — the source seat was returned at release
+    expect(mockTxUpdateSet).toHaveBeenCalledTimes(2);
+    const bookingUpdate = mockTxUpdateSet.mock.calls[0]?.[0];
+    expect(bookingUpdate.status).toBe("confirmed");
+    expect(bookingUpdate.releasedAt).toBeNull();
   });
 
   it("returns 400 when the atomic claim loses a race for the last place", async () => {

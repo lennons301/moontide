@@ -81,6 +81,8 @@ src/
     auth.ts               # Better Auth server config
     auth-client.ts        # Better Auth client config
     stripe.ts             # Stripe client singleton
+    bookings/
+      transitions.ts      # Pure cancel/release/reschedule decisions (no DB)
     db/
       index.ts            # Drizzle client (postgres.js driver)
       schema.ts           # Drizzle schema (all tables including bundleConfig + re-exports auth-schema)
@@ -107,6 +109,7 @@ tests/
   admin/schedules.test.ts     # Admin schedule API tests
   api/admin-pricing.test.ts   # Admin pricing API tests
   lib/email.test.ts       # Email helper tests
+  lib/booking-transitions.test.ts  # Cancel/release/reschedule decision tests
   lib/schedule-occupancy.test.ts  # Seat claim/release semantics
 drizzle/
   migrations/             # Generated Drizzle migrations
@@ -136,6 +139,8 @@ drizzle/
 - **Bundle redemption:** Email-based lookup, no customer auth required. Expiry set per-bundle from config at purchase time. Refuses cancelled classes (read of `schedules.status`) and full classes (via `claimSeat`, so the capacity check is never a read taken beforehand). Capacity is enforced in application code — deliberately no DB constraint on `bookedCount <= capacity`, since it would fail to apply against oversold rows and would turn the post-payment webhook write into a server error with the customer already charged.
 - **Schedule occupancy:** `src/lib/schedule-occupancy.ts` owns every write to `schedules.bookedCount` — routes never adjust it directly. `claimSeat` is a guarded, atomic claim (the capacity check is the UPDATE's WHERE clause) that returns `{ claimed: false }` rather than throwing; `forceClaimSeat` always takes the seat and reports `{ overCapacity }` for already-paid paths; `releaseSeat` frees a seat clamped at zero.
 - **Bundle eligibility:** `classes.bundleEligible` (default true) controls whether bundle credits may be spent on a class. Toggled at `/admin/pricing`; enforced server-side in `/api/book/redeem`, with `/book` hiding the bundle option for ineligible classes.
+- **Releasing a seat:** `PUT /api/admin/bookings` with `status: "released"` frees the seat without settling what the customer is owed. Bundle-funded bookings are cancelled and the credit returned (capped at the bundle total, reactivating an exhausted bundle) — the customer re-books themselves. Card-funded bookings move to the `released` status with `releasedAt` set; nothing is refunded in Stripe (as with cancellation) and they appear in the "Owed a class" list on `/admin/bookings` until rescheduled. Rescheduling a released booking increments the target schedule only (its seat was already returned) and returns it to `confirmed`, clearing `releasedAt`. A released booking still counts as active for the one-booking-per-customer-per-schedule index, so the customer cannot re-book that same schedule themselves — intended, and stated in the admin copy.
+- **Booking transitions:** Cancel/release/reschedule rules live in `src/lib/bookings/transitions.ts` as pure functions that take rows and return the intended transition. Put new rules there (unit-tested in `tests/lib/booking-transitions.test.ts`) and keep `/api/admin/bookings` as wiring.
 - **Confirmation emails:** Sent via Resend after Stripe webhook using `after()` from `next/server`. Customer gets HTML confirmation (branded with logo), Gabrielle gets plain text notification. `emailSent` flag on bookings/bundles tracks delivery; cron retries failures daily at 8am (24-hour cutoff). Vercel Hobby only allows daily cron jobs.
 - **Vercel Cron:** Configured in `vercel.json`. Cron endpoints at `/api/cron/*` are protected by `CRON_SECRET` bearer token.
 - **DB transactions:** Multi-step mutations (e.g., booking insert + count increment) wrapped in `db.transaction()` for atomicity.
