@@ -635,7 +635,7 @@ function decidePaid(overrides: Partial<Parameters<typeof decidePaidSeat>[0]>) {
     heldBookingId: 77,
     offer: CLAIMED,
     request: REQUEST,
-    existingBookings: [{ id: 77, status: "held" }],
+    existingBookings: [{ id: 77 }],
     ...overrides,
   });
 }
@@ -667,7 +667,7 @@ describe("decidePaidSeat", () => {
     expect(
       decidePaid({
         offer: { ...CLAIMED, heldBookingStatus: "confirmed" },
-        existingBookings: [{ id: 77, status: "confirmed" }],
+        existingBookings: [{ id: 77 }],
       }),
     ).toEqual({ kind: "already-booked" });
   });
@@ -677,7 +677,7 @@ describe("decidePaidSeat", () => {
     expect(
       decidePaid({
         offer: null,
-        existingBookings: [{ id: 77, status: "confirmed" }],
+        existingBookings: [{ id: 77 }],
       }),
     ).toEqual({ kind: "already-booked" });
   });
@@ -726,7 +726,7 @@ describe("decidePaidSeat", () => {
     expect(
       decidePaid({
         ...noOffer,
-        existingBookings: [{ id: 88, status: "confirmed" }],
+        existingBookings: [{ id: 88 }],
       }),
     ).toEqual({ kind: "already-booked" });
   });
