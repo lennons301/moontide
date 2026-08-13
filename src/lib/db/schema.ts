@@ -31,6 +31,8 @@ export const bookingStatus = pgEnum("booking_status", [
   "confirmed",
   "cancelled",
   "waitlisted",
+  // Seat handed back, but the customer is still owed a class they paid card for.
+  "released",
 ]);
 
 export const bundleStatus = pgEnum("bundle_status", [
@@ -120,10 +122,14 @@ export const bookings = pgTable(
       () => schedules.id,
     ),
     rescheduledAt: timestamp("rescheduled_at"),
+    // When the seat was handed back without settling what the customer is owed.
+    releasedAt: timestamp("released_at"),
   },
   (table) => ({
     // One active (non-cancelled) booking per customer per schedule.
-    // Partial so a customer can re-book after cancelling.
+    // Partial so a customer can re-book after cancelling. A released booking is
+    // still active here: the customer keeps their claim on a class and cannot
+    // re-book this same schedule themselves — Gabrielle reschedules them.
     scheduleEmailActiveUnique: uniqueIndex("bookings_schedule_email_active_idx")
       .on(table.scheduleId, table.customerEmail)
       .where(sql`${table.status} <> 'cancelled'`),
