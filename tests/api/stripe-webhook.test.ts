@@ -5,6 +5,7 @@ const {
   mockInsertValues,
   mockInsert,
   mockUpdateWhere,
+  mockUpdateReturning,
   mockUpdateSet,
   mockUpdate,
   mockTransaction,
@@ -17,7 +18,14 @@ const {
 } = vi.hoisted(() => {
   const mockInsertValues = vi.fn().mockResolvedValue([{ id: 1 }]);
   const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
-  const mockUpdateWhere = vi.fn().mockResolvedValue([]);
+  // Occupancy writes read back the row via .returning(); plain updates just
+  // await the where(), so the chain has to be both awaitable and chainable.
+  const mockUpdateReturning = vi
+    .fn()
+    .mockResolvedValue([{ bookedCount: 1, capacity: 8 }]);
+  const mockUpdateWhere = vi.fn(() =>
+    Object.assign(Promise.resolve([]), { returning: mockUpdateReturning }),
+  );
   const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
   const mockUpdate = vi.fn().mockReturnValue({ set: mockUpdateSet });
   const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
@@ -44,6 +52,7 @@ const {
     mockInsertValues,
     mockInsert,
     mockUpdateWhere,
+    mockUpdateReturning,
     mockUpdateSet,
     mockUpdate,
     mockTransaction,
@@ -100,7 +109,7 @@ vi.mock("@/lib/db/schema", () => ({
   },
   bundles: { id: "id" },
   bundleConfig: { id: "id" },
-  schedules: { id: "id", bookedCount: "booked_count" },
+  schedules: { id: "id", bookedCount: "booked_count", capacity: "capacity" },
   classes: { id: "id" },
 }));
 
@@ -115,7 +124,10 @@ describe("POST /api/stripe/webhook", () => {
     mockInsertValues.mockResolvedValue([{ id: 1 }]);
     mockUpdate.mockReturnValue({ set: mockUpdateSet });
     mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
-    mockUpdateWhere.mockResolvedValue([]);
+    mockUpdateWhere.mockImplementation(() =>
+      Object.assign(Promise.resolve([]), { returning: mockUpdateReturning }),
+    );
+    mockUpdateReturning.mockResolvedValue([{ bookedCount: 1, capacity: 8 }]);
     mockTransaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<void>) => {
         const tx = { insert: mockInsert, update: mockUpdate };

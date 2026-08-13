@@ -5,12 +5,20 @@ const {
   mockSelectWhere,
   mockTransaction,
   mockTxUpdateSet,
+  mockTxUpdateReturning,
   mockSendRescheduleNotification,
   mockAfter,
 } = vi.hoisted(() => {
   const mockSelectWhere = vi.fn();
   const mockSelectFrom = vi.fn().mockReturnValue({ where: mockSelectWhere });
-  const mockTxUpdateWhere = vi.fn().mockResolvedValue(undefined);
+  // Occupancy writes read the row back via .returning() (a guarded claim
+  // returns no rows when it is refused); other updates just await the where().
+  const mockTxUpdateReturning = vi.fn().mockResolvedValue([{ id: 20 }]);
+  const mockTxUpdateWhere = vi.fn(() =>
+    Object.assign(Promise.resolve(undefined), {
+      returning: mockTxUpdateReturning,
+    }),
+  );
   const mockTxUpdateSet = vi.fn().mockReturnValue({ where: mockTxUpdateWhere });
   const mockTransaction = vi.fn(async (cb: (tx: unknown) => Promise<void>) => {
     const tx = {
@@ -27,6 +35,7 @@ const {
     mockSelectWhere,
     mockTransaction,
     mockTxUpdateSet,
+    mockTxUpdateReturning,
     mockSendRescheduleNotification,
     mockAfter,
   };
@@ -46,7 +55,12 @@ vi.mock("@/lib/db/schema", () => ({
     status: "status",
     bundleId: "bundle_id",
   },
-  schedules: { id: "id", classId: "class_id", bookedCount: "booked_count" },
+  schedules: {
+    id: "id",
+    classId: "class_id",
+    bookedCount: "booked_count",
+    capacity: "capacity",
+  },
   classes: { id: "id" },
   bundles: {
     id: "id",
@@ -59,6 +73,8 @@ vi.mock("@/lib/db/schema", () => ({
 vi.mock("drizzle-orm", () => ({
   desc: vi.fn((col: unknown) => col),
   eq: vi.fn((...args: unknown[]) => args),
+  and: vi.fn((...args: unknown[]) => args),
+  lt: vi.fn((...args: unknown[]) => args),
   sql: Object.assign(
     vi.fn((..._args: unknown[]) => "sql"),
     {},
@@ -301,6 +317,22 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
       }),
     );
     expect(mockTxUpdateSet).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns 400 when the atomic claim loses a race for the last place", async () => {
+    mockSelectWhere
+      .mockResolvedValueOnce([SAMPLE_BOOKING])
+      .mockResolvedValueOnce([SAMPLE_SOURCE])
+      .mockResolvedValueOnce([SAMPLE_TARGET])
+      .mockResolvedValueOnce([SAMPLE_CLASS]);
+    // The guarded claim matches no row: the target filled up after the check.
+    mockTxUpdateReturning.mockResolvedValueOnce([]);
+
+    const response = await PUT(makeRequest({ id: 1, newScheduleId: 20 }));
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Target class is full");
+    expect(mockSendRescheduleNotification).not.toHaveBeenCalled();
   });
 
   it("preserves originalScheduleId on second reschedule", async () => {

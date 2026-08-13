@@ -90,6 +90,7 @@ src/
       queries.ts          # GROQ queries for all document types
       types.ts            # TypeScript types for Sanity documents
     email.ts              # Resend email helper (sendContactEmail)
+    schedule-occupancy.ts # Sole owner of schedules.bookedCount writes
   sanity/
     schema/               # Sanity document schemas (siteSettings, service, page, trainer, communityEvent)
     structure.ts          # Sanity Studio desk structure
@@ -106,6 +107,7 @@ tests/
   admin/schedules.test.ts     # Admin schedule API tests
   api/admin-pricing.test.ts   # Admin pricing API tests
   lib/email.test.ts       # Email helper tests
+  lib/schedule-occupancy.test.ts  # Seat claim/release semantics
 drizzle/
   migrations/             # Generated Drizzle migrations
 ```
@@ -132,6 +134,7 @@ drizzle/
 - **Prices in pence:** Class prices stored in `classes.priceInPence`. Bundle config (price, credits, expiry) stored in `bundleConfig` table — editable via admin UI at `/admin/pricing`.
 - **Bundle config:** The `bundleConfig` table holds bundle products (price, credits, expiry days). Checkout attaches `bundleConfigId` to Stripe session metadata; webhook reads it back to set credits and expiry on the purchased bundle. Changes only affect new purchases.
 - **Bundle redemption:** Email-based lookup, no customer auth required. Expiry set per-bundle from config at purchase time.
+- **Schedule occupancy:** `src/lib/schedule-occupancy.ts` owns every write to `schedules.bookedCount` — routes never adjust it directly. `claimSeat` is a guarded, atomic claim (the capacity check is the UPDATE's WHERE clause) that returns `{ claimed: false }` rather than throwing; `forceClaimSeat` always takes the seat and reports `{ overCapacity }` for already-paid paths; `releaseSeat` frees a seat clamped at zero.
 - **Bundle eligibility:** `classes.bundleEligible` (default true) controls whether bundle credits may be spent on a class. Toggled at `/admin/pricing`; enforced server-side in `/api/book/redeem`, with `/book` hiding the bundle option for ineligible classes.
 - **Confirmation emails:** Sent via Resend after Stripe webhook using `after()` from `next/server`. Customer gets HTML confirmation (branded with logo), Gabrielle gets plain text notification. `emailSent` flag on bookings/bundles tracks delivery; cron retries failures daily at 8am (24-hour cutoff). Vercel Hobby only allows daily cron jobs.
 - **Vercel Cron:** Configured in `vercel.json`. Cron endpoints at `/api/cron/*` are protected by `CRON_SECRET` bearer token.
