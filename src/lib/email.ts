@@ -192,6 +192,74 @@ export async function sendWaitlistConfirmation(
   return { success: true };
 }
 
+interface SeatOfferParams {
+  customerName: string;
+  customerEmail: string;
+  classTitle: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  location: string | null;
+  /** When the hold lapses — shown in London time, as the class is. */
+  expiresAt: Date;
+  offerUrl: string;
+}
+
+export async function sendSeatOffer(params: SeatOfferParams) {
+  const {
+    customerName,
+    customerEmail,
+    classTitle,
+    date,
+    startTime,
+    endTime,
+    location,
+    expiresAt,
+    offerUrl,
+  } = params;
+
+  const formattedDate = new Date(date).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const formattedDeadline = expiresAt.toLocaleString("en-GB", {
+    timeZone: "Europe/London",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const body = `
+    <p>Hi ${customerName},</p>
+    <p><strong>A place has come up in ${classTitle} — it's yours if you'd like it.</strong></p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;">
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">Class</td><td style="padding:4px 0;">${classTitle}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">Date</td><td style="padding:4px 0;">${formattedDate}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">Time</td><td style="padding:4px 0;">${startTime}–${endTime}</td></tr>
+      ${location ? `<tr><td style="padding:4px 12px 4px 0;color:#999;">Location</td><td style="padding:4px 0;">${location}</td></tr>` : ""}
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">Held until</td><td style="padding:4px 0;">${formattedDeadline}</td></tr>
+    </table>
+    <p>The seat is being held just for you until then.</p>
+    <p><a href="${offerUrl}" style="display:inline-block;background:#ff7a2f;color:#ffffff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">Take this place</a></p>
+    <p style="font-size:13px;color:#999;">Or paste this into your browser: ${offerUrl}</p>
+    <p>— Gabrielle</p>`;
+
+  const html = buildEmailHtml(body);
+
+  await resend.emails.send({
+    from: "Moontide <noreply@gabriellemoontide.co.uk>",
+    to: customerEmail,
+    subject: `A place has come up — ${classTitle}`,
+    html,
+  });
+
+  return { success: true };
+}
+
 interface WaitlistNotificationParams {
   customerName: string;
   customerEmail: string;

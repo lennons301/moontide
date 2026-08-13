@@ -137,12 +137,12 @@ function hasOutstandingOffer(
   return entry.heldBookingId !== null && heldBookingStatus === "held";
 }
 
-export type MakeOfferDecision =
-  | { ok: true; entry: WaitlistEntryState; expiresAt: Date }
+export type MakeOfferDecision<E extends WaitlistEntryState> =
+  | { ok: true; entry: E; expiresAt: Date }
   | OfferFailure;
 
-export function decideMakeOffer(input: {
-  entry: WaitlistEntryState | null;
+export function decideMakeOffer<E extends WaitlistEntryState>(input: {
+  entry: E | null;
   /** Status of the booking the entry already holds, if it holds one. */
   heldBookingStatus: string | null;
   schedule: ScheduleOfferState | null;
@@ -150,7 +150,7 @@ export function decideMakeOffer(input: {
   hold: HoldDuration;
   classStartsAt: Date;
   now: Date;
-}): MakeOfferDecision {
+}): MakeOfferDecision<E> {
   const { entry, heldBookingStatus, schedule, offersOutstanding } = input;
 
   if (!entry) return fail("Waiting-list entry not found", 404);
@@ -192,8 +192,8 @@ export function decideMakeOffer(input: {
 
 /* ----------------------------------------------------------- withdrawing */
 
-export type WithdrawOfferDecision =
-  | { ok: true; entry: WaitlistEntryState; heldBookingId: number }
+export type WithdrawOfferDecision<E extends WaitlistEntryState> =
+  | { ok: true; entry: E; heldBookingId: number }
   | OfferFailure;
 
 /**
@@ -201,10 +201,10 @@ export type WithdrawOfferDecision =
  * them off is the separate remove action, and nothing is sent to them: she has
  * already replied herself, and a system message would contradict her.
  */
-export function decideWithdrawOffer(input: {
-  entry: WaitlistEntryState | null;
+export function decideWithdrawOffer<E extends WaitlistEntryState>(input: {
+  entry: E | null;
   heldBookingStatus: string | null;
-}): WithdrawOfferDecision {
+}): WithdrawOfferDecision<E> {
   const { entry, heldBookingStatus } = input;
 
   if (!entry) return fail("Waiting-list entry not found", 404);
