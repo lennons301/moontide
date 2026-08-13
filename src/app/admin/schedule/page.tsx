@@ -33,6 +33,8 @@ interface Schedule {
   };
   classes: ClassType;
   waitlistCount: number;
+  /** Seats inside bookedCount that are being held for a waiting-list offer. */
+  heldCount: number;
 }
 
 type StatusFilter = "all" | "open" | "full" | "cancelled";
@@ -598,6 +600,14 @@ export default function SchedulePage() {
                   </td>
                   <td className="px-4 py-3">
                     {item.schedules.bookedCount}/{item.schedules.capacity}
+                    {item.heldCount > 0 && (
+                      <span
+                        className="ml-1 text-xs text-bright-orange"
+                        title="Seats held for a waiting-list offer — nobody has taken them up yet"
+                      >
+                        ({item.heldCount} held)
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">

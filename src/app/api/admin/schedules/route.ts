@@ -18,13 +18,29 @@ export async function GET() {
     .from(waitlistEntries)
     .groupBy(waitlistEntries.scheduleId);
 
+  // Held seats are inside bookedCount, but nobody has paid for them and nobody
+  // is coming on them yet — a class reading as full must not mislead about who
+  // is actually attending.
+  const heldCounts = await db
+    .select({
+      scheduleId: bookings.scheduleId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(bookings)
+    .where(eq(bookings.status, "held"))
+    .groupBy(bookings.scheduleId);
+
   const countByScheduleId = new Map<number, number>(
     counts.map((c) => [c.scheduleId, c.count]),
+  );
+  const heldByScheduleId = new Map<number, number>(
+    heldCounts.map((c) => [c.scheduleId, c.count]),
   );
 
   const enriched = scheduleRows.map((row) => ({
     ...row,
     waitlistCount: countByScheduleId.get(row.schedules.id) ?? 0,
+    heldCount: heldByScheduleId.get(row.schedules.id) ?? 0,
   }));
 
   return NextResponse.json(enriched);
