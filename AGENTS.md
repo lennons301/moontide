@@ -172,4 +172,4 @@ Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/age
 
 ### Review gates
 
-Estate defaults plus a `payments` gate (Stripe, booking, pricing paths) — matching PRs get `human-signoff` and wait for a human merge. See `docs/agents/review-gates.yaml`.
+Estate defaults plus three repo gates — `payments` (Stripe, booking, pricing paths), `notifications` (cron routes and the email helper) and `deploy-config` (`vercel.json`/`vercel.ts`, where cron schedules live). Matching PRs get `human-signoff` and wait for a human merge. See `docs/agents/review-gates.yaml`.
