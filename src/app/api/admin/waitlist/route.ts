@@ -6,7 +6,7 @@ import {
   findHeldBookingStatus,
   findWaitlistEntry,
 } from "@/lib/waitlist/held-seats";
-import { summariseOfferOccupancy } from "@/lib/waitlist/offers";
+import { hasOfferLapsed, summariseOfferOccupancy } from "@/lib/waitlist/offers";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
       and(eq(bookings.scheduleId, scheduleId), eq(bookings.status, "held")),
     );
 
-  const now = Date.now();
+  const now = new Date();
   const entries = rows.map((row) => {
     const entry = row.waitlist_entries;
     // The token stays out of the response: the link belongs in the recipient's
@@ -55,9 +55,7 @@ export async function GET(request: Request) {
         ? {
             offeredAt: entry.offeredAt,
             expiresAt: entry.offerExpiresAt,
-            expired: entry.offerExpiresAt
-              ? new Date(entry.offerExpiresAt).getTime() <= now
-              : true,
+            expired: hasOfferLapsed(entry.offerExpiresAt, now),
           }
         : null,
     };
