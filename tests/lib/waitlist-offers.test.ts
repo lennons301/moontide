@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   type ClaimedOffer,
+  decideCheckoutSeat,
   decideMakeOffer,
+  decidePaidSeat,
   decideRedemptionSeat,
   decideWithdrawOffer,
   isHoldDuration,
@@ -439,5 +441,293 @@ describe("decideRedemptionSeat", () => {
       error: "You already have a booking for this class",
       httpStatus: 409,
     });
+  });
+});
+
+/** A class filled to the brim by the held seat the recipient is being offered. */
+const FULL_BY_THE_HELD_SEAT = { status: "open", capacity: 8, bookedCount: 8 };
+
+function decideCheckout(
+  overrides: Partial<Parameters<typeof decideCheckoutSeat>[0]>,
+) {
+  return decideCheckoutSeat({
+    token: TOKEN,
+    offer: CLAIMED,
+    request: REQUEST,
+    existingBookings: [{ id: 77 }],
+    schedule: FULL_BY_THE_HELD_SEAT,
+    now: NOW,
+    ...overrides,
+  });
+}
+
+describe("decideCheckoutSeat", () => {
+  it("lets a valid token past both the full class and its own held seat", () => {
+    // Neither refusal is a real one: the seat that fills the class, and the
+    // booking that looks like a duplicate, are the same held seat.
+    expect(decideCheckout({})).toEqual({
+      ok: true,
+      kind: "held-seat",
+      bookingId: 77,
+      waitlistEntryId: 5,
+    });
+  });
+
+  it("lets a valid token past a class Gabrielle has flagged as full by hand", () => {
+    expect(
+      decideCheckout({
+        schedule: { status: "full", capacity: 8, bookedCount: 8 },
+      }),
+    ).toMatchObject({ ok: true, kind: "held-seat" });
+  });
+
+  it("refuses a cancelled class to the offer recipient as well", () => {
+    expect(
+      decideCheckout({
+        schedule: { status: "cancelled", capacity: 8, bookedCount: 8 },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: "Class is not available",
+      httpStatus: 400,
+    });
+  });
+
+  it("leaves ordinary public booking exactly as it was", () => {
+    const noToken = {
+      token: null,
+      offer: null,
+      existingBookings: [],
+    };
+
+    expect(
+      decideCheckout({ ...noToken, schedule: FULL_BY_THE_HELD_SEAT }),
+    ).toMatchObject({ ok: false, error: "Class is full", httpStatus: 400 });
+
+    expect(
+      decideCheckout({
+        ...noToken,
+        schedule: { status: "full", capacity: 8, bookedCount: 2 },
+      }),
+    ).toMatchObject({ ok: false, error: "Class is not available" });
+
+    expect(
+      decideCheckout({
+        ...noToken,
+        existingBookings: [{ id: 88 }],
+        schedule: { status: "open", capacity: 8, bookedCount: 2 },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: "You already have a booking for this class",
+      httpStatus: 409,
+    });
+
+    expect(
+      decideCheckout({
+        ...noToken,
+        schedule: { status: "open", capacity: 8, bookedCount: 2 },
+      }),
+    ).toEqual({ ok: true, kind: "new-seat" });
+  });
+
+  // Every way a token can fail to qualify. Each one has to land back on the
+  // ordinary refusals: a bypass any wider than one held seat would be a hole in
+  // public booking, since a full class refuses nobody holding a token.
+  it("refuses a token that matches no offer", () => {
+    expect(decideCheckout({ offer: null })).toMatchObject({
+      ok: false,
+      error: "This offer is no longer available",
+      httpStatus: 404,
+    });
+  });
+
+  it("refuses a token that does not match the offer it was read against", () => {
+    expect(decideCheckout({ token: "some-other-token" })).toMatchObject({
+      ok: false,
+      httpStatus: 404,
+    });
+  });
+
+  it("refuses an entry that holds no seat at all", () => {
+    expect(
+      decideCheckout({
+        offer: { ...CLAIMED, heldBookingId: null, heldBookingStatus: null },
+      }),
+    ).toMatchObject({ ok: false, httpStatus: 404 });
+  });
+
+  it("refuses a seat that has already been taken up", () => {
+    expect(
+      decideCheckout({ offer: { ...CLAIMED, heldBookingStatus: "confirmed" } }),
+    ).toMatchObject({
+      ok: false,
+      error: "This offer has already been taken up",
+      httpStatus: 409,
+    });
+  });
+
+  it("refuses an expired offer", () => {
+    expect(
+      decideCheckout({
+        offer: {
+          ...CLAIMED,
+          offerExpiresAt: new Date("2026-06-15T08:59:59.000Z"),
+        },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: "This offer has expired",
+      httpStatus: 410,
+    });
+  });
+
+  it("refuses an offer whose deadline is missing", () => {
+    expect(
+      decideCheckout({ offer: { ...CLAIMED, offerExpiresAt: null } }),
+    ).toMatchObject({ ok: false, httpStatus: 410 });
+  });
+
+  it("refuses a token presented by the wrong customer", () => {
+    expect(
+      decideCheckout({
+        request: { ...REQUEST, customerEmail: "someone@else.com" },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: "This offer was made to a different email address",
+      httpStatus: 403,
+    });
+  });
+
+  it("refuses a token presented against the wrong class", () => {
+    expect(
+      decideCheckout({ request: { ...REQUEST, scheduleId: 43 } }),
+    ).toMatchObject({
+      ok: false,
+      error: "This offer is for a different class",
+      httpStatus: 400,
+    });
+  });
+
+  it("matches the customer's email case-insensitively", () => {
+    expect(
+      decideCheckout({
+        request: { ...REQUEST, customerEmail: " Jane@Example.com " },
+      }),
+    ).toMatchObject({ ok: true, kind: "held-seat" });
+  });
+
+  it("still refuses when the customer has another active booking besides the held seat", () => {
+    expect(
+      decideCheckout({ existingBookings: [{ id: 77 }, { id: 88 }] }),
+    ).toMatchObject({
+      ok: false,
+      error: "You already have a booking for this class",
+      httpStatus: 409,
+    });
+  });
+});
+
+function decidePaid(overrides: Partial<Parameters<typeof decidePaidSeat>[0]>) {
+  return decidePaidSeat({
+    token: TOKEN,
+    heldBookingId: 77,
+    offer: CLAIMED,
+    request: REQUEST,
+    existingBookings: [{ id: 77, status: "held" }],
+    ...overrides,
+  });
+}
+
+describe("decidePaidSeat", () => {
+  it("converts the held seat the payment was started against", () => {
+    expect(decidePaid({})).toEqual({
+      kind: "convert-held-seat",
+      bookingId: 77,
+      waitlistEntryId: 5,
+    });
+  });
+
+  it("honours a payment that landed after the deadline passed", () => {
+    // The deadline governs whether a payment may be started, not whether one
+    // already taken is honoured — the customer has been charged.
+    expect(
+      decidePaid({
+        offer: {
+          ...CLAIMED,
+          offerExpiresAt: new Date("2026-06-15T08:59:59.000Z"),
+        },
+      }),
+    ).toMatchObject({ kind: "convert-held-seat", bookingId: 77 });
+  });
+
+  it("writes nothing further when the held seat is already confirmed", () => {
+    // The second delivery of the same event: the first one converted the seat.
+    expect(
+      decidePaid({
+        offer: { ...CLAIMED, heldBookingStatus: "confirmed" },
+        existingBookings: [{ id: 77, status: "confirmed" }],
+      }),
+    ).toEqual({ kind: "already-booked" });
+  });
+
+  it("writes nothing further when a credit got there first", () => {
+    // Redeeming removes the entry, so the token now matches nothing.
+    expect(
+      decidePaid({
+        offer: null,
+        existingBookings: [{ id: 77, status: "confirmed" }],
+      }),
+    ).toEqual({ kind: "already-booked" });
+  });
+
+  it("books the customer anyway when the hold was withdrawn under them", () => {
+    // Withdrawing deleted the held booking and freed the seat. They have paid,
+    // so a seat they get — over capacity if it comes to that.
+    expect(decidePaid({ offer: null, existingBookings: [] })).toEqual({
+      kind: "new-booking",
+    });
+  });
+
+  it("does not convert a seat the token is no longer bound to", () => {
+    expect(
+      decidePaid({
+        heldBookingId: 77,
+        offer: { ...CLAIMED, heldBookingId: 99 },
+        existingBookings: [],
+      }),
+    ).toEqual({ kind: "new-booking" });
+  });
+
+  it("does not convert someone else's held seat", () => {
+    expect(
+      decidePaid({
+        request: { ...REQUEST, customerEmail: "someone@else.com" },
+        existingBookings: [],
+      }),
+    ).toEqual({ kind: "new-booking" });
+
+    expect(
+      decidePaid({
+        request: { ...REQUEST, scheduleId: 43 },
+        existingBookings: [],
+      }),
+    ).toEqual({ kind: "new-booking" });
+  });
+
+  it("decides an ordinary card booking exactly as it did before", () => {
+    const noOffer = { token: null, heldBookingId: null, offer: null };
+
+    expect(decidePaid({ ...noOffer, existingBookings: [] })).toEqual({
+      kind: "new-booking",
+    });
+
+    expect(
+      decidePaid({
+        ...noOffer,
+        existingBookings: [{ id: 88, status: "confirmed" }],
+      }),
+    ).toEqual({ kind: "already-booked" });
   });
 });
