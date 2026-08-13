@@ -1,23 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Hoisted mocks
-const { mockSelectFrom, mockInnerJoin, mockWhere, mockCheckoutSessionsCreate } =
-  vi.hoisted(() => {
-    const mockWhere = vi.fn().mockResolvedValue([]);
-    const mockInnerJoin = vi.fn().mockReturnValue({ where: mockWhere });
-    const mockSelectFrom = vi
-      .fn()
-      .mockReturnValue({ innerJoin: mockInnerJoin });
-    const mockCheckoutSessionsCreate = vi
-      .fn()
-      .mockResolvedValue({ url: "https://checkout.stripe.com/test" });
-    return {
-      mockSelectFrom,
-      mockInnerJoin,
-      mockWhere,
-      mockCheckoutSessionsCreate,
-    };
-  });
+const {
+  mockSelectFrom,
+  mockInnerJoin,
+  mockWhere,
+  mockCheckoutSessionsCreate,
+  mockFindOfferByToken,
+} = vi.hoisted(() => {
+  const mockWhere = vi.fn().mockResolvedValue([]);
+  const mockInnerJoin = vi.fn().mockReturnValue({ where: mockWhere });
+  const mockSelectFrom = vi.fn().mockReturnValue({ innerJoin: mockInnerJoin });
+  const mockCheckoutSessionsCreate = vi
+    .fn()
+    .mockResolvedValue({ url: "https://checkout.stripe.com/test" });
+  const mockFindOfferByToken = vi.fn().mockResolvedValue(null);
+  return {
+    mockSelectFrom,
+    mockInnerJoin,
+    mockWhere,
+    mockCheckoutSessionsCreate,
+    mockFindOfferByToken,
+  };
+});
 
 vi.mock("@/lib/stripe", () => ({
   getStripe: () => ({
@@ -53,6 +58,10 @@ vi.mock("drizzle-orm", () => ({
   ne: vi.fn((...args: unknown[]) => args),
 }));
 
+vi.mock("@/lib/waitlist/held-seats", () => ({
+  findOfferByToken: mockFindOfferByToken,
+}));
+
 import { POST } from "@/app/api/book/checkout/route";
 
 describe("POST /api/book/checkout", () => {
@@ -67,6 +76,7 @@ describe("POST /api/book/checkout", () => {
     mockCheckoutSessionsCreate.mockResolvedValue({
       url: "https://checkout.stripe.com/test",
     });
+    mockFindOfferByToken.mockResolvedValue(null);
   });
 
   it("returns 400 when email is missing", async () => {
@@ -318,6 +328,223 @@ describe("POST /api/book/checkout", () => {
         }),
       }),
     );
+  });
+
+  describe("paying by card for a held seat", () => {
+    const HELD_SEAT_TOKEN = "held-seat-token";
+
+    /** The class is full precisely because the recipient's seat is held. */
+    function fullByTheHeldSeat() {
+      mockWhere
+        .mockResolvedValueOnce([
+          {
+            schedules: {
+              id: 1,
+              status: "open",
+              bookedCount: 8,
+              capacity: 8,
+              date: "2026-05-01",
+              startTime: "09:00",
+              endTime: "10:00",
+            },
+            classes: { id: 1, title: "Morning Yoga", priceInPence: 1200 },
+          },
+        ])
+        // Their own held seat comes back as an existing booking.
+        .mockResolvedValueOnce([{ id: 77, status: "held" }]);
+    }
+
+    function liveOffer(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 5,
+        scheduleId: 1,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+        offerToken: HELD_SEAT_TOKEN,
+        offerExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        heldBookingId: 77,
+        heldBookingStatus: "held",
+        ...overrides,
+      };
+    }
+
+    function requestWithToken(token: string | null = HELD_SEAT_TOKEN) {
+      return new Request("http://localhost:3000/api/book/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scheduleId: 1,
+          customerName: "Jane Doe",
+          customerEmail: "jane@example.com",
+          offerToken: token,
+        }),
+      });
+    }
+
+    it("starts checkout past the full class and the recipient's own held seat", async () => {
+      fullByTheHeldSeat();
+      mockFindOfferByToken.mockResolvedValue(liveOffer());
+
+      const response = await POST(requestWithToken());
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.url).toBe("https://checkout.stripe.com/test");
+
+      // The offer travels with the payment so the webhook converts the held
+      // seat rather than reading it as a duplicate and keeping the money.
+      expect(mockCheckoutSessionsCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            type: "individual",
+            scheduleId: "1",
+            customerEmail: "jane@example.com",
+            offerToken: HELD_SEAT_TOKEN,
+            heldBookingId: "77",
+          }),
+        }),
+      );
+    });
+
+    it("carries no offer metadata on an ordinary booking", async () => {
+      mockWhere
+        .mockResolvedValueOnce([
+          {
+            schedules: {
+              id: 1,
+              status: "open",
+              bookedCount: 2,
+              capacity: 8,
+              date: "2026-05-01",
+              startTime: "09:00",
+              endTime: "10:00",
+            },
+            classes: { id: 1, title: "Morning Yoga", priceInPence: 1200 },
+          },
+        ])
+        .mockResolvedValueOnce([]);
+
+      const response = await POST(requestWithToken(null));
+      expect(response.status).toBe(200);
+
+      const metadata = mockCheckoutSessionsCreate.mock.calls[0][0]
+        .metadata as Record<string, string>;
+      expect(metadata.offerToken).toBeUndefined();
+      expect(metadata.heldBookingId).toBeUndefined();
+      expect(mockFindOfferByToken).not.toHaveBeenCalled();
+    });
+
+    it("refuses a token that matches no offer, leaving the class full", async () => {
+      fullByTheHeldSeat();
+      mockFindOfferByToken.mockResolvedValue(null);
+
+      const response = await POST(requestWithToken("made-up-token"));
+      expect(response.status).toBe(404);
+      const body = await response.json();
+      expect(body.error).toBe("This offer is no longer available");
+      expect(mockCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
+
+    it("refuses an expired offer", async () => {
+      fullByTheHeldSeat();
+      mockFindOfferByToken.mockResolvedValue(
+        liveOffer({ offerExpiresAt: new Date(Date.now() - 1000) }),
+      );
+
+      const response = await POST(requestWithToken());
+      expect(response.status).toBe(410);
+      expect((await response.json()).error).toBe("This offer has expired");
+      expect(mockCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
+
+    it("refuses a token presented by someone else", async () => {
+      fullByTheHeldSeat();
+      mockFindOfferByToken.mockResolvedValue(
+        liveOffer({ customerEmail: "someone@else.com" }),
+      );
+
+      const response = await POST(requestWithToken());
+      expect(response.status).toBe(403);
+      expect((await response.json()).error).toBe(
+        "This offer was made to a different email address",
+      );
+      expect(mockCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
+
+    it("refuses a token whose seat has already been taken up", async () => {
+      fullByTheHeldSeat();
+      mockFindOfferByToken.mockResolvedValue(
+        liveOffer({ heldBookingStatus: "confirmed" }),
+      );
+
+      const response = await POST(requestWithToken());
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toBe(
+        "This offer has already been taken up",
+      );
+      expect(mockCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
+
+    it("refuses a token used against a class it was not offered on", async () => {
+      fullByTheHeldSeat();
+      mockFindOfferByToken.mockResolvedValue(liveOffer({ scheduleId: 99 }));
+
+      const response = await POST(requestWithToken());
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe(
+        "This offer is for a different class",
+      );
+      expect(mockCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
+
+    it("refuses a recipient who also has another booking on the class", async () => {
+      mockWhere
+        .mockResolvedValueOnce([
+          {
+            schedules: {
+              id: 1,
+              status: "open",
+              bookedCount: 8,
+              capacity: 8,
+              date: "2026-05-01",
+              startTime: "09:00",
+              endTime: "10:00",
+            },
+            classes: { id: 1, title: "Morning Yoga", priceInPence: 1200 },
+          },
+        ])
+        .mockResolvedValueOnce([
+          { id: 77, status: "held" },
+          { id: 88, status: "confirmed" },
+        ]);
+      mockFindOfferByToken.mockResolvedValue(liveOffer());
+
+      const response = await POST(requestWithToken());
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toBe(
+        "You already have a booking for this class",
+      );
+      expect(mockCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
+
+    it("refuses a cancelled class even with a valid token", async () => {
+      mockWhere.mockResolvedValue([
+        {
+          schedules: {
+            id: 1,
+            status: "cancelled",
+            bookedCount: 8,
+            capacity: 8,
+          },
+          classes: { id: 1, title: "Morning Yoga", priceInPence: 1200 },
+        },
+      ]);
+      mockFindOfferByToken.mockResolvedValue(liveOffer());
+
+      const response = await POST(requestWithToken());
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe("Class is not available");
+      expect(mockCheckoutSessionsCreate).not.toHaveBeenCalled();
+    });
   });
 
   it("returns 400 when bundle config not found", async () => {

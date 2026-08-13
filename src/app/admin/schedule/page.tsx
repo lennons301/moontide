@@ -600,6 +600,14 @@ export default function SchedulePage() {
                   </td>
                   <td className="px-4 py-3">
                     {item.schedules.bookedCount}/{item.schedules.capacity}
+                    {item.schedules.bookedCount > item.schedules.capacity && (
+                      <span
+                        className="ml-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"
+                        title="More bookings than seats. A card payment is never refused once it has gone through, so a class can end up oversold — check who is coming before the class."
+                      >
+                        over capacity
+                      </span>
+                    )}
                     {item.heldCount > 0 && (
                       <span
                         className="ml-1 text-xs text-bright-orange"
