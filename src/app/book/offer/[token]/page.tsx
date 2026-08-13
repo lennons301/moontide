@@ -38,12 +38,18 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 /** Plain wording, not an error: an offer runs out or gets taken up. */
-function OfferClosed({ message }: { message: string }) {
+function OfferClosed({
+  message,
+  heading = "This place isn't available",
+}: {
+  message: string;
+  heading?: string;
+}) {
   return (
     <Shell>
       <div className="text-center">
         <h1 className="text-3xl md:text-4xl font-semibold text-deep-tide-blue mb-3">
-          This place isn't available
+          {heading}
         </h1>
         <div className="w-8 h-0.5 bg-bright-orange mx-auto mb-6" />
         <p className="text-deep-ocean leading-relaxed mb-8">{message}</p>
@@ -71,17 +77,6 @@ export default async function OfferPage({
       <OfferClosed message="This link is no longer valid — the place may already have been taken up. If you think it should still be yours, get in touch with Gabrielle." />
     );
   }
-  if (offer.heldBookingStatus !== "held") {
-    return (
-      <OfferClosed message="This place has already been taken up. If that wasn't you, get in touch with Gabrielle." />
-    );
-  }
-  if (!offer.offerExpiresAt || offer.offerExpiresAt.getTime() <= Date.now()) {
-    return (
-      <OfferClosed message="This offer has passed its deadline, so the place has gone back to the class. You're still on the waiting list — get in touch with Gabrielle if you'd like to talk it through." />
-    );
-  }
-
   const scheduleRows = await db
     .select()
     .from(schedules)
@@ -93,6 +88,30 @@ export default async function OfferPage({
   if (!schedule || !classInfo) {
     return (
       <OfferClosed message="We couldn't find that class. Get in touch with Gabrielle and she'll sort it out." />
+    );
+  }
+
+  // Checked ahead of the offer's own state, because a cancelled class is the
+  // whole truth: saying the place was taken up would be both wrong and unkind
+  // when the class simply isn't happening. No way to pay is offered — both
+  // payment paths refuse a cancelled class anyway.
+  if (schedule.status === "cancelled") {
+    return (
+      <OfferClosed
+        heading="This class has been cancelled"
+        message="Gabrielle has had to cancel this class, so the place she was holding for you has gone with it. Nothing has been taken from you. You're still on the waiting list for this class — get in touch with her about other dates."
+      />
+    );
+  }
+
+  if (offer.heldBookingStatus !== "held") {
+    return (
+      <OfferClosed message="This place has already been taken up. If that wasn't you, get in touch with Gabrielle." />
+    );
+  }
+  if (!offer.offerExpiresAt || offer.offerExpiresAt.getTime() <= Date.now()) {
+    return (
+      <OfferClosed message="This offer has passed its deadline, so the place has gone back to the class. You're still on the waiting list — get in touch with Gabrielle if you'd like to talk it through." />
     );
   }
 
