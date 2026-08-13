@@ -387,6 +387,33 @@ describe("POST /api/book/redeem", () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
+  it("refuses a token for a class that has been cancelled", async () => {
+    mockSelectWhere.mockResolvedValueOnce([
+      { bundleEligible: true, status: "cancelled" },
+    ]);
+
+    const request = new Request("http://localhost:3000/api/book/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 1,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+        offerToken: "a-token-for-a-class-that-is-not-happening",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("Class is not available");
+
+    // The class is refused before the token is even looked up: cancelling voided
+    // the held seat, and nothing about the link can put it back.
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
   it("refuses to spend a credit when the class has no places left", async () => {
     mockSelectWhere
       .mockResolvedValueOnce([{ bundleEligible: true, status: "open" }])

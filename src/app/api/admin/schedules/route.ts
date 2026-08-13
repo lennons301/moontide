@@ -2,6 +2,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
+import { voidOffersOnCancellation } from "@/lib/waitlist/cancellation";
 
 export async function GET() {
   const scheduleRows = await db
@@ -133,6 +134,38 @@ export async function PUT(request: Request) {
     ...(status && { status }),
     ...(classId && { classId }),
   };
+
+  // Cancelling takes the offers outstanding on the class with it: the same
+  // transaction, so a class that is cancelled never keeps seats held for a class
+  // that is not happening. Nothing is asked of Gabrielle first — she cancels at
+  // short notice, and an extra gate would only be clicked through.
+  //
+  // Handled ahead of the recurrence branch so the void can never be skipped. A
+  // request that cancelled a class and added weekly recurrence to it in one go
+  // would be incoherent; cancelling is the unambiguous half, so it wins.
+  if (updateFields.status === "cancelled") {
+    const cancelled = await db.transaction(async (tx) => {
+      const updated = await tx
+        .update(schedules)
+        .set(updateFields)
+        .where(eq(schedules.id, id))
+        .returning();
+
+      if (updated.length === 0) return null;
+
+      await voidOffersOnCancellation(tx, id);
+      return updated[0];
+    });
+
+    if (!cancelled) {
+      return NextResponse.json(
+        { error: "Schedule not found" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json(cancelled);
+  }
 
   // If adding recurrence to an existing schedule, update the original
   // and create N-1 additional weekly rows
