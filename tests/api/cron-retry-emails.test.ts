@@ -9,6 +9,7 @@ const {
   mockSendBookingConfirmation,
   mockSendBundleConfirmation,
   mockSendBookingNotification,
+  mockRunDailyOfferWork,
 } = vi.hoisted(() => {
   const mockSelectWhere = vi.fn().mockResolvedValue([]);
   const mockSelectInnerJoin = vi
@@ -29,6 +30,10 @@ const {
   const mockSendBookingNotification = vi
     .fn()
     .mockResolvedValue({ success: true });
+  const mockRunDailyOfferWork = vi.fn().mockResolvedValue({
+    expiredOffers: { found: 0, released: 0, emailed: 0, failed: 0 },
+    digest: { sent: false, items: 0 },
+  });
   return {
     mockSelectFrom,
     mockSelectWhere,
@@ -38,6 +43,7 @@ const {
     mockSendBookingConfirmation,
     mockSendBundleConfirmation,
     mockSendBookingNotification,
+    mockRunDailyOfferWork,
   };
 });
 
@@ -82,6 +88,12 @@ vi.mock("@/lib/email", () => ({
   sendBookingNotification: mockSendBookingNotification,
 }));
 
+// The daily offer work is folded into this handler; what it does is covered in
+// tests/api/cron-offer-sweep.test.ts. Here it is only wiring.
+vi.mock("@/lib/waitlist/daily", () => ({
+  runDailyOfferWork: mockRunDailyOfferWork,
+}));
+
 import { ne } from "drizzle-orm";
 import { POST } from "@/app/api/cron/retry-emails/route";
 
@@ -108,6 +120,7 @@ describe("POST /api/cron/retry-emails", () => {
 
     const response = await POST(request);
     expect(response.status).toBe(401);
+    expect(mockRunDailyOfferWork).not.toHaveBeenCalled();
   });
 
   it("returns 401 with wrong secret", async () => {
@@ -133,6 +146,23 @@ describe("POST /api/cron/retry-emails", () => {
     const body = await response.json();
     expect(body.retriedBookings).toBe(0);
     expect(body.retriedBundles).toBe(0);
+  });
+
+  it("runs the daily offer work too", async () => {
+    // Only daily schedules are permitted here, so the offer sweep and digest
+    // ride along with the daily run that already exists.
+    const request = new Request("http://localhost:3000/api/cron/retry-emails", {
+      method: "POST",
+      headers: { Authorization: "Bearer test-secret" },
+    });
+
+    const response = await POST(request);
+
+    expect(mockRunDailyOfferWork).toHaveBeenCalledOnce();
+    expect(await response.json()).toMatchObject({
+      expiredOffers: { found: 0 },
+      digest: { sent: false },
+    });
   });
 
   it("leaves held seats out of the sweep", async () => {

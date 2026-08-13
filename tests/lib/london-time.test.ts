@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { londonWallClockToUtc } from "@/lib/time/london";
+import { londonDateString, londonWallClockToUtc } from "@/lib/time/london";
+
+describe("londonDateString", () => {
+  it("reads the London calendar day, not the UTC one", () => {
+    // 00:30 BST on 16 June is still 23:30Z on the 15th. A daily job asking
+    // "which classes are still to come?" must not skip today's.
+    expect(londonDateString(new Date("2026-06-15T23:30:00.000Z"))).toBe(
+      "2026-06-16",
+    );
+  });
+
+  it("agrees with UTC in winter", () => {
+    expect(londonDateString(new Date("2026-01-15T23:30:00.000Z"))).toBe(
+      "2026-01-15",
+    );
+  });
+});
 
 describe("londonWallClockToUtc", () => {
   it("treats a winter time as UTC", () => {

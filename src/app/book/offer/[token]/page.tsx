@@ -4,6 +4,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { bundles, classes, schedules } from "@/lib/db/schema";
 import { findOfferByToken } from "@/lib/waitlist/held-seats";
+import { hasOfferLapsed } from "@/lib/waitlist/offers";
 import { OfferClient } from "./offer-client";
 
 export const dynamic = "force-dynamic";
@@ -109,7 +110,10 @@ export default async function OfferPage({
       <OfferClosed message="This place has already been taken up. If that wasn't you, get in touch with Gabrielle." />
     );
   }
-  if (!offer.offerExpiresAt || offer.offerExpiresAt.getTime() <= Date.now()) {
+  if (
+    !offer.offerExpiresAt ||
+    hasOfferLapsed(offer.offerExpiresAt, new Date())
+  ) {
     return (
       <OfferClosed message="This offer has passed its deadline, so the place has gone back to the class. You're still on the waiting list — get in touch with Gabrielle if you'd like to talk it through." />
     );

@@ -35,6 +35,22 @@ function londonOffsetMs(instant: Date): number {
   return wallClockAsUtc - instant.getTime();
 }
 
+const LONDON_DATE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/London",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/**
+ * The `YYYY-MM-DD` London date an instant falls on — what Gabrielle would call
+ * today. A job running at 00:30 BST is on the day the calendar says, not the day
+ * a UTC clock is still finishing.
+ */
+export function londonDateString(instant: Date): string {
+  return LONDON_DATE.format(instant);
+}
+
 /**
  * Turn a `YYYY-MM-DD` date and an `HH:MM[:SS]` time, both read as London wall
  * clock, into the instant they name.

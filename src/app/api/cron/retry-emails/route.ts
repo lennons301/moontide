@@ -13,7 +13,15 @@ import {
   sendBookingNotification,
   sendBundleConfirmation,
 } from "@/lib/email";
+import { runDailyOfferWork } from "@/lib/waitlist/daily";
 
+/**
+ * The daily job. Email retries came first and name the route; the offer work
+ * (settling offers nobody answered, and Gabrielle's digest) is folded in behind
+ * them because this plan permits only daily schedules and we could not confirm
+ * how many entries it permits. Both are safe to run late — see
+ * `runDailyOfferWork`.
+ */
 export async function POST(request: Request) {
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -130,10 +138,16 @@ export async function POST(request: Request) {
     }
   }
 
+  // Runs after the retries so a failure in the newer work cannot cost a customer
+  // their confirmation email.
+  const offerWork = await runDailyOfferWork();
+
   return NextResponse.json({
     retriedBookings: pendingBookings.length,
     retriedBundles: pendingBundles.length,
     succeeded: succeededBookings + succeededBundles,
     failed,
+    expiredOffers: offerWork.expiredOffers,
+    digest: offerWork.digest,
   });
 }

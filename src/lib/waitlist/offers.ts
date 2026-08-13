@@ -77,6 +77,21 @@ export function isHoldDuration(value: unknown): value is HoldDuration {
   return HOLD_DURATIONS.includes(value as HoldDuration);
 }
 
+/**
+ * Whether a deadline has passed.
+ *
+ * The single reading of "expired", so nothing depends on a job having noticed
+ * first: an offer past its deadline is expired wherever it is read, and the
+ * settling job only catches up with what every reader already knows. A missing
+ * deadline is lapsed — it is holding a seat for nobody, until when?
+ */
+export function hasOfferLapsed(
+  expiresAt: Date | null | undefined,
+  now: Date,
+): boolean {
+  return !expiresAt || expiresAt.getTime() <= now.getTime();
+}
+
 export type DeadlineDecision =
   | { ok: true; expiresAt: Date; cappedByClassStart: boolean }
   | OfferFailure;
@@ -278,10 +293,7 @@ function bindOffer(input: {
   if (!sameEmail(offer.customerEmail, request.customerEmail)) {
     return fail("This offer was made to a different email address", 403);
   }
-  if (
-    !offer.offerExpiresAt ||
-    offer.offerExpiresAt.getTime() <= now.getTime()
-  ) {
+  if (hasOfferLapsed(offer.offerExpiresAt, now)) {
     return fail("This offer has expired", 410);
   }
 

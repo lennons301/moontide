@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import { sendSeatOffer } from "@/lib/email";
-import { claimSeat, releaseSeat } from "@/lib/schedule-occupancy";
+import { claimSeat } from "@/lib/schedule-occupancy";
 import { londonWallClockToUtc } from "@/lib/time/london";
 import {
   countOutstandingOffers,
@@ -16,6 +16,7 @@ import {
   decideWithdrawOffer,
   isHoldDuration,
 } from "@/lib/waitlist/offers";
+import { releaseHeldSeat } from "@/lib/waitlist/settlement";
 
 /** Signals that the seat was gone by the time the guarded claim ran. */
 class NoFreeSeatError extends Error {}
@@ -207,33 +208,14 @@ export async function DELETE(request: Request) {
     );
   }
 
+  // The same path an expiring offer takes: the two differ only in what triggers
+  // them and in whether the recipient is told.
   await db.transaction(async (tx) => {
-    // Clear the reference before the row it points at goes.
-    await tx
-      .update(waitlistEntries)
-      .set({
-        offeredAt: null,
-        offerExpiresAt: null,
-        offerToken: null,
-        heldBookingId: null,
-      })
-      .where(eq(waitlistEntries.id, decision.entry.id));
-
-    // Guarded on `held`: a seat taken up in the meantime is a real booking and
-    // must not be deleted, nor its occupancy given back.
-    const removed = await tx
-      .delete(bookings)
-      .where(
-        and(
-          eq(bookings.id, decision.heldBookingId),
-          eq(bookings.status, "held"),
-        ),
-      )
-      .returning({ id: bookings.id });
-
-    if (removed.length > 0) {
-      await releaseSeat(tx, decision.entry.scheduleId);
-    }
+    await releaseHeldSeat(tx, {
+      entryId: decision.entry.id,
+      heldBookingId: decision.heldBookingId,
+      scheduleId: decision.entry.scheduleId,
+    });
   });
 
   return NextResponse.json({ withdrawn: true });
