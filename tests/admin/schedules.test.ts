@@ -618,11 +618,11 @@ describe("PUT /api/admin/schedules — cancelling", () => {
     status: "cancelled",
   };
 
-  function cancelRequest(id = 1) {
+  function cancelRequest(id = 1, extra: Record<string, unknown> = {}) {
     return new Request("http://localhost:3000/api/admin/schedules", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status: "cancelled" }),
+      body: JSON.stringify({ id, status: "cancelled", ...extra }),
     });
   }
 
@@ -675,6 +675,20 @@ describe("PUT /api/admin/schedules — cancelling", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ id: 1 });
+  });
+
+  it("voids the offers even when the same request asks for recurrence", async () => {
+    queueTxUpdates([CANCELLED_SCHEDULE], [{ id: 11 }], []);
+
+    const response = await PUT(
+      cancelRequest(1, { repeatWeekly: true, numberOfWeeks: 4 }),
+    );
+
+    // Cancelling is the unambiguous half of an incoherent request, so it wins
+    // and the held seat cannot be left behind.
+    expect(response.status).toBe(200);
+    expect(mockTxUpdateSet.mock.calls[1][0]).toEqual({ status: "cancelled" });
+    expect(mockTxUpdateSet.mock.calls[2][0]).toHaveProperty("bookedCount");
   });
 
   it("returns 404 without voiding anything when the schedule is gone", async () => {
