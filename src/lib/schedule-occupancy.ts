@@ -67,13 +67,29 @@ export async function forceClaimSeat(
   };
 }
 
+/**
+ * Free several seats at once. Clamped at zero, so occupancy can never go
+ * negative, and a single statement so a batch release cannot be half applied.
+ * Freeing nothing writes nothing.
+ */
+export async function releaseSeats(
+  writer: OccupancyWriter,
+  scheduleId: number,
+  seats: number,
+): Promise<void> {
+  if (seats <= 0) return;
+  await writer
+    .update(schedules)
+    .set({
+      bookedCount: sql`GREATEST(${schedules.bookedCount} - ${seats}, 0)`,
+    })
+    .where(eq(schedules.id, scheduleId));
+}
+
 /** Free a seat. Clamped at zero, so occupancy can never go negative. */
 export async function releaseSeat(
   writer: OccupancyWriter,
   scheduleId: number,
 ): Promise<void> {
-  await writer
-    .update(schedules)
-    .set({ bookedCount: sql`GREATEST(${schedules.bookedCount} - 1, 0)` })
-    .where(eq(schedules.id, scheduleId));
+  await releaseSeats(writer, scheduleId, 1);
 }

@@ -14,6 +14,10 @@ const {
   mockUpdateReturning,
   mockDeleteFrom,
   mockDeleteWhere,
+  mockTransaction,
+  mockTxUpdate,
+  mockTxUpdateSet,
+  queueTxUpdates,
 } = vi.hoisted(() => {
   const mockOrderBy = vi.fn().mockResolvedValue([]);
   const mockInnerJoin = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
@@ -43,6 +47,29 @@ const {
   const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
   const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
   const mockDeleteFrom = vi.fn().mockReturnValue({ where: mockDeleteWhere });
+
+  // Writes inside the cancellation transaction, in order: the schedule row, the
+  // held bookings it cancelled, then the occupancy release. Each `where()`
+  // resolves to the next queued result whether the caller awaits it directly or
+  // goes on to `.returning()`.
+  const txUpdates: unknown[][] = [];
+  const queueTxUpdates = (...rows: unknown[][]) => {
+    txUpdates.length = 0;
+    txUpdates.push(...rows);
+  };
+  const mockTxUpdateWhere = vi.fn(() => {
+    const rows = txUpdates.shift() ?? [];
+    return Object.assign(Promise.resolve(rows), {
+      returning: vi.fn().mockResolvedValue(rows),
+    });
+  });
+  const mockTxUpdateSet = vi.fn().mockReturnValue({ where: mockTxUpdateWhere });
+  const mockTxUpdate = vi.fn().mockReturnValue({ set: mockTxUpdateSet });
+  const mockTransaction = vi.fn(
+    async (fn: (tx: unknown) => Promise<unknown>) =>
+      await fn({ update: mockTxUpdate }),
+  );
+
   return {
     mockSelectFrom,
     mockInnerJoin,
@@ -56,6 +83,10 @@ const {
     mockUpdateReturning,
     mockDeleteFrom,
     mockDeleteWhere,
+    mockTransaction,
+    mockTxUpdate,
+    mockTxUpdateSet,
+    queueTxUpdates,
   };
 });
 
@@ -71,19 +102,22 @@ vi.mock("@/lib/db", () => ({
       set: mockUpdateSet,
     }),
     delete: mockDeleteFrom,
+    transaction: mockTransaction,
   },
 }));
 
 vi.mock("@/lib/db/schema", () => ({
   classes: { id: "id", active: "active" },
-  schedules: { id: "id", classId: "class_id" },
-  bookings: { id: "id", scheduleId: "schedule_id" },
+  schedules: { id: "id", classId: "class_id", bookedCount: "booked_count" },
+  bookings: { id: "id", scheduleId: "schedule_id", status: "status" },
   waitlistEntries: { id: "id", scheduleId: "schedule_id" },
 }));
 
 vi.mock("drizzle-orm", () => ({
+  and: vi.fn((...args: unknown[]) => args),
   eq: vi.fn((...args: unknown[]) => args),
   desc: vi.fn((col: unknown) => col),
+  lt: vi.fn((...args: unknown[]) => args),
   sql: vi.fn(),
 }));
 
@@ -550,6 +584,107 @@ describe("PUT /api/admin/schedules", () => {
     expect(response.status).toBe(404);
     const body = await response.json();
     expect(body.error).toBe("Schedule not found");
+  });
+
+  it("does not touch bookings or occupancy on an ordinary update", async () => {
+    mockUpdateReturning.mockResolvedValue([{ id: 1, status: "open" }]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: 1, capacity: 10 }),
+    });
+
+    const response = await PUT(request);
+    expect(response.status).toBe(200);
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Cancelling a class takes the offers outstanding on it with it: a held seat is
+ * a promise of a place on a class that is not happening.
+ */
+describe("PUT /api/admin/schedules — cancelling", () => {
+  const CANCELLED_SCHEDULE = {
+    id: 1,
+    classId: 1,
+    date: "2026-05-02",
+    startTime: "09:00",
+    endTime: "10:00",
+    capacity: 8,
+    bookedCount: 8,
+    location: "Studio 1",
+    status: "cancelled",
+  };
+
+  function cancelRequest(id = 1) {
+    return new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: "cancelled" }),
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queueTxUpdates();
+  });
+
+  it("cancels every held seat and gives those seats back", async () => {
+    queueTxUpdates(
+      [CANCELLED_SCHEDULE], // the schedule itself
+      [{ id: 11 }, { id: 12 }], // the two held seats it cancelled
+      [], // the occupancy release
+    );
+
+    const response = await PUT(cancelRequest());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "cancelled" });
+
+    // Schedule, then held bookings, then occupancy — all in one transaction.
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    expect(mockTxUpdate).toHaveBeenCalledTimes(3);
+    expect(mockTxUpdateSet.mock.calls[0][0]).toEqual({ status: "cancelled" });
+    expect(mockTxUpdateSet.mock.calls[1][0]).toEqual({ status: "cancelled" });
+    expect(mockTxUpdateSet.mock.calls[2][0]).toHaveProperty("bookedCount");
+  });
+
+  it("frees no seats when the class had no offers outstanding", async () => {
+    queueTxUpdates([CANCELLED_SCHEDULE], []);
+
+    const response = await PUT(cancelRequest());
+
+    expect(response.status).toBe(200);
+    // The schedule and the guarded held-booking write, and nothing else: a class
+    // with no offers on it is cancelled exactly as it was before.
+    expect(mockTxUpdate).toHaveBeenCalledTimes(2);
+    expect(
+      mockTxUpdateSet.mock.calls.some(
+        (call) =>
+          (call[0] as Record<string, unknown>).bookedCount !== undefined,
+      ),
+    ).toBe(false);
+  });
+
+  it("is not blocked by outstanding offers", async () => {
+    queueTxUpdates([CANCELLED_SCHEDULE], [{ id: 11 }], []);
+
+    const response = await PUT(cancelRequest());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ id: 1 });
+  });
+
+  it("returns 404 without voiding anything when the schedule is gone", async () => {
+    queueTxUpdates([]);
+
+    const response = await PUT(cancelRequest(999));
+
+    expect(response.status).toBe(404);
+    expect((await response.json()).error).toBe("Schedule not found");
+    expect(mockTxUpdate).toHaveBeenCalledTimes(1);
   });
 });
 

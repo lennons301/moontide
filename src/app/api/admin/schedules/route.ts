@@ -2,6 +2,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
+import { voidOffersOnCancellation } from "@/lib/waitlist/cancellation";
 
 export async function GET() {
   const scheduleRows = await db
@@ -177,6 +178,34 @@ export async function PUT(request: Request) {
       .returning();
 
     return NextResponse.json([base, ...created]);
+  }
+
+  // Cancelling takes the offers outstanding on the class with it: the same
+  // transaction, so a class that is cancelled never keeps seats held for a class
+  // that is not happening. Nothing is asked of Gabrielle first — she cancels at
+  // short notice, and an extra gate would only be clicked through.
+  if (updateFields.status === "cancelled") {
+    const cancelled = await db.transaction(async (tx) => {
+      const updated = await tx
+        .update(schedules)
+        .set(updateFields)
+        .where(eq(schedules.id, id))
+        .returning();
+
+      if (updated.length === 0) return null;
+
+      await voidOffersOnCancellation(tx, id);
+      return updated[0];
+    });
+
+    if (!cancelled) {
+      return NextResponse.json(
+        { error: "Schedule not found" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json(cancelled);
   }
 
   // Simple update (no recurrence change)

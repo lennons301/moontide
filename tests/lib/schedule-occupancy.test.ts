@@ -4,6 +4,7 @@ import {
   claimSeat,
   forceClaimSeat,
   releaseSeat,
+  releaseSeats,
 } from "@/lib/schedule-occupancy";
 
 /**
@@ -91,5 +92,24 @@ describe("releaseSeat", () => {
 
     expect(w.update).toHaveBeenCalledTimes(1);
     expect(sqlText(w.set.mock.calls[0][0].bookedCount)).toContain("GREATEST");
+  });
+});
+
+describe("releaseSeats", () => {
+  it("frees several seats in one clamped statement", async () => {
+    const w = makeWriter();
+
+    await releaseSeats(w.writer, 5, 3);
+
+    expect(w.update).toHaveBeenCalledTimes(1);
+    expect(sqlText(w.set.mock.calls[0][0].bookedCount)).toContain("GREATEST");
+  });
+
+  it("writes nothing when there is nothing to free", async () => {
+    const w = makeWriter();
+
+    await releaseSeats(w.writer, 5, 0);
+
+    expect(w.update).not.toHaveBeenCalled();
   });
 });
