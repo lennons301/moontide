@@ -44,9 +44,11 @@ src/
       stripe/webhook/     # Stripe webhook (checkout.session.completed)
       book/
         checkout/         # Create Stripe Checkout session (individual + bundle)
-        redeem/           # Redeem bundle credit for booking
+        redeem/           # Redeem bundle credit (new seat or an offered held seat)
       admin/
         schedules/        # CRUD API for class schedules
+        waitlist/         # GET waiting list + occupancy, DELETE an entry
+        waitlist/offer/   # POST offer a held seat, DELETE withdraw it
         classes/          # GET active class types
         pricing/          # GET/PUT class prices and bundle config
         bookings/         # GET all bookings
@@ -93,6 +95,10 @@ src/
       types.ts            # TypeScript types for Sanity documents
     email.ts              # Resend email helper (sendContactEmail)
     schedule-occupancy.ts # Sole owner of schedules.bookedCount writes
+    time/london.ts        # Europe/London wall-clock composition for schedules
+    waitlist/
+      offers.ts           # Pure decisions: deadlines, offer capacity, redemption seat
+      held-seats.ts       # The reads those decisions need
   sanity/
     schema/               # Sanity document schemas (siteSettings, service, page, trainer, communityEvent)
     structure.ts          # Sanity Studio desk structure
@@ -111,6 +117,10 @@ tests/
   lib/email.test.ts       # Email helper tests
   lib/booking-transitions.test.ts  # Cancel/release/reschedule decision tests
   lib/schedule-occupancy.test.ts  # Seat claim/release semantics
+  lib/waitlist-offers.test.ts # Seat offer decision rules
+  lib/london-time.test.ts     # Class starts across the BST boundary
+  admin/waitlist.test.ts      # Waiting list API tests
+  admin/waitlist-offer.test.ts # Offer/withdraw route wiring
 drizzle/
   migrations/             # Generated Drizzle migrations
 ```
@@ -140,6 +150,10 @@ drizzle/
 - **Schedule occupancy:** `src/lib/schedule-occupancy.ts` owns every write to `schedules.bookedCount` — routes never adjust it directly. `claimSeat` is a guarded, atomic claim (the capacity check is the UPDATE's WHERE clause) that returns `{ claimed: false }` rather than throwing; `forceClaimSeat` always takes the seat and reports `{ overCapacity }` for already-paid paths; `releaseSeat` frees a seat clamped at zero.
 - **Bundle eligibility:** `classes.bundleEligible` (default true) controls whether bundle credits may be spent on a class. Toggled at `/admin/pricing`; enforced server-side in `/api/book/redeem`, with `/book` hiding the bundle option for ineligible classes.
 - **Releasing a seat:** `PUT /api/admin/bookings` with `status: "released"` frees the seat without settling what the customer is owed. Bundle-funded bookings are cancelled and the credit returned (capped at the bundle total, reactivating an exhausted bundle) — the customer re-books themselves. Card-funded bookings move to the `released` status with `releasedAt` set; nothing is refunded in Stripe (as with cancellation) and they appear in the "Owed a class" list on `/admin/bookings` until rescheduled. Rescheduling a released booking increments the target schedule only (its seat was already returned) and returns it to `confirmed`, clearing `releasedAt`. A released booking still counts as active for the one-booking-per-customer-per-schedule index, so the customer cannot re-book that same schedule themselves — intended, and stated in the admin copy.
+- **Seat offers:** Gabrielle can hold a free seat for one named person on a class's waiting list. Making an offer inserts a booking with status `held` and takes the seat through `claimSeat`, so the class reads as full to the public through the mechanism it always used — no new visibility rules and no reliance on the manually-set `full` flag. Because each offer takes a seat, offers can never outnumber free seats. Offer state (`offeredAt`, `offerExpiresAt`, `offerToken`, `heldBookingId`) lives on the waiting-list entry, so acceptance removes it and a confirmed booking carries no offer residue; re-offering the same person overwrites it, and no offer history is kept. Withdrawing deletes the held booking, frees the seat and leaves the person on the list — nothing is sent to them. Removing someone who holds an outstanding offer is refused: withdraw first, so the system never infers which was meant.
+- **Offer deadlines:** Always the earlier of Gabrielle's choice (24h, 48h, or until the class) and the class start. The class start is composed as a **Europe/London** wall clock via `londonWallClockToUtc` — a schedule stores date and time with no timezone, and composing them naively in a UTC runtime is an hour out through BST.
+- **Taking up an offer:** The link carries a 32-byte URL-safe token; possession of it is the sole authorisation, matching the posture that bundle redemption is authorised by email address alone. `/book/offer/[token]` shows the class, the deadline and whether that email holds usable credits, and spends one through `/api/book/redeem`. Redemption converts the held booking in place (occupancy must not move — the offer already counted the seat), removes the waiting-list entry and sends the existing booking confirmation. The duplicate-booking check is bypassed only for the one booking a valid, unexpired token is bound to, for that customer and class; every other active booking still blocks. Rules live in `src/lib/waitlist/offers.ts`.
+- **Held seats elsewhere:** `held` is a booking status like any other in occupancy terms, so anywhere occupancy is shown to Gabrielle it is called out separately (`heldCount` on `/api/admin/schedules`, the status badge and payment column on `/admin/bookings`). Held bookings are excluded from the confirmation-email retry cron and from admin resend — nobody has taken them up yet.
 - **Booking transitions:** Cancel/release/reschedule rules live in `src/lib/bookings/transitions.ts` as pure functions that take rows and return the intended transition. Put new rules there (unit-tested in `tests/lib/booking-transitions.test.ts`) and keep `/api/admin/bookings` as wiring.
 - **Confirmation emails:** Sent via Resend after Stripe webhook using `after()` from `next/server`. Customer gets HTML confirmation (branded with logo), Gabrielle gets plain text notification. `emailSent` flag on bookings/bundles tracks delivery; cron retries failures daily at 8am (24-hour cutoff). Vercel Hobby only allows daily cron jobs.
 - **Vercel Cron:** Configured in `vercel.json`. Cron endpoints at `/api/cron/*` are protected by `CRON_SECRET` bearer token.

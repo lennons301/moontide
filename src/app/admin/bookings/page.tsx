@@ -65,6 +65,7 @@ interface ScheduleApiRow {
 type StatusFilter =
   | "all"
   | "confirmed"
+  | "held"
   | "cancelled"
   | "waitlisted"
   | "released";
@@ -253,6 +254,7 @@ export default function BookingsPage() {
       cancelled: "bg-red-100 text-red-700",
       waitlisted: "bg-ocean-light-blue/20 text-ocean-light-blue",
       released: "bg-bright-orange/20 text-bright-orange",
+      held: "bg-deep-tide-blue/10 text-deep-tide-blue",
     };
     return (
       <span
@@ -264,6 +266,9 @@ export default function BookingsPage() {
   }
 
   function paymentType(row: BookingRow) {
+    // A held seat occupies capacity but nobody has paid for it — calling that
+    // "Stripe" would read as a booking that is coming.
+    if (row.bookings.status === "held") return "Held — unpaid";
     return row.bookings.bundleId ? "Bundle" : "Stripe";
   }
 
@@ -402,6 +407,7 @@ export default function BookingsPage() {
           options={[
             { value: "all", label: "All" },
             { value: "confirmed", label: "Confirmed" },
+            { value: "held", label: "Held" },
             { value: "released", label: "Released" },
             { value: "cancelled", label: "Cancelled" },
             { value: "waitlisted", label: "Waitlisted" },
@@ -538,15 +544,16 @@ export default function BookingsPage() {
                   <td className="px-4 py-3">{paymentType(item)}</td>
                   <td className="px-4 py-3">
                     {statusBadge(item.bookings.status)}
-                    {!item.bookings.emailSent && (
-                      <button
-                        type="button"
-                        onClick={() => handleResendEmail(item.bookings.id)}
-                        className="ml-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-bright-orange/20 text-bright-orange hover:bg-bright-orange/30 transition-colors cursor-pointer"
-                      >
-                        resend email
-                      </button>
-                    )}
+                    {!item.bookings.emailSent &&
+                      item.bookings.status !== "held" && (
+                        <button
+                          type="button"
+                          onClick={() => handleResendEmail(item.bookings.id)}
+                          className="ml-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-bright-orange/20 text-bright-orange hover:bg-bright-orange/30 transition-colors cursor-pointer"
+                        >
+                          resend email
+                        </button>
+                      )}
                   </td>
                   <td className="px-4 py-3">
                     {(item.bookings.status === "confirmed" ||

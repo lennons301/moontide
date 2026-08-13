@@ -6,22 +6,39 @@ const {
   mockSelectFrom,
   mockSelectWhere,
   mockInnerJoin,
+  mockLeftJoin,
   mockInsertValues,
+  mockInsertReturning,
   mockInsert,
   mockUpdateWhere,
   mockUpdateReturning,
   mockUpdateSet,
   mockUpdate,
+  mockDeleteWhere,
+  mockDelete,
   mockTransaction,
+  mockSendBookingConfirmation,
+  mockAfter,
 } = vi.hoisted(() => {
   const mockSelectWhere = vi.fn().mockResolvedValue([]);
   const mockInnerJoin = vi.fn().mockReturnValue({ where: mockSelectWhere });
+  const mockLeftJoin = vi.fn().mockReturnValue({ where: mockSelectWhere });
   const mockSelectFrom = vi.fn().mockReturnValue({
     where: mockSelectWhere,
     innerJoin: mockInnerJoin,
+    leftJoin: mockLeftJoin,
   });
-  const mockInsertValues = vi.fn().mockResolvedValue([{ id: 1 }]);
+  const mockInsertReturning = vi.fn().mockResolvedValue([{ id: 1 }]);
+  const mockInsertValues = vi
+    .fn()
+    .mockReturnValue({ returning: mockInsertReturning });
   const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
+  const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
+  const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
+  const mockSendBookingConfirmation = vi
+    .fn()
+    .mockResolvedValue({ success: true });
+  const mockAfter = vi.fn((fn: () => Promise<void> | void) => fn());
   // The occupancy claim reads the row back via .returning() — a non-empty array
   // means the guarded UPDATE matched and the seat was taken. The bundle update
   // just awaits the where(), so the chain is both awaitable and chainable.
@@ -36,6 +53,7 @@ const {
       const tx = {
         insert: mockInsert,
         update: mockUpdate,
+        delete: mockDelete,
         select: vi.fn().mockReturnValue({ from: mockSelectFrom }),
       };
       return await fn(tx);
@@ -47,13 +65,19 @@ const {
     mockSelectFrom,
     mockSelectWhere,
     mockInnerJoin,
+    mockLeftJoin,
     mockInsertValues,
+    mockInsertReturning,
     mockInsert,
     mockUpdateWhere,
     mockUpdateReturning,
     mockUpdateSet,
     mockUpdate,
+    mockDeleteWhere,
+    mockDelete,
     mockTransaction,
+    mockSendBookingConfirmation,
+    mockAfter,
   };
 });
 
@@ -62,6 +86,7 @@ vi.mock("@/lib/db", () => ({
     select: mockSelect,
     insert: mockInsert,
     update: mockUpdate,
+    delete: mockDelete,
     transaction: mockTransaction,
   },
 }));
@@ -86,9 +111,29 @@ vi.mock("@/lib/db/schema", () => ({
     bookedCount: "booked_count",
     capacity: "capacity",
     status: "status",
+    date: "date",
+    startTime: "start_time",
+    endTime: "end_time",
+    location: "location",
   },
-  classes: { id: "id", bundleEligible: "bundle_eligible" },
+  classes: {
+    id: "id",
+    bundleEligible: "bundle_eligible",
+    title: "title",
+    priceInPence: "price_in_pence",
+  },
+  waitlistEntries: { id: "id", offerToken: "offer_token" },
 }));
+
+vi.mock("@/lib/email", () => ({
+  sendBookingConfirmation: mockSendBookingConfirmation,
+}));
+
+vi.mock("next/server", async () => {
+  const actual =
+    await vi.importActual<typeof import("next/server")>("next/server");
+  return { ...actual, after: mockAfter };
+});
 
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn((...args: unknown[]) => args),
@@ -109,13 +154,17 @@ describe("POST /api/book/redeem", () => {
     vi.clearAllMocks();
     mockSelect.mockReturnValue({ from: mockSelectFrom });
     mockInnerJoin.mockReturnValue({ where: mockSelectWhere });
+    mockLeftJoin.mockReturnValue({ where: mockSelectWhere });
     mockSelectFrom.mockReturnValue({
       where: mockSelectWhere,
       innerJoin: mockInnerJoin,
+      leftJoin: mockLeftJoin,
     });
     mockSelectWhere.mockResolvedValue([]);
     mockInsert.mockReturnValue({ values: mockInsertValues });
-    mockInsertValues.mockResolvedValue([{ id: 1 }]);
+    mockInsertValues.mockReturnValue({ returning: mockInsertReturning });
+    mockInsertReturning.mockResolvedValue([{ id: 1 }]);
+    mockDelete.mockReturnValue({ where: mockDeleteWhere });
     mockUpdate.mockReturnValue({ set: mockUpdateSet });
     mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
     mockUpdateWhere.mockImplementation(() =>
@@ -410,11 +459,14 @@ describe("POST /api/book/redeem", () => {
     await POST(request);
 
     // Capacity must never be decided from a value read before the claim: the
-    // schedule lookup pulls status and bundle eligibility, nothing occupancy.
-    expect(mockSelect).toHaveBeenCalledWith({
-      status: "status",
-      bundleEligible: "bundle_eligible",
-    });
+    // schedule lookup pulls status, bundle eligibility and the details the
+    // confirmation email needs, nothing occupancy.
+    expect(mockSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "status",
+        bundleEligible: "bundle_eligible",
+      }),
+    );
     expect(mockSelect).not.toHaveBeenCalledWith(
       expect.objectContaining({ bookedCount: expect.anything() }),
     );
@@ -461,5 +513,186 @@ describe("POST /api/book/redeem", () => {
         status: "exhausted",
       }),
     );
+  });
+});
+
+describe("POST /api/book/redeem with an offer token", () => {
+  const SCHEDULE = {
+    bundleEligible: true,
+    status: "full",
+    date: "2099-06-20",
+    startTime: "10:00:00",
+    endTime: "11:00:00",
+    location: "Studio 1, Hove",
+    classTitle: "Prenatal Yoga",
+    priceInPence: 1800,
+  };
+
+  const BUNDLE = {
+    id: 10,
+    customerEmail: "jane@example.com",
+    creditsTotal: 6,
+    creditsRemaining: 4,
+    status: "active",
+    expiresAt: new Date("2099-12-31"),
+  };
+
+  const HELD_BOOKING = { id: 77, status: "held" };
+
+  function offerRow(overrides: Record<string, unknown> = {}) {
+    return {
+      entry: {
+        id: 5,
+        scheduleId: 1,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+        offerToken: "tok",
+        offerExpiresAt: new Date("2099-06-19T10:00:00Z"),
+        heldBookingId: 77,
+        ...overrides,
+      },
+      heldBookingStatus: "held",
+    };
+  }
+
+  function redeemWithToken(token = "tok") {
+    return new Request("http://localhost:3000/api/book/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 1,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+        offerToken: token,
+      }),
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSelect.mockReturnValue({ from: mockSelectFrom });
+    mockInnerJoin.mockReturnValue({ where: mockSelectWhere });
+    mockLeftJoin.mockReturnValue({ where: mockSelectWhere });
+    mockSelectFrom.mockReturnValue({
+      where: mockSelectWhere,
+      innerJoin: mockInnerJoin,
+      leftJoin: mockLeftJoin,
+    });
+    mockInsert.mockReturnValue({ values: mockInsertValues });
+    mockInsertValues.mockReturnValue({ returning: mockInsertReturning });
+    mockUpdate.mockReturnValue({ set: mockUpdateSet });
+    mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
+    mockUpdateWhere.mockImplementation(() =>
+      Object.assign(Promise.resolve([]), { returning: mockUpdateReturning }),
+    );
+    mockUpdateReturning.mockResolvedValue([{ id: 77 }]);
+    mockDelete.mockReturnValue({ where: mockDeleteWhere });
+    mockTransaction.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) =>
+        await fn({
+          insert: mockInsert,
+          update: mockUpdate,
+          delete: mockDelete,
+          select: vi.fn().mockReturnValue({ from: mockSelectFrom }),
+        }),
+    );
+    // schedule, bundles, existing bookings (the held seat), offer by token
+    mockSelectWhere
+      .mockResolvedValueOnce([SCHEDULE])
+      .mockResolvedValueOnce([BUNDLE])
+      .mockResolvedValueOnce([HELD_BOOKING])
+      .mockResolvedValueOnce([offerRow()]);
+  });
+
+  it("converts the held seat instead of booking a second one", async () => {
+    const response = await POST(redeemWithToken());
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.creditsRemaining).toBe(3);
+
+    // The held booking becomes the confirmed one; no second booking appears.
+    expect(mockUpdateSet).toHaveBeenCalledWith({
+      status: "confirmed",
+      bundleId: 10,
+    });
+    expect(mockInsert).not.toHaveBeenCalled();
+
+    // Occupancy must not move: the offer already counted this seat.
+    expect(mockUpdateSet).not.toHaveBeenCalledWith(
+      expect.objectContaining({ bookedCount: expect.anything() }),
+    );
+
+    // Exactly one credit spent.
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ creditsRemaining: 3, status: "active" }),
+    );
+
+    // Acceptance takes the waiting-list entry with it, and the customer gets
+    // the existing booking confirmation.
+    expect(mockDelete).toHaveBeenCalled();
+    expect(mockSendBookingConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerEmail: "jane@example.com",
+        classTitle: "Prenatal Yoga",
+        date: "2099-06-20",
+      }),
+    );
+  });
+
+  it("is not refused as already booked because of the seat held for them", async () => {
+    const response = await POST(redeemWithToken());
+    expect(response.status).toBe(200);
+  });
+
+  it("refuses an expired offer", async () => {
+    mockSelectWhere.mockReset();
+    mockSelectWhere
+      .mockResolvedValueOnce([SCHEDULE])
+      .mockResolvedValueOnce([BUNDLE])
+      .mockResolvedValueOnce([HELD_BOOKING])
+      .mockResolvedValueOnce([
+        {
+          ...offerRow(),
+          entry: {
+            ...offerRow().entry,
+            offerExpiresAt: new Date("2020-01-01T00:00:00Z"),
+          },
+        },
+      ]);
+
+    const response = await POST(redeemWithToken());
+    expect(response.status).toBe(410);
+    const body = await response.json();
+    expect(body.error).toBe("This offer has expired");
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a token that matches no offer", async () => {
+    mockSelectWhere.mockReset();
+    mockSelectWhere
+      .mockResolvedValueOnce([SCHEDULE])
+      .mockResolvedValueOnce([BUNDLE])
+      .mockResolvedValueOnce([HELD_BOOKING])
+      .mockResolvedValueOnce([]);
+
+    const response = await POST(redeemWithToken("not-a-token"));
+    expect(response.status).toBe(404);
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it("reports an offer taken up between the read and the write", async () => {
+    // The guarded conversion matched nothing: the seat is no longer held.
+    mockUpdateReturning.mockResolvedValue([]);
+
+    const response = await POST(redeemWithToken());
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error).toBe("This offer has already been taken up");
+
+    // No credit spent and the waiting-list entry left alone.
+    expect(mockUpdateSet).not.toHaveBeenCalledWith(
+      expect.objectContaining({ creditsRemaining: expect.anything() }),
+    );
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 });

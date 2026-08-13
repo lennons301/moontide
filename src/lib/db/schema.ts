@@ -33,6 +33,10 @@ export const bookingStatus = pgEnum("booking_status", [
   "waitlisted",
   // Seat handed back, but the customer is still owed a class they paid card for.
   "released",
+  // Seat held for one named person on the waiting list until their offer
+  // deadline. It occupies capacity like any other booking, but nobody has paid
+  // for it yet and nobody is coming unless the offer is taken up.
+  "held",
 ]);
 
 export const bundleStatus = pgEnum("bundle_status", [
@@ -147,6 +151,14 @@ export const waitlistEntries = pgTable(
     customerEmail: text("customer_email").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     emailSent: boolean("email_sent").default(false).notNull(),
+    // Offer state lives here rather than on the booking: accepting removes the
+    // entry, so a confirmed booking carries no offer residue. Re-offering the
+    // same person overwrites these fields — no offer history is kept.
+    offeredAt: timestamp("offered_at"),
+    offerExpiresAt: timestamp("offer_expires_at"),
+    // Possession of this token is the sole authorisation to take the seat.
+    offerToken: text("offer_token").unique(),
+    heldBookingId: integer("held_booking_id").references(() => bookings.id),
   },
   (table) => ({
     scheduleEmailUnique: uniqueIndex("waitlist_schedule_email_idx").on(

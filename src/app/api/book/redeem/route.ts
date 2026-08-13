@@ -1,11 +1,21 @@
 import { and, eq, gt, ne } from "drizzle-orm";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
+import {
+  bookings,
+  bundles,
+  classes,
+  schedules,
+  waitlistEntries,
+} from "@/lib/db/schema";
+import { sendBookingConfirmation } from "@/lib/email";
 import { claimSeat } from "@/lib/schedule-occupancy";
+import { findOfferByToken } from "@/lib/waitlist/held-seats";
+import { decideRedemptionSeat } from "@/lib/waitlist/offers";
 
 export async function POST(request: Request) {
-  const { scheduleId, customerName, customerEmail } = await request.json();
+  const { scheduleId, customerName, customerEmail, offerToken } =
+    await request.json();
 
   if (!scheduleId || !customerName || !customerEmail) {
     return NextResponse.json(
@@ -17,7 +27,13 @@ export async function POST(request: Request) {
   const scheduleRows = await db
     .select({
       status: schedules.status,
+      date: schedules.date,
+      startTime: schedules.startTime,
+      endTime: schedules.endTime,
+      location: schedules.location,
       bundleEligible: classes.bundleEligible,
+      classTitle: classes.title,
+      priceInPence: classes.priceInPence,
     })
     .from(schedules)
     .innerJoin(classes, eq(schedules.classId, classes.id))
@@ -67,7 +83,6 @@ export async function POST(request: Request) {
 
   const bundle = activeBundles[0];
 
-  // Prevent double-booking the same class with bundle credits.
   const existingBooking = await db
     .select()
     .from(bookings)
@@ -79,35 +94,30 @@ export async function POST(request: Request) {
       ),
     );
 
-  if (existingBooking.length > 0) {
+  // Which seat this is for. A seat held by an offer is itself a non-cancelled
+  // booking for this person and class, so without the token the duplicate check
+  // below would refuse the very person it is being held for.
+  const seat = decideRedemptionSeat({
+    token: offerToken,
+    offer: offerToken ? await findOfferByToken(offerToken) : null,
+    request: { scheduleId, customerEmail },
+    existingBookings: existingBooking,
+    now: new Date(),
+  });
+
+  if (!seat.ok) {
     return NextResponse.json(
-      { error: "You already have a booking for this class" },
-      { status: 409 },
+      { error: seat.error },
+      { status: seat.httpStatus },
     );
   }
 
   const newCredits = bundle.creditsRemaining - 1;
 
-  const redeemed = await db.transaction(async (tx) => {
-    // Capacity is enforced by the claim, not by a read taken beforehand: the
-    // guard is the UPDATE's own WHERE clause, so two redemptions racing for one
-    // remaining place cannot both win. Nothing has been written when the claim
-    // is refused, so returning early leaves the booking, the credit and the
-    // occupancy count untouched — the credit is still the customer's to spend.
-    const claim = await claimSeat(tx, scheduleId);
-
-    if (!claim.claimed) {
-      return false;
-    }
-
-    await tx.insert(bookings).values({
-      scheduleId,
-      customerName,
-      customerEmail,
-      bundleId: bundle.id,
-    });
-
-    await tx
+  const spendCredit = (
+    tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  ) =>
+    tx
       .update(bundles)
       .set({
         creditsRemaining: newCredits,
@@ -115,11 +125,92 @@ export async function POST(request: Request) {
       })
       .where(eq(bundles.id, bundle.id));
 
-    return true;
+  const outcome = await db.transaction(async (tx) => {
+    if (seat.kind === "held-seat") {
+      // The offer already counted this seat, so occupancy must not move: the
+      // held booking becomes the confirmed one rather than a second booking
+      // appearing beside it. Guarded on `held` so a seat taken up in the
+      // meantime cannot be spent on twice.
+      const converted = await tx
+        .update(bookings)
+        .set({ status: "confirmed", bundleId: bundle.id })
+        .where(
+          and(eq(bookings.id, seat.bookingId), eq(bookings.status, "held")),
+        )
+        .returning({ id: bookings.id });
+
+      if (converted.length === 0) return { ok: false as const, reason: "gone" };
+
+      // Acceptance takes the offer with the entry — a confirmed booking carries
+      // no offer residue.
+      await tx
+        .delete(waitlistEntries)
+        .where(eq(waitlistEntries.id, seat.waitlistEntryId));
+
+      await spendCredit(tx);
+      return { ok: true as const, bookingId: seat.bookingId };
+    }
+
+    // Capacity is enforced by the claim, not by a read taken beforehand: the
+    // guard is the UPDATE's own WHERE clause, so two redemptions racing for one
+    // remaining place cannot both win. Nothing has been written when the claim
+    // is refused, so returning early leaves the booking, the credit and the
+    // occupancy count untouched — the credit is still the customer's to spend.
+    const claim = await claimSeat(tx, scheduleId);
+
+    if (!claim.claimed) return { ok: false as const, reason: "full" };
+
+    const inserted = await tx
+      .insert(bookings)
+      .values({
+        scheduleId,
+        customerName,
+        customerEmail,
+        bundleId: bundle.id,
+      })
+      .returning({ id: bookings.id });
+
+    await spendCredit(tx);
+    return { ok: true as const, bookingId: inserted[0]?.id };
   });
 
-  if (!redeemed) {
+  if (!outcome.ok) {
+    if (outcome.reason === "gone") {
+      return NextResponse.json(
+        { error: "This offer has already been taken up" },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: "Class is full" }, { status: 400 });
+  }
+
+  if (seat.kind === "held-seat") {
+    // Taking up an offer is a booking like any other, so it gets the existing
+    // confirmation unchanged. (Ordinary redemptions send nothing today; that is
+    // left as it was.)
+    const bookingId = outcome.bookingId;
+    after(async () => {
+      try {
+        await sendBookingConfirmation({
+          customerName,
+          customerEmail,
+          classTitle: schedule.classTitle,
+          date: schedule.date,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          location: schedule.location,
+          priceInPence: schedule.priceInPence,
+        });
+        if (bookingId !== undefined) {
+          await db
+            .update(bookings)
+            .set({ emailSent: true })
+            .where(eq(bookings.id, bookingId));
+        }
+      } catch (e) {
+        console.error("Offer acceptance email send failed", e);
+      }
+    });
   }
 
   return NextResponse.json({ success: true, creditsRemaining: newCredits });

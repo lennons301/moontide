@@ -95,7 +95,13 @@ describe("GET /api/admin/schedules", () => {
     mockSelectFrom.mockReset();
     mockSelectFrom
       .mockReturnValueOnce({ innerJoin: mockInnerJoin }) // schedules query
-      .mockReturnValue({ groupBy: vi.fn().mockResolvedValue([]) }); // waitlist count query (default: no entries)
+      .mockReturnValueOnce({ groupBy: vi.fn().mockResolvedValue([]) }) // waitlist counts
+      .mockReturnValue({
+        // held-seat counts
+        where: vi.fn().mockReturnValue({
+          groupBy: vi.fn().mockResolvedValue([]),
+        }),
+      });
     mockInnerJoin.mockReturnValue({ orderBy: mockOrderBy });
     mockOrderBy.mockResolvedValue([]);
   });
@@ -204,7 +210,12 @@ describe("GET /api/admin/schedules", () => {
     mockSelectFrom.mockReset();
     mockSelectFrom
       .mockReturnValueOnce({ innerJoin: mockInnerJoin }) // schedules query
-      .mockReturnValueOnce({ groupBy: mockGroupBy }); // waitlist count query
+      .mockReturnValueOnce({ groupBy: mockGroupBy }) // waitlist count query
+      .mockReturnValueOnce({
+        where: vi.fn().mockReturnValue({
+          groupBy: vi.fn().mockResolvedValue([]),
+        }),
+      }); // held-seat count query
 
     const response = await GET();
     expect(response.status).toBe(200);
@@ -212,6 +223,40 @@ describe("GET /api/admin/schedules", () => {
     expect(body).toHaveLength(2);
     expect(body[0].waitlistCount).toBe(2);
     expect(body[1].waitlistCount).toBe(0);
+  });
+
+  it("reports how many of the booked seats are being held", async () => {
+    mockOrderBy.mockResolvedValue([
+      {
+        schedules: {
+          id: 1,
+          classId: 1,
+          date: "2026-05-01",
+          startTime: "09:00",
+          endTime: "10:00",
+          capacity: 8,
+          bookedCount: 8,
+          location: "Studio 1",
+          status: "full",
+        },
+        classes: { id: 1, title: "Prenatal Yoga" },
+      },
+    ]);
+
+    mockSelectFrom.mockReset();
+    mockSelectFrom
+      .mockReturnValueOnce({ innerJoin: mockInnerJoin })
+      .mockReturnValueOnce({ groupBy: vi.fn().mockResolvedValue([]) })
+      .mockReturnValueOnce({
+        where: vi.fn().mockReturnValue({
+          groupBy: vi.fn().mockResolvedValue([{ scheduleId: 1, count: 1 }]),
+        }),
+      });
+
+    const response = await GET();
+    const body = await response.json();
+    // A full class with a held seat is not eight people coming.
+    expect(body[0].heldCount).toBe(1);
   });
 });
 

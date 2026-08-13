@@ -35,6 +35,15 @@ export async function POST(request: Request) {
 
     const row = result[0];
 
+    // A held seat is an offer nobody has taken up: there is no booking to
+    // confirm, and a confirmation would tell them they are coming.
+    if (row.bookings.status === "held") {
+      return NextResponse.json(
+        { error: "This seat is being held, not booked" },
+        { status: 400 },
+      );
+    }
+
     await sendBookingConfirmation({
       customerName: row.bookings.customerName,
       customerEmail: row.bookings.customerEmail,
