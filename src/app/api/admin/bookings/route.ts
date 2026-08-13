@@ -9,6 +9,10 @@ import {
 import { db } from "@/lib/db";
 import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
 import { sendRescheduleNotification } from "@/lib/email";
+import { claimSeat, releaseSeat } from "@/lib/schedule-occupancy";
+
+/** Signals that the atomic claim on the target schedule was refused. */
+class TargetFullError extends Error {}
 
 export async function GET() {
   const result = await db
@@ -31,13 +35,6 @@ async function findSchedule(id: number) {
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-function decrementSeat(tx: Tx, scheduleId: number) {
-  return tx
-    .update(schedules)
-    .set({ bookedCount: sql`GREATEST(${schedules.bookedCount} - 1, 0)` })
-    .where(eq(schedules.id, scheduleId));
-}
 
 // Give the credit back (capped at the bundle total) and re-activate a bundle
 // that had been fully spent.
@@ -82,7 +79,7 @@ export async function PUT(request: Request) {
         .set({ status: decision.nextStatus })
         .where(eq(bookings.id, id));
       if (decision.decrementSchedule) {
-        await decrementSeat(tx, decision.booking.scheduleId);
+        await releaseSeat(tx, decision.booking.scheduleId);
       }
       if (decision.restoreCreditToBundleId) {
         await restoreBundleCredit(tx, decision.restoreCreditToBundleId);
@@ -110,7 +107,7 @@ export async function PUT(request: Request) {
         .update(bookings)
         .set({ status: decision.nextStatus, releasedAt: new Date() })
         .where(eq(bookings.id, id));
-      await decrementSeat(tx, decision.booking.scheduleId);
+      await releaseSeat(tx, decision.booking.scheduleId);
       if (decision.restoreCreditToBundleId) {
         await restoreBundleCredit(tx, decision.restoreCreditToBundleId);
       }
@@ -150,28 +147,39 @@ export async function PUT(request: Request) {
       .where(eq(classes.id, source.classId));
     const classInfo = classRows[0];
 
-    await db.transaction(async (tx) => {
-      await tx
-        .update(bookings)
-        .set({
-          scheduleId: newScheduleId,
-          rescheduledAt: new Date(),
-          originalScheduleId: decision.originalScheduleId,
-          // Moving a released booking onto a new date settles what was owed.
-          status: decision.nextStatus,
-          releasedAt: null,
-        })
-        .where(eq(bookings.id, id));
-      // A released booking already handed its seat back, so only the target
-      // schedule moves.
-      if (decision.decrementSource) {
-        await decrementSeat(tx, source.id);
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(bookings)
+          .set({
+            scheduleId: newScheduleId,
+            rescheduledAt: new Date(),
+            originalScheduleId: decision.originalScheduleId,
+            // Moving a released booking onto a new date settles what was owed.
+            status: decision.nextStatus,
+            releasedAt: null,
+          })
+          .where(eq(bookings.id, id));
+        // A released booking already handed its seat back, so only the target
+        // schedule moves.
+        if (decision.decrementSource) {
+          await releaseSeat(tx, source.id);
+        }
+        const claim = await claimSeat(tx, target.id);
+        if (!claim.claimed) {
+          // Lost a race for the last place since the check above; roll back.
+          throw new TargetFullError();
+        }
+      });
+    } catch (error) {
+      if (error instanceof TargetFullError) {
+        return NextResponse.json(
+          { error: "Target class is full" },
+          { status: 400 },
+        );
       }
-      await tx
-        .update(schedules)
-        .set({ bookedCount: sql`${schedules.bookedCount} + 1` })
-        .where(eq(schedules.id, target.id));
-    });
+      throw error;
+    }
 
     after(async () => {
       try {

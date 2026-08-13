@@ -92,6 +92,7 @@ src/
       queries.ts          # GROQ queries for all document types
       types.ts            # TypeScript types for Sanity documents
     email.ts              # Resend email helper (sendContactEmail)
+    schedule-occupancy.ts # Sole owner of schedules.bookedCount writes
   sanity/
     schema/               # Sanity document schemas (siteSettings, service, page, trainer, communityEvent)
     structure.ts          # Sanity Studio desk structure
@@ -109,6 +110,7 @@ tests/
   api/admin-pricing.test.ts   # Admin pricing API tests
   lib/email.test.ts       # Email helper tests
   lib/booking-transitions.test.ts  # Cancel/release/reschedule decision tests
+  lib/schedule-occupancy.test.ts  # Seat claim/release semantics
 drizzle/
   migrations/             # Generated Drizzle migrations
 ```
@@ -135,6 +137,7 @@ drizzle/
 - **Prices in pence:** Class prices stored in `classes.priceInPence`. Bundle config (price, credits, expiry) stored in `bundleConfig` table — editable via admin UI at `/admin/pricing`.
 - **Bundle config:** The `bundleConfig` table holds bundle products (price, credits, expiry days). Checkout attaches `bundleConfigId` to Stripe session metadata; webhook reads it back to set credits and expiry on the purchased bundle. Changes only affect new purchases.
 - **Bundle redemption:** Email-based lookup, no customer auth required. Expiry set per-bundle from config at purchase time.
+- **Schedule occupancy:** `src/lib/schedule-occupancy.ts` owns every write to `schedules.bookedCount` — routes never adjust it directly. `claimSeat` is a guarded, atomic claim (the capacity check is the UPDATE's WHERE clause) that returns `{ claimed: false }` rather than throwing; `forceClaimSeat` always takes the seat and reports `{ overCapacity }` for already-paid paths; `releaseSeat` frees a seat clamped at zero.
 - **Bundle eligibility:** `classes.bundleEligible` (default true) controls whether bundle credits may be spent on a class. Toggled at `/admin/pricing`; enforced server-side in `/api/book/redeem`, with `/book` hiding the bundle option for ineligible classes.
 - **Releasing a seat:** `PUT /api/admin/bookings` with `status: "released"` frees the seat without settling what the customer is owed. Bundle-funded bookings are cancelled and the credit returned (capped at the bundle total, reactivating an exhausted bundle) — the customer re-books themselves. Card-funded bookings move to the `released` status with `releasedAt` set; nothing is refunded in Stripe (as with cancellation) and they appear in the "Owed a class" list on `/admin/bookings` until rescheduled. Rescheduling a released booking increments the target schedule only (its seat was already returned) and returns it to `confirmed`, clearing `releasedAt`. A released booking still counts as active for the one-booking-per-customer-per-schedule index, so the customer cannot re-book that same schedule themselves — intended, and stated in the admin copy.
 - **Booking transitions:** Cancel/release/reschedule rules live in `src/lib/bookings/transitions.ts` as pure functions that take rows and return the intended transition. Put new rules there (unit-tested in `tests/lib/booking-transitions.test.ts`) and keep `/api/admin/bookings` as wiring.
@@ -174,4 +177,4 @@ Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/age
 
 ### Review gates
 
-Estate defaults plus a `payments` gate (Stripe, booking, pricing paths) — matching PRs get `human-signoff` and wait for a human merge. See `docs/agents/review-gates.yaml`.
+Estate defaults plus three repo gates — `payments` (Stripe, booking, pricing paths), `notifications` (cron routes and the email helper) and `deploy-config` (`vercel.json`/`vercel.ts`, where cron schedules live). Matching PRs get `human-signoff` and wait for a human merge. See `docs/agents/review-gates.yaml`.

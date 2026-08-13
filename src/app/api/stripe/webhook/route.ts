@@ -1,4 +1,4 @@
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
@@ -13,6 +13,7 @@ import {
   sendBookingNotification,
   sendBundleConfirmation,
 } from "@/lib/email";
+import { forceClaimSeat } from "@/lib/schedule-occupancy";
 import { getStripe } from "@/lib/stripe";
 
 export async function POST(request: Request) {
@@ -66,10 +67,9 @@ export async function POST(request: Request) {
           customerEmail: metadata.customerEmail,
           stripePaymentId: session.id,
         });
-        await tx
-          .update(schedules)
-          .set({ bookedCount: sql`${schedules.bookedCount} + 1` })
-          .where(eq(schedules.id, scheduleId));
+        // The customer has already paid, so the seat is taken regardless of
+        // capacity. The breach report is not acted on yet.
+        await forceClaimSeat(tx, scheduleId);
       });
 
       after(async () => {

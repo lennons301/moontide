@@ -1,7 +1,8 @@
-import { and, eq, gt, ne, sql } from "drizzle-orm";
+import { and, eq, gt, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
+import { forceClaimSeat } from "@/lib/schedule-occupancy";
 
 export async function POST(request: Request) {
   const { scheduleId, customerName, customerEmail } = await request.json();
@@ -89,10 +90,9 @@ export async function POST(request: Request) {
       })
       .where(eq(bundles.id, bundle.id));
 
-    await tx
-      .update(schedules)
-      .set({ bookedCount: sql`${schedules.bookedCount} + 1` })
-      .where(eq(schedules.id, scheduleId));
+    // Unguarded to preserve today's behaviour: redemption has never checked
+    // capacity. The breach report is not acted on yet.
+    await forceClaimSeat(tx, scheduleId);
   });
 
   return NextResponse.json({ success: true, creditsRemaining: newCredits });
