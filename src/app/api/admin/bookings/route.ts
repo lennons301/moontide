@@ -1,5 +1,11 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
+import {
+  checkReschedulable,
+  decideCancel,
+  decideRelease,
+  decideReschedule,
+} from "@/lib/bookings/transitions";
 import { db } from "@/lib/db";
 import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
 import { sendRescheduleNotification } from "@/lib/email";
@@ -18,6 +24,30 @@ export async function GET() {
   return NextResponse.json(result);
 }
 
+async function findBooking(id: number) {
+  const rows = await db.select().from(bookings).where(eq(bookings.id, id));
+  return rows[0] ?? null;
+}
+
+async function findSchedule(id: number) {
+  const rows = await db.select().from(schedules).where(eq(schedules.id, id));
+  return rows[0] ?? null;
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+// Give the credit back (capped at the bundle total) and re-activate a bundle
+// that had been fully spent.
+function restoreBundleCredit(tx: Tx, bundleId: number) {
+  return tx
+    .update(bundles)
+    .set({
+      creditsRemaining: sql`LEAST(${bundles.creditsRemaining} + 1, ${bundles.creditsTotal})`,
+      status: sql`CASE WHEN ${bundles.status} = 'exhausted' THEN 'active'::bundle_status ELSE ${bundles.status} END`,
+    })
+    .where(eq(bundles.id, bundleId));
+}
+
 export async function PUT(request: Request) {
   const body = await request.json();
   const { id, status, newScheduleId } = body as {
@@ -33,116 +63,83 @@ export async function PUT(request: Request) {
     );
   }
 
-  // Cancel branch (existing behaviour)
+  // Cancel branch
   if (status === "cancelled") {
-    const existing = await db
-      .select()
-      .from(bookings)
-      .where(eq(bookings.id, id));
-
-    if (existing.length === 0) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-    }
-
-    if (existing[0].status === "cancelled") {
+    const decision = decideCancel(await findBooking(id));
+    if (!decision.ok) {
       return NextResponse.json(
-        { error: "Booking is already cancelled" },
-        { status: 400 },
+        { error: decision.error },
+        { status: decision.httpStatus },
       );
     }
 
     await db.transaction(async (tx) => {
       await tx
         .update(bookings)
-        .set({ status: "cancelled" })
+        .set({ status: decision.nextStatus })
         .where(eq(bookings.id, id));
-      await releaseSeat(tx, existing[0].scheduleId);
-
-      // If the booking was paid for with a bundle credit, give the credit back
-      // (capped at the bundle total) and re-activate an exhausted bundle.
-      if (existing[0].bundleId) {
-        await tx
-          .update(bundles)
-          .set({
-            creditsRemaining: sql`LEAST(${bundles.creditsRemaining} + 1, ${bundles.creditsTotal})`,
-            status: sql`CASE WHEN ${bundles.status} = 'exhausted' THEN 'active'::bundle_status ELSE ${bundles.status} END`,
-          })
-          .where(eq(bundles.id, existing[0].bundleId));
+      if (decision.decrementSchedule) {
+        await releaseSeat(tx, decision.booking.scheduleId);
+      }
+      if (decision.restoreCreditToBundleId) {
+        await restoreBundleCredit(tx, decision.restoreCreditToBundleId);
       }
     });
 
     return NextResponse.json({ success: true });
   }
 
+  // Release branch — hand the seat back without settling what the customer is
+  // owed. A bundle credit goes straight back and the booking is cancelled; a
+  // card booking becomes `released`, leaving the customer owed a class until
+  // Gabrielle reschedules them.
+  if (status === "released") {
+    const decision = decideRelease(await findBooking(id));
+    if (!decision.ok) {
+      return NextResponse.json(
+        { error: decision.error },
+        { status: decision.httpStatus },
+      );
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(bookings)
+        .set({ status: decision.nextStatus, releasedAt: new Date() })
+        .where(eq(bookings.id, id));
+      await releaseSeat(tx, decision.booking.scheduleId);
+      if (decision.restoreCreditToBundleId) {
+        await restoreBundleCredit(tx, decision.restoreCreditToBundleId);
+      }
+    });
+
+    return NextResponse.json({ success: true, effect: decision.effect });
+  }
+
   // Reschedule branch
   if (newScheduleId) {
-    const bookingRows = await db
-      .select()
-      .from(bookings)
-      .where(eq(bookings.id, id));
-    if (bookingRows.length === 0) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-    }
-    const booking = bookingRows[0];
-
-    if (booking.status === "cancelled") {
+    const reschedulable = checkReschedulable(await findBooking(id));
+    if (!reschedulable.ok) {
       return NextResponse.json(
-        { error: "Cannot reschedule a cancelled booking" },
-        { status: 400 },
+        { error: reschedulable.error },
+        { status: reschedulable.httpStatus },
       );
     }
+    const { booking } = reschedulable;
 
-    const sourceRows = await db
-      .select()
-      .from(schedules)
-      .where(eq(schedules.id, booking.scheduleId));
-    if (sourceRows.length === 0) {
+    const decision = decideReschedule({
+      booking,
+      source: await findSchedule(booking.scheduleId),
+      target: await findSchedule(newScheduleId),
+      newScheduleId,
+    });
+    if (!decision.ok) {
       return NextResponse.json(
-        { error: "Source schedule not found" },
-        { status: 404 },
+        { error: decision.error },
+        { status: decision.httpStatus },
       );
     }
-    const source = sourceRows[0];
-
-    const targetRows = await db
-      .select()
-      .from(schedules)
-      .where(eq(schedules.id, newScheduleId));
-    if (targetRows.length === 0) {
-      return NextResponse.json(
-        { error: "Target schedule not found" },
-        { status: 404 },
-      );
-    }
-    const target = targetRows[0];
-
-    if (target.classId !== source.classId) {
-      return NextResponse.json(
-        { error: "Cannot reschedule to a different class" },
-        { status: 400 },
-      );
-    }
-
-    if (target.status === "cancelled") {
-      return NextResponse.json(
-        { error: "Target class is cancelled" },
-        { status: 400 },
-      );
-    }
-
-    if (newScheduleId === booking.scheduleId) {
-      return NextResponse.json(
-        { error: "Booking is already on that schedule" },
-        { status: 400 },
-      );
-    }
-
-    if (target.bookedCount >= target.capacity) {
-      return NextResponse.json(
-        { error: "Target class is full" },
-        { status: 400 },
-      );
-    }
+    const { source, target } = decision;
 
     const classRows = await db
       .select()
@@ -157,11 +154,17 @@ export async function PUT(request: Request) {
           .set({
             scheduleId: newScheduleId,
             rescheduledAt: new Date(),
-            originalScheduleId:
-              booking.originalScheduleId ?? booking.scheduleId,
+            originalScheduleId: decision.originalScheduleId,
+            // Moving a released booking onto a new date settles what was owed.
+            status: decision.nextStatus,
+            releasedAt: null,
           })
           .where(eq(bookings.id, id));
-        await releaseSeat(tx, source.id);
+        // A released booking already handed its seat back, so only the target
+        // schedule moves.
+        if (decision.decrementSource) {
+          await releaseSeat(tx, source.id);
+        }
         const claim = await claimSeat(tx, target.id);
         if (!claim.claimed) {
           // Lost a race for the last place since the check above; roll back.
@@ -181,8 +184,8 @@ export async function PUT(request: Request) {
     after(async () => {
       try {
         await sendRescheduleNotification({
-          customerName: booking.customerName,
-          customerEmail: booking.customerEmail,
+          customerName: decision.booking.customerName,
+          customerEmail: decision.booking.customerEmail,
           classTitle: classInfo.title,
           oldDate: source.date,
           oldStartTime: source.startTime,
