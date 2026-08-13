@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import type { AdminDigest } from "@/lib/waitlist/digest";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -255,6 +256,130 @@ export async function sendSeatOffer(params: SeatOfferParams) {
     to: customerEmail,
     subject: `A place has come up — ${classTitle}`,
     html,
+  });
+
+  return { success: true };
+}
+
+interface OfferExpiredParams {
+  customerName: string;
+  customerEmail: string;
+  classTitle: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+}
+
+/**
+ * The one note someone gets when their offer ran out unanswered: the seat has
+ * gone back, and they are still on the waiting list for that class.
+ *
+ * Nothing goes out when Gabrielle withdraws an offer instead — she has already
+ * spoken to that person herself, and a system message would contradict her.
+ */
+export async function sendOfferExpired(params: OfferExpiredParams) {
+  const { customerName, customerEmail, classTitle, date, startTime, endTime } =
+    params;
+
+  const formattedDate = new Date(date).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  const body = `
+    <p>Hi ${customerName},</p>
+    <p>We didn't hear back about the place we were holding for you, so it has gone back to the class.</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;">
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">Class</td><td style="padding:4px 0;">${classTitle}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">Date</td><td style="padding:4px 0;">${formattedDate}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#999;">Time</td><td style="padding:4px 0;">${startTime}–${endTime}</td></tr>
+    </table>
+    <p>Nothing has been taken from you, and you're still on the waiting list for this class — if another place comes up, Gabrielle will be in touch.</p>
+    <p>— Gabrielle</p>`;
+
+  const html = buildEmailHtml(body);
+
+  await resend.emails.send({
+    from: "Moontide <noreply@gabriellemoontide.co.uk>",
+    to: customerEmail,
+    subject: `The place we were holding — ${classTitle}`,
+    html,
+  });
+
+  return { success: true };
+}
+
+/**
+ * The one email a day that tells Gabrielle something is waiting on her.
+ *
+ * Plain text, like her other notifications, with a link into the admin page each
+ * section is acted on from. Callers must not send an empty digest — see
+ * `buildAdminDigest`: this arriving has to mean something.
+ */
+export async function sendOfferDigest(digest: AdminDigest) {
+  const { seatsToOffer, offersOutstanding, owedAClass } = digest;
+  const to = process.env.CONTACT_EMAIL || "gwaring5@googlemail.com";
+  const baseUrl = process.env.BETTER_AUTH_URL;
+
+  const formatDay = (date: string) =>
+    new Date(date).toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    });
+  const formatDeadline = (deadline: Date) =>
+    deadline.toLocaleString("en-GB", {
+      timeZone: "Europe/London",
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  const hhmm = (time: string) => time.slice(0, 5);
+
+  const sections: string[] = [];
+
+  if (seatsToOffer.length > 0) {
+    const lines = seatsToOffer.map(
+      (seat) =>
+        `- ${seat.classTitle}, ${formatDay(seat.date)}, ${hhmm(seat.startTime)}–${hhmm(seat.endTime)}: ${seat.freeSeats} free ${seat.freeSeats === 1 ? "seat" : "seats"}, ${seat.waitingCount} ${seat.waitingCount === 1 ? "person" : "people"} waiting`,
+    );
+    sections.push(
+      `FREE SEATS WITH PEOPLE WAITING (${seatsToOffer.length})\n\n${lines.join("\n")}\n\nOffer a seat: ${baseUrl}/admin/schedule`,
+    );
+  }
+
+  if (offersOutstanding.length > 0) {
+    const lines = offersOutstanding.map(
+      (offer) =>
+        `- ${offer.customerName} (${offer.customerEmail}) — ${offer.classTitle}, ${formatDay(offer.date)}, ${hhmm(offer.startTime)} — held until ${formatDeadline(offer.expiresAt)}`,
+    );
+    sections.push(
+      `OFFERS OUTSTANDING (${offersOutstanding.length})\n\n${lines.join("\n")}\n\nView or withdraw: ${baseUrl}/admin/schedule`,
+    );
+  }
+
+  if (owedAClass.length > 0) {
+    const lines = owedAClass.map(
+      (booking) =>
+        `- ${booking.customerName} (${booking.customerEmail}) — ${booking.classTitle}, ${formatDay(booking.date)} — released ${booking.daysSince} days ago, not yet rescheduled`,
+    );
+    sections.push(
+      `OWED A CLASS (${owedAClass.length})\n\n${lines.join("\n")}\n\nMove them onto a new date: ${baseUrl}/admin/bookings`,
+    );
+  }
+
+  const total =
+    seatsToOffer.length + offersOutstanding.length + owedAClass.length;
+
+  await resend.emails.send({
+    from: "Moontide <noreply@gabriellemoontide.co.uk>",
+    to,
+    subject: `[Moontide] ${total} ${total === 1 ? "thing needs" : "things need"} you`,
+    text: `${sections.join("\n\n\n")}\n\nNothing here has been done for you — no places have been offered and no one has been moved.`,
   });
 
   return { success: true };

@@ -148,7 +148,7 @@ describe("GET /api/admin/waitlist", () => {
             ...JANE,
             offerToken: "secret-token",
             offeredAt: "2026-06-03T10:00:00Z",
-            offerExpiresAt: "2099-06-04T10:00:00Z",
+            offerExpiresAt: new Date("2099-06-04T10:00:00Z"),
             heldBookingId: 900,
           },
           bookings: { status: "held" },
@@ -171,7 +171,7 @@ describe("GET /api/admin/waitlist", () => {
           waitlist_entries: {
             ...JANE,
             offerToken: "secret-token",
-            offerExpiresAt: "2020-06-04T10:00:00Z",
+            offerExpiresAt: new Date("2020-06-04T10:00:00Z"),
             heldBookingId: 900,
           },
           bookings: { status: "held" },
