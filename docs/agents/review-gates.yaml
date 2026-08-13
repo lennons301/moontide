@@ -14,3 +14,14 @@ human_signoff:
     - "**/api/stripe/**"
     - "**/api/book/**"
     - "**/admin/pricing/**"
+  # Anything that emails a customer, or the scheduled jobs that trigger it.
+  # A bad send goes out once and cannot be recalled, so these never auto-land.
+  notifications:
+    - "**/api/cron/**"
+    - "**/email.ts"
+    - "**/email/**"
+  # Cron schedules live in the deployment config, and this plan permits only
+  # daily schedules — a sub-daily entry fails the deploy rather than a check.
+  deploy-config:
+    - "**/vercel.json"
+    - "**/vercel.ts"
