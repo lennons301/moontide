@@ -87,9 +87,9 @@ describe("decideRelease", () => {
     const decision = decideRelease(BUNDLE_BOOKING);
     expect(decision).toEqual({
       ok: true,
+      booking: BUNDLE_BOOKING,
       effect: "bundle-credit-returned",
       nextStatus: "cancelled",
-      decrementSchedule: true,
       restoreCreditToBundleId: 7,
     });
   });
@@ -98,9 +98,9 @@ describe("decideRelease", () => {
     const decision = decideRelease(CARD_BOOKING);
     expect(decision).toEqual({
       ok: true,
+      booking: CARD_BOOKING,
       effect: "class-owed",
       nextStatus: "released",
-      decrementSchedule: true,
       restoreCreditToBundleId: null,
     });
   });
@@ -128,6 +128,7 @@ describe("decideCancel", () => {
   it("frees the seat and returns a bundle credit for a confirmed booking", () => {
     expect(decideCancel(BUNDLE_BOOKING)).toEqual({
       ok: true,
+      booking: BUNDLE_BOOKING,
       nextStatus: "cancelled",
       decrementSchedule: true,
       restoreCreditToBundleId: 7,
@@ -224,7 +225,9 @@ describe("decideReschedule", () => {
   it("moves a confirmed booking, decrementing the source", () => {
     expect(decideReschedule({ ...base, booking: CARD_BOOKING })).toEqual({
       ok: true,
-      targetScheduleId: 20,
+      booking: CARD_BOOKING,
+      source: SOURCE,
+      target: TARGET,
       decrementSource: true,
       nextStatus: "confirmed",
       originalScheduleId: 10,

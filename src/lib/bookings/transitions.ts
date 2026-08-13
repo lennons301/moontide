@@ -4,7 +4,8 @@
  * These functions take the state that has already been read from the database
  * and return the transition that should be applied. They touch no database and
  * no framework, so the rules can be tested directly; the route is left with
- * nothing but wiring.
+ * nothing but wiring. A successful decision hands back the rows it was given,
+ * so callers get them non-null without re-checking.
  */
 
 export type BookingState = {
@@ -34,10 +35,11 @@ function fail(error: string, httpStatus: 400 | 404): DecisionFailure {
 
 /* ------------------------------------------------------------------ cancel */
 
-export type CancelDecision =
+export type CancelDecision<B extends BookingState> =
   | DecisionFailure
   | {
       ok: true;
+      booking: B;
       nextStatus: "cancelled";
       /** False when the seat was already handed back at release time. */
       decrementSchedule: boolean;
@@ -45,13 +47,16 @@ export type CancelDecision =
       restoreCreditToBundleId: number | null;
     };
 
-export function decideCancel(booking: BookingState | null): CancelDecision {
+export function decideCancel<B extends BookingState>(
+  booking: B | null,
+): CancelDecision<B> {
   if (!booking) return fail("Booking not found", 404);
   if (booking.status === "cancelled") {
     return fail("Booking is already cancelled", 400);
   }
   return {
     ok: true,
+    booking,
     nextStatus: "cancelled",
     // A released booking has already given its seat back — decrementing again
     // would free a seat that was never taken.
@@ -99,18 +104,20 @@ export function describeReleaseEffect(
   };
 }
 
-export type ReleaseDecision =
+export type ReleaseDecision<B extends BookingState> =
   | DecisionFailure
   | {
       ok: true;
+      booking: B;
       effect: ReleaseEffect;
       /** Bundle releases settle immediately, so the booking is cancelled. */
       nextStatus: "cancelled" | "released";
-      decrementSchedule: true;
       restoreCreditToBundleId: number | null;
     };
 
-export function decideRelease(booking: BookingState | null): ReleaseDecision {
+export function decideRelease<B extends BookingState>(
+  booking: B | null,
+): ReleaseDecision<B> {
   if (!booking) return fail("Booking not found", 404);
   if (booking.status === "cancelled") {
     return fail("Cannot release a cancelled booking", 400);
@@ -126,28 +133,33 @@ export function decideRelease(booking: BookingState | null): ReleaseDecision {
   if (effect === "bundle-credit-returned") {
     return {
       ok: true,
+      booking,
       effect,
       nextStatus: "cancelled",
-      decrementSchedule: true,
       restoreCreditToBundleId: booking.bundleId,
     };
   }
   return {
     ok: true,
+    booking,
     effect,
     nextStatus: "released",
-    decrementSchedule: true,
     restoreCreditToBundleId: null,
   };
 }
 
 /* -------------------------------------------------------------- reschedule */
 
-export type RescheduleDecision =
+export type RescheduleDecision<
+  B extends BookingState,
+  S extends ScheduleState,
+> =
   | DecisionFailure
   | {
       ok: true;
-      targetScheduleId: number;
+      booking: B;
+      source: S;
+      target: S;
       /** False for a released booking: its seat was returned at release. */
       decrementSource: boolean;
       /** A successful move clears any outstanding claim on a class. */
@@ -155,28 +167,48 @@ export type RescheduleDecision =
       originalScheduleId: number;
     };
 
-export function decideReschedule(input: {
-  booking: BookingState | null;
-  source: ScheduleState | null;
-  target: ScheduleState | null;
-  newScheduleId: number;
-}): RescheduleDecision {
-  const { booking, source, target, newScheduleId } = input;
-
+/**
+ * Whether this booking may be moved at all, decided before its schedules are
+ * looked up so a doomed request costs no extra queries.
+ */
+export function checkReschedulable<B extends BookingState>(
+  booking: B | null,
+): DecisionFailure | { ok: true; booking: B } {
   if (!booking) return fail("Booking not found", 404);
   if (booking.status === "cancelled") {
     return fail("Cannot reschedule a cancelled booking", 400);
   }
+  // Only a confirmed booking or a released one being settled may move; anything
+  // else (a waitlist placeholder, say) holds no seat to move.
   if (booking.status !== "confirmed" && booking.status !== "released") {
     return fail("Cannot reschedule this booking", 400);
   }
+  return { ok: true, booking };
+}
+
+export function decideReschedule<
+  B extends BookingState,
+  S extends ScheduleState,
+>(input: {
+  booking: B | null;
+  source: S | null;
+  target: S | null;
+  newScheduleId: number;
+}): RescheduleDecision<B, S> {
+  const { source, target, newScheduleId } = input;
+
+  const reschedulable = checkReschedulable(input.booking);
+  if (!reschedulable.ok) return reschedulable;
+  const booking = reschedulable.booking;
+
   if (!source) return fail("Source schedule not found", 404);
   if (!target) return fail("Target schedule not found", 404);
   if (target.classId !== source.classId) {
     return fail("Cannot reschedule to a different class", 400);
   }
-  if (target.status === "cancelled")
+  if (target.status === "cancelled") {
     return fail("Target class is cancelled", 400);
+  }
   if (newScheduleId === booking.scheduleId) {
     return fail("Booking is already on that schedule", 400);
   }
@@ -186,7 +218,9 @@ export function decideReschedule(input: {
 
   return {
     ok: true,
-    targetScheduleId: newScheduleId,
+    booking,
+    source,
+    target,
     decrementSource: booking.status !== "released",
     nextStatus: "confirmed",
     originalScheduleId: booking.originalScheduleId ?? booking.scheduleId,
