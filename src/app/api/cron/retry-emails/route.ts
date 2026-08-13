@@ -1,4 +1,4 @@
-import { and, eq, gte } from "drizzle-orm";
+import { and, eq, gte, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
@@ -33,7 +33,15 @@ export async function POST(request: Request) {
     .from(bookings)
     .innerJoin(schedules, eq(bookings.scheduleId, schedules.id))
     .innerJoin(classes, eq(schedules.classId, classes.id))
-    .where(and(eq(bookings.emailSent, false), gte(bookings.createdAt, cutoff)));
+    // A held seat has no confirmation owing: nobody has taken the offer up, and
+    // retrying would tell them their class is booked when it is not.
+    .where(
+      and(
+        eq(bookings.emailSent, false),
+        ne(bookings.status, "held"),
+        gte(bookings.createdAt, cutoff),
+      ),
+    );
 
   for (const row of pendingBookings) {
     try {

@@ -55,6 +55,7 @@ vi.mock("@/lib/db/schema", () => ({
     createdAt: "created_at",
     stripePaymentId: "stripe_payment_id",
     scheduleId: "schedule_id",
+    status: "status",
   },
   bundles: {
     id: "id",
@@ -72,6 +73,7 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn((...args: unknown[]) => args),
   and: vi.fn((...args: unknown[]) => args),
   gte: vi.fn((...args: unknown[]) => args),
+  ne: vi.fn((...args: unknown[]) => args),
 }));
 
 vi.mock("@/lib/email", () => ({
@@ -80,6 +82,7 @@ vi.mock("@/lib/email", () => ({
   sendBookingNotification: mockSendBookingNotification,
 }));
 
+import { ne } from "drizzle-orm";
 import { POST } from "@/app/api/cron/retry-emails/route";
 
 describe("POST /api/cron/retry-emails", () => {
@@ -130,6 +133,18 @@ describe("POST /api/cron/retry-emails", () => {
     const body = await response.json();
     expect(body.retriedBookings).toBe(0);
     expect(body.retriedBundles).toBe(0);
+  });
+
+  it("leaves held seats out of the sweep", async () => {
+    const request = new Request("http://localhost:3000/api/cron/retry-emails", {
+      method: "POST",
+      headers: { Authorization: "Bearer test-secret" },
+    });
+
+    await POST(request);
+
+    // Nobody has taken a held seat up, so there is no confirmation owing on it.
+    expect(vi.mocked(ne)).toHaveBeenCalledWith("status", "held");
   });
 
   it("retries failed booking emails and updates emailSent", async () => {
