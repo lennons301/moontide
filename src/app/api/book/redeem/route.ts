@@ -2,7 +2,7 @@ import { and, eq, gt, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
-import { forceClaimSeat } from "@/lib/schedule-occupancy";
+import { claimSeat } from "@/lib/schedule-occupancy";
 
 export async function POST(request: Request) {
   const { scheduleId, customerName, customerEmail } = await request.json();
@@ -14,9 +14,11 @@ export async function POST(request: Request) {
     );
   }
 
-  // Bundle credits may only be spent on classes flagged as bundle-eligible.
   const scheduleRows = await db
-    .select({ bundleEligible: classes.bundleEligible })
+    .select({
+      status: schedules.status,
+      bundleEligible: classes.bundleEligible,
+    })
     .from(schedules)
     .innerJoin(classes, eq(schedules.classId, classes.id))
     .where(eq(schedules.id, scheduleId));
@@ -25,9 +27,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
   }
 
-  if (!scheduleRows[0].bundleEligible) {
+  const schedule = scheduleRows[0];
+
+  // Bundle credits may only be spent on classes flagged as bundle-eligible.
+  if (!schedule.bundleEligible) {
     return NextResponse.json(
       { error: "This class cannot be booked with a bundle" },
+      { status: 400 },
+    );
+  }
+
+  // A cancelled class takes no bookings by either payment path. Wording matches
+  // the card path so the customer sees one message however they were booking.
+  if (schedule.status === "cancelled") {
+    return NextResponse.json(
+      { error: "Class is not available" },
       { status: 400 },
     );
   }
@@ -74,7 +88,18 @@ export async function POST(request: Request) {
 
   const newCredits = bundle.creditsRemaining - 1;
 
-  await db.transaction(async (tx) => {
+  const redeemed = await db.transaction(async (tx) => {
+    // Capacity is enforced by the claim, not by a read taken beforehand: the
+    // guard is the UPDATE's own WHERE clause, so two redemptions racing for one
+    // remaining place cannot both win. Nothing has been written when the claim
+    // is refused, so returning early leaves the booking, the credit and the
+    // occupancy count untouched — the credit is still the customer's to spend.
+    const claim = await claimSeat(tx, scheduleId);
+
+    if (!claim.claimed) {
+      return false;
+    }
+
     await tx.insert(bookings).values({
       scheduleId,
       customerName,
@@ -90,10 +115,12 @@ export async function POST(request: Request) {
       })
       .where(eq(bundles.id, bundle.id));
 
-    // Unguarded to preserve today's behaviour: redemption has never checked
-    // capacity. The breach report is not acted on yet.
-    await forceClaimSeat(tx, scheduleId);
+    return true;
   });
+
+  if (!redeemed) {
+    return NextResponse.json({ error: "Class is full" }, { status: 400 });
+  }
 
   return NextResponse.json({ success: true, creditsRemaining: newCredits });
 }
