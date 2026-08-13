@@ -3,12 +3,20 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { bookings, bundleConfig, classes, schedules } from "@/lib/db/schema";
 import { getStripe } from "@/lib/stripe";
+import { findOfferByToken } from "@/lib/waitlist/held-seats";
+import { decideCheckoutSeat } from "@/lib/waitlist/offers";
 
 export async function POST(request: Request) {
   const stripe = getStripe();
   const body = await request.json();
-  const { type, scheduleId, customerName, customerEmail, bundleConfigId } =
-    body;
+  const {
+    type,
+    scheduleId,
+    customerName,
+    customerEmail,
+    bundleConfigId,
+    offerToken,
+  } = body;
 
   if (!customerEmail) {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });
@@ -80,18 +88,9 @@ export async function POST(request: Request) {
   const schedule = result[0].schedules;
   const classInfo = result[0].classes;
 
-  if (schedule.status !== "open") {
-    return NextResponse.json(
-      { error: "Class is not available" },
-      { status: 400 },
-    );
-  }
-
-  if (schedule.bookedCount >= schedule.capacity) {
-    return NextResponse.json({ error: "Class is full" }, { status: 400 });
-  }
-
-  // Prevent paying to book a class the customer is already booked onto.
+  // Bookings already held by this customer for this class — used both to keep
+  // them from paying twice and, when they hold an offer, to recognise their own
+  // held seat rather than reading it as a duplicate.
   const existingBooking = await db
     .select()
     .from(bookings)
@@ -103,12 +102,38 @@ export async function POST(request: Request) {
       ),
     );
 
-  if (existingBooking.length > 0) {
+  // A recipient paying by card is refused twice over by the ordinary checks —
+  // already booked, and class full — because their own held seat is what both
+  // are reading. A valid token bypasses those, and nothing more.
+  const seat = decideCheckoutSeat({
+    token: offerToken,
+    offer: offerToken ? await findOfferByToken(offerToken) : null,
+    request: { scheduleId, customerEmail },
+    existingBookings: existingBooking,
+    schedule: {
+      status: schedule.status,
+      capacity: schedule.capacity,
+      bookedCount: schedule.bookedCount,
+    },
+    now: new Date(),
+  });
+
+  if (!seat.ok) {
     return NextResponse.json(
-      { error: "You already have a booking for this class" },
-      { status: 409 },
+      { error: seat.error },
+      { status: seat.httpStatus },
     );
   }
+
+  // The offer travels with the payment: the webhook converts the seat it names
+  // rather than reading it as a duplicate booking and keeping the money.
+  const offerMetadata: Record<string, string> =
+    seat.kind === "held-seat"
+      ? {
+          offerToken: String(offerToken),
+          heldBookingId: String(seat.bookingId),
+        }
+      : {};
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
@@ -130,10 +155,14 @@ export async function POST(request: Request) {
       scheduleId: String(scheduleId),
       customerName,
       customerEmail,
+      ...offerMetadata,
     },
     customer_email: customerEmail,
     success_url: `${process.env.BETTER_AUTH_URL}/book/confirmation?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${process.env.BETTER_AUTH_URL}/book`,
+    cancel_url:
+      seat.kind === "held-seat"
+        ? `${process.env.BETTER_AUTH_URL}/book/offer/${offerToken}`
+        : `${process.env.BETTER_AUTH_URL}/book`,
   });
 
   return NextResponse.json({ url: session.url });

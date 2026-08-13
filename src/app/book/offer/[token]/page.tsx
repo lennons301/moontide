@@ -143,6 +143,7 @@ export default async function OfferPage({
         deadline={formatDeadline(offer.offerExpiresAt)}
         creditsAvailable={usableBundles[0]?.creditsRemaining ?? 0}
         bundleEligible={classInfo.bundleEligible}
+        priceInPence={classInfo.priceInPence}
       />
     </Shell>
   );

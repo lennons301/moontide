@@ -7,6 +7,7 @@ import {
   bundles,
   classes,
   schedules,
+  waitlistEntries,
 } from "@/lib/db/schema";
 import {
   sendBookingConfirmation,
@@ -15,6 +16,8 @@ import {
 } from "@/lib/email";
 import { forceClaimSeat } from "@/lib/schedule-occupancy";
 import { getStripe } from "@/lib/stripe";
+import { findOfferByToken } from "@/lib/waitlist/held-seats";
+import { decidePaidSeat } from "@/lib/waitlist/offers";
 
 export async function POST(request: Request) {
   const body = await request.text();
@@ -41,12 +44,16 @@ export async function POST(request: Request) {
 
     if (metadata?.type === "individual") {
       const scheduleId = Number.parseInt(metadata.scheduleId, 10);
+      const offerToken = metadata.offerToken || null;
+      const heldBookingId = metadata.heldBookingId
+        ? Number.parseInt(metadata.heldBookingId, 10)
+        : null;
 
-      // Idempotency guard: Stripe may deliver an event more than once, and a
-      // customer may have an existing booking for this class. Don't create a
-      // duplicate or double-count the seat.
+      // Bookings this customer already has for this class. A seat held for them
+      // by an offer is one of these, so it must never be read as a duplicate
+      // delivery: that would keep the money and leave the seat held.
       const existingBooking = await db
-        .select()
+        .select({ id: bookings.id, status: bookings.status })
         .from(bookings)
         .where(
           and(
@@ -56,21 +63,69 @@ export async function POST(request: Request) {
           ),
         );
 
-      if (existingBooking.length > 0) {
+      const seat = decidePaidSeat({
+        token: offerToken,
+        heldBookingId,
+        offer: offerToken ? await findOfferByToken(offerToken) : null,
+        request: { scheduleId, customerEmail: metadata.customerEmail },
+        existingBookings: existingBooking,
+      });
+
+      // A repeated delivery finds the booking already there — including the
+      // held seat an earlier delivery converted — and writes nothing further.
+      if (seat.kind === "already-booked") {
         return NextResponse.json({ received: true });
       }
 
-      await db.transaction(async (tx) => {
-        await tx.insert(bookings).values({
-          scheduleId,
-          customerName: metadata.customerName,
-          customerEmail: metadata.customerEmail,
-          stripePaymentId: session.id,
+      if (seat.kind === "convert-held-seat") {
+        const converted = await db.transaction(async (tx) => {
+          // Converted in place, and occupancy deliberately untouched: the offer
+          // counted this seat when it was made. Guarded on `held` so a seat
+          // taken up by the credit path in between is left as it is.
+          const rows = await tx
+            .update(bookings)
+            .set({ status: "confirmed", stripePaymentId: session.id })
+            .where(
+              and(eq(bookings.id, seat.bookingId), eq(bookings.status, "held")),
+            )
+            .returning({ id: bookings.id });
+
+          if (rows.length === 0) return false;
+
+          // Acceptance takes the offer with the entry, exactly as the credit
+          // path does — a confirmed booking carries no offer residue.
+          await tx
+            .delete(waitlistEntries)
+            .where(eq(waitlistEntries.id, seat.waitlistEntryId));
+
+          return true;
         });
-        // The customer has already paid, so the seat is taken regardless of
-        // capacity. The breach report is not acted on yet.
-        await forceClaimSeat(tx, scheduleId);
-      });
+
+        // The seat went elsewhere between the read and the write. Whoever took
+        // it up is being told about it; this delivery adds nothing.
+        if (!converted) {
+          return NextResponse.json({ received: true });
+        }
+      } else {
+        await db.transaction(async (tx) => {
+          await tx.insert(bookings).values({
+            scheduleId,
+            customerName: metadata.customerName,
+            customerEmail: metadata.customerEmail,
+            stripePaymentId: session.id,
+          });
+          // The customer has already paid, so the seat is taken regardless of
+          // capacity: refusing someone who has been charged is the wrong
+          // outcome. The breach is reported instead of swallowed, and shows on
+          // the class in the admin so Gabrielle hears about it before the class.
+          const claim = await forceClaimSeat(tx, scheduleId);
+          if (claim.overCapacity) {
+            console.error(
+              `Over capacity: schedule ${scheduleId} is oversold after paid booking ${session.id}`,
+            );
+          }
+        });
+      }
 
       after(async () => {
         try {

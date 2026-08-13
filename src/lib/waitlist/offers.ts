@@ -240,34 +240,28 @@ export type SeatDecision =
     }
   | OfferFailure;
 
+export type OfferBinding =
+  | { ok: true; bookingId: number; waitlistEntryId: number }
+  | OfferFailure;
+
 /**
- * Decide which seat a bundle redemption is for, and whether the existing
- * duplicate-booking check applies to it.
+ * Decide whether a token entitles its bearer to the seat it names.
  *
- * A held seat is a non-cancelled booking for the same person and the same
- * class, so the duplicate check would otherwise refuse the very person the seat
- * is being held for. The bypass is narrow on purpose: it covers only the one
- * booking a valid, unexpired token is bound to, for the customer and class it
- * names. Any other active booking still blocks, and a request with no token is
- * decided exactly as it was before.
+ * This is the whole bypass. A held seat is a non-cancelled booking for the same
+ * person and the same class, so every check that treats such a booking as a
+ * duplicate — or counts it towards a full class — would otherwise refuse the
+ * very person the seat is being held for. The bypass is narrow on purpose: it
+ * covers only the one booking a valid, unexpired token is bound to, for the
+ * customer and class it names. Any other active booking still blocks.
  */
-export function decideRedemptionSeat(input: {
-  token: string | null | undefined;
-  /** Entry found by that token, or null when the token matched nothing. */
+function bindOffer(input: {
+  token: string;
   offer: ClaimedOffer | null;
   request: { scheduleId: number; customerEmail: string };
-  /** Non-cancelled bookings already held by this customer for this class. */
   existingBookings: { id: number }[];
   now: Date;
-}): SeatDecision {
+}): OfferBinding {
   const { token, offer, request, existingBookings, now } = input;
-
-  if (!token) {
-    if (existingBookings.length > 0) {
-      return fail("You already have a booking for this class", 409);
-    }
-    return { ok: true, kind: "new-seat" };
-  }
 
   if (!offer || offer.offerToken !== token) {
     return fail("This offer is no longer available", 404);
@@ -300,8 +294,169 @@ export function decideRedemptionSeat(input: {
 
   return {
     ok: true,
-    kind: "held-seat",
     bookingId: offer.heldBookingId,
     waitlistEntryId: offer.id,
   };
+}
+
+/**
+ * Decide which seat a bundle redemption is for, and whether the existing
+ * duplicate-booking check applies to it.
+ *
+ * A request with no token is decided exactly as it was before.
+ */
+export function decideRedemptionSeat(input: {
+  token: string | null | undefined;
+  /** Entry found by that token, or null when the token matched nothing. */
+  offer: ClaimedOffer | null;
+  request: { scheduleId: number; customerEmail: string };
+  /** Non-cancelled bookings already held by this customer for this class. */
+  existingBookings: { id: number }[];
+  now: Date;
+}): SeatDecision {
+  const { token, existingBookings } = input;
+
+  if (!token) {
+    if (existingBookings.length > 0) {
+      return fail("You already have a booking for this class", 409);
+    }
+    return { ok: true, kind: "new-seat" };
+  }
+
+  const bound = bindOffer({ ...input, token });
+  if (!bound.ok) return bound;
+
+  return {
+    ok: true,
+    kind: "held-seat",
+    bookingId: bound.bookingId,
+    waitlistEntryId: bound.waitlistEntryId,
+  };
+}
+
+/* --------------------------------------------------- paying for a held seat */
+
+/**
+ * Decide whether a card checkout may start, and which seat it is for.
+ *
+ * The refusals guarding ordinary public booking are triggered by an offer
+ * recipient's own held seat: they are told they already have a booking, and
+ * told the class is full — full because the seat being kept for them is what
+ * filled it, whether that shows in the count or in the flag Gabrielle set by
+ * hand. A valid token bypasses those, leaving a cancelled class refused to
+ * everyone. That is the same posture the credit path takes for the same seat,
+ * so a recipient meets one answer whichever way they pay.
+ */
+export function decideCheckoutSeat(input: {
+  token: string | null | undefined;
+  offer: ClaimedOffer | null;
+  request: { scheduleId: number; customerEmail: string };
+  /** Non-cancelled bookings already held by this customer for this class. */
+  existingBookings: { id: number }[];
+  schedule: { status: string; capacity: number; bookedCount: number };
+  now: Date;
+}): SeatDecision {
+  const { token, existingBookings, schedule } = input;
+
+  if (schedule.status === "cancelled") {
+    return fail("Class is not available", 400);
+  }
+
+  if (token) {
+    const bound = bindOffer({ ...input, token });
+    if (!bound.ok) return bound;
+
+    return {
+      ok: true,
+      kind: "held-seat",
+      bookingId: bound.bookingId,
+      waitlistEntryId: bound.waitlistEntryId,
+    };
+  }
+
+  // Wording and order preserved from before the bypass existed.
+  if (schedule.status !== "open") {
+    return fail("Class is not available", 400);
+  }
+  if (schedule.bookedCount >= schedule.capacity) {
+    return fail("Class is full", 400);
+  }
+  if (existingBookings.length > 0) {
+    return fail("You already have a booking for this class", 409);
+  }
+  return { ok: true, kind: "new-seat" };
+}
+
+/**
+ * What to do with a seat once the money is in.
+ *
+ * There is no refusal here, by design: the customer has been charged, so
+ * "no seat for you" is never an answer. Capacity is not consulted — the paid
+ * path takes the seat and reports the breach (see `forceClaimSeat`).
+ */
+export type PaidSeatDecision =
+  | {
+      kind: "convert-held-seat";
+      /** Converted in place: occupancy already counts this seat. */
+      bookingId: number;
+      /** Removed on acceptance, taking the offer with it. */
+      waitlistEntryId: number;
+    }
+  | { kind: "new-booking" }
+  | {
+      /**
+       * A booking for this customer and class is already there — a repeated
+       * delivery of the same payment, or an acceptance that landed by another
+       * route. Nothing further is written and nothing further is sent.
+       */
+      kind: "already-booked";
+    };
+
+/**
+ * Decide what a confirmed payment does to the customer's seat.
+ *
+ * Without the held-seat case this reads a seat being held for the payer as a
+ * duplicate delivery and returns early: no booking, no confirmation, seat still
+ * held, money kept. So the offer the checkout was started from is carried
+ * through the payment and converted here.
+ */
+export function decidePaidSeat(input: {
+  /** The offer token the checkout was started with, if any. */
+  token: string | null | undefined;
+  /** The held booking that checkout bound the token to, if any. */
+  heldBookingId: number | null;
+  /** Entry found by that token now, or null when the token matched nothing. */
+  offer: ClaimedOffer | null;
+  request: { scheduleId: number; customerEmail: string };
+  /** Non-cancelled bookings already held by this customer for this class. */
+  existingBookings: { id: number }[];
+}): PaidSeatDecision {
+  const { token, heldBookingId, offer, request, existingBookings } = input;
+
+  const stillHeldForThem =
+    token !== null &&
+    token !== undefined &&
+    heldBookingId !== null &&
+    offer !== null &&
+    offer.offerToken === token &&
+    offer.heldBookingId === heldBookingId &&
+    offer.heldBookingStatus === "held" &&
+    offer.scheduleId === request.scheduleId &&
+    sameEmail(offer.customerEmail, request.customerEmail);
+
+  // The deadline is deliberately not checked: it governs whether a payment may
+  // be started, not whether one already taken is honoured.
+  if (stillHeldForThem) {
+    return {
+      kind: "convert-held-seat",
+      bookingId: heldBookingId,
+      waitlistEntryId: offer.id,
+    };
+  }
+
+  // The hold is gone — withdrawn, re-offered, or already taken up. Whatever it
+  // was, this payment still has to end in a seat unless one is already there.
+  if (existingBookings.length > 0) return { kind: "already-booked" };
+
+  return { kind: "new-booking" };
 }
