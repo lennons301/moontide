@@ -15,7 +15,7 @@ Wellbeing website for women navigating change through yoga, coaching, and embodi
 - **Secrets:** Doppler (project: moontide, configs: dev/stg/prd)
 - **Dev Environment:** mise + just
 - **Deployment:** Vercel Hobby
-- **Testing:** Vitest
+- **Testing:** Vitest (node + jsdom projects)
 
 ## Commands
 
@@ -71,6 +71,14 @@ src/
     classes/[slug]/       # Dynamic class detail pages
   components/
     ui/                   # shadcn/ui components (button, input, textarea, label, sheet)
+    admin/                # Shared chrome for the admin tables
+      use-table-controls.ts   # Search + sort + filter state, and deriveTableRows
+      admin-table-toolbar.tsx # Search box, filter slot, "showing n of m"
+      table-headers.tsx       # SortableHead + SortHeader/PlainHeader (sort state by context)
+      table-filters.ts        # The status/class/upcoming-or-past filter set
+      pill-group.tsx          # Single-choice filter pills
+      status-badge.tsx        # Every admin status colour, in one map
+      format-date.ts          # The four date shapes the admin uses, plus todayString
     nav.tsx               # Header: burger left, logo right
     mobile-menu.tsx       # Full-screen menu with collapsible Classes section
     footer.tsx            # Site footer with service links
@@ -82,6 +90,8 @@ src/
   lib/
     auth.ts               # Better Auth server config
     auth-client.ts        # Better Auth client config
+    admin/
+      pricing-changes.ts  # The pricing page diff: confirm summary + PUT payload
     stripe.ts             # Stripe client singleton
     bookings/
       transitions.ts      # Pure cancel/release/reschedule decisions (no DB)
@@ -116,6 +126,12 @@ scripts/
     forget-new-migrations.mjs # Make this branch's migrations look unapplied, to replay them
     explain-migration-failure.mjs # Name the statement drizzle-kit died on (it says nothing)
 tests/
+  setup-dom.ts            # jsdom setup: jest-dom matchers, cleanup between tests
+  components/admin/*.test.tsx # Rendered admin chrome (PillGroup, headers, badge)
+  components/admin/use-table-controls.test.ts # deriveTableRows / toggleSortState
+  components/admin/format-date.test.ts # The four date shapes, and todayString
+  components/admin/table-filters.test.ts # Status/class/time filter composition
+  lib/admin-pricing-changes.test.ts # Pricing diff: summary and payload agree
   api/contact.test.ts     # Contact form API tests
   api/stripe-webhook.test.ts  # Stripe webhook handler tests
   api/book-checkout.test.ts   # Checkout session tests
@@ -152,6 +168,9 @@ drizzle/
 - **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
 - **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
 - **Linting:** Biome runs on pre-commit via husky. Run `just lint` to check/fix manually.
+- **Test environments:** `vitest.config.ts` defines two projects, split by file extension — `tests/**/*.test.ts` runs in node, `tests/**/*.test.tsx` runs in jsdom with `@testing-library/react` and `tests/setup-dom.ts`. The split is by extension, not directory, so a folder can hold both. The run is pinned to `TZ=UTC`: the admin date helpers format in the runtime timezone, so their expectations only hold on a machine that happens to be on UTC.
+- **Admin table chrome:** `src/components/admin/` holds one definition each of the pieces every admin table needs — the toolbar, the header row, the filter pills, the status badge and the date formats. Add to it rather than copying into a page. `SortableHead` carries the sort state from `useTableControls` by context, so a sortable column is declared as `<SortHeader label="Date" sortKey="date" />` and never wires `activeKey`/`direction`/`onClick`. Dates have four deliberate shapes (`formatDate`, `formatDateWithWeekday`, `formatDateTime`, `formatDeadline`); a fifth wants a fifth question, not a fifth option bag.
+- **Logic in `"use client"` pages:** a page component cannot be imported by a node test, so anything with branches goes into a module the page then wires up — `buildAdminTableFilters`, `buildChangeSummary`/`buildPricingPayload` (`src/lib/admin/pricing-changes.ts`), `selectRescheduleTargets` (`src/lib/bookings/transitions.ts`, beside the server rules it mirrors). `deriveTableRows` is the pattern.
 - **Auth:** Better Auth protects `/admin/*` routes via proxy. Login at `/admin/login`.
 - **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on proxy for page access).
 - **Stripe webhook:** At `/api/stripe/webhook` — reads raw body for signature verification, never parse JSON before verifying.
