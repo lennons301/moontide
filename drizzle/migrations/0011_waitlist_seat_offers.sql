@@ -10,8 +10,10 @@ DO $$ BEGIN
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;--> statement-breakpoint
+-- A repeated UNIQUE constraint raises duplicate_table, not duplicate_object:
+-- the clash is with the index it creates, not the constraint.
 DO $$ BEGIN
  ALTER TABLE "waitlist_entries" ADD CONSTRAINT "waitlist_entries_offer_token_unique" UNIQUE("offer_token");
 EXCEPTION
- WHEN duplicate_object THEN null;
+ WHEN duplicate_object OR duplicate_table THEN null;
 END $$;
