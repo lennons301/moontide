@@ -111,6 +111,9 @@ scripts/
   seed-sanity.ts          # CMS seed script
   seed-classes.ts         # Seed class types (prenatal, postnatal, baby-yoga, vinyasa)
   seed-admin.ts           # Seed admin user (Gabrielle)
+  ci/
+    run-sql.mjs           # Run a .sql file against DATABASE_URL (no psql, no tsx)
+    forget-new-migrations.mjs # Make this branch's migrations look unapplied, to replay them
 tests/
   api/contact.test.ts     # Contact form API tests
   api/stripe-webhook.test.ts  # Stripe webhook handler tests
@@ -130,6 +133,7 @@ tests/
   admin/waitlist-offer.test.ts # Offer/withdraw route wiring
 drizzle/
   migrations/             # Generated Drizzle migrations
+  ci/seed.sql             # Production-shaped data the CI migration check runs against
 ```
 
 ## Key Conventions
@@ -172,6 +176,9 @@ drizzle/
 - **Vercel Cron:** Configured in `vercel.json`. Cron endpoints at `/api/cron/*` are protected by `CRON_SECRET` bearer token.
 - **DB transactions:** Multi-step mutations (e.g., booking insert + count increment) wrapped in `db.transaction()` for atomicity.
 - **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI — all tests use mocks.
+- **Migrations in CI:** Two jobs in `.github/workflows/ci.yml` run the migrations against a Postgres service container the runner creates and destroys, so a migration that cannot apply fails the PR rather than the Vercel deploy (`"build": "drizzle-kit migrate && next build"` used to be the first thing that ever ran one). `migrations-empty` applies them all from scratch. `migrations-existing` applies the migrations as they stood on the base commit, loads `drizzle/ci/seed.sql`, then applies this branch's — so a migration meets rows, not empty tables. No credentials are involved: the container's password protects nothing and no real database is reachable from CI.
+- **Migrations must be re-runnable:** `migrations-existing` finishes by forgetting the migrations this branch adds (`scripts/ci/forget-new-migrations.mjs` deletes their rows from `drizzle.__drizzle_migrations`) and applying them again. Drizzle picks migrations by their journal timestamp, not by filename or hash, so one that is renumbered or re-stamped while resolving a merge reads as unapplied on a database a preview deploy already migrated, and its DDL runs a second time. So write new migrations idempotently — `ADD COLUMN IF NOT EXISTS`, `ADD VALUE IF NOT EXISTS`, and for constraints a `DO $$ ... EXCEPTION WHEN duplicate_object OR duplicate_table THEN null; END $$` block (a repeated UNIQUE constraint raises `duplicate_table`, because the clash is with the index it creates). Only migrations absent from the base commit are replayed, so the older non-idempotent ones are left alone.
+- **The CI seed:** `drizzle/ci/seed.sql` is not a test fixture (the suite is entirely mocked) and not the dev seed — it exists to make migrations meet data, so it wants breadth over volume: every status of every table and the awkward rows. CI reads it **as it stood on the base commit**, because it stands for data that already exists and so must match the schema that exists before the branch's migrations run. Write it against the schema on master; a PR that adds a column should not add it here in the same breath.
 - **Secrets sync:** Doppler-Vercel integration auto-syncs secrets. Doppler `prd` → Vercel Production, Doppler `stg` → Vercel Preview. Never manually set env vars in Vercel that Doppler manages.
 - **CMS revalidation:** Sanity webhook POSTs to `/api/revalidate` on publish. Handler verifies `SANITY_WEBHOOK_SECRET` header, maps document types to paths, calls `revalidatePath()`. All CMS pages also have `revalidate = 3600` as a fallback.
 

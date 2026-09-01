@@ -24,3 +24,128 @@ jobs:
 
       - name: Test
         run: just test
+
+  # Nothing else in CI touches a database — lint, typecheck and the test suite
+  # are all mock-based — so `drizzle-kit migrate` on Vercel used to be the first
+  # thing that ever ran a migration, and a broken one arrived as a failed
+  # deploy. These two jobs run them here instead, against a Postgres service
+  # container the runner creates and destroys. No real database is reachable
+  # from CI and no database credentials are held: the throwaway container's
+  # password is in plain sight below because it protects nothing.
+
+  migrations-empty:
+    name: Migrations (empty database)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: moontide_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/moontide_ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply every migration from scratch
+        run: pnpm run db:migrate
+
+  migrations-existing:
+    # An empty database is the easy case. A migration meets rows, and it meets
+    # a database a preview deploy may already have taken part of the way — the
+    # two cases that broke #40 and the deploy before it.
+    name: Migrations (existing database)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: moontide_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/moontide_ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Needed to read the migrations as they stood before this branch.
+          fetch-depth: 0
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Find the commit this branch starts from
+        id: base
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base=$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD)
+          else
+            base="${{ github.event.before }}"
+            if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              base=$(git rev-parse HEAD^)
+            fi
+          fi
+          echo "Base commit: ${base}"
+          echo "sha=${base}" >> "$GITHUB_OUTPUT"
+          git show "${base}:drizzle/migrations/meta/_journal.json" > "$RUNNER_TEMP/base-journal.json"
+
+      - name: Build the database as it stands without this branch
+        run: |
+          set -euo pipefail
+          # `git checkout <sha> -- <dir>` restores the tree but leaves files the
+          # branch added, so clear the directory first.
+          rm -rf drizzle/migrations
+          git checkout "${{ steps.base.outputs.sha }}" -- drizzle/migrations
+          pnpm run db:migrate
+
+      - name: Fill it with production-shaped data
+        run: |
+          set -euo pipefail
+          # The seed as it stood on the base commit: it stands for data that is
+          # already there, so it has to match the schema that is already there.
+          # A branch that adds a column must not have to add it here too.
+          git checkout "${{ steps.base.outputs.sha }}" -- drizzle/ci/seed.sql \
+            || echo "Base commit has no seed; using this branch's."
+          node scripts/ci/run-sql.mjs drizzle/ci/seed.sql
+
+      - name: Apply this branch's migrations to it
+        run: |
+          set -euo pipefail
+          rm -rf drizzle/migrations
+          git checkout HEAD -- drizzle/migrations drizzle/ci/seed.sql
+          pnpm run db:migrate
+
+      - name: Apply them a second time
+        run: |
+          set -euo pipefail
+          # Drizzle picks migrations by their journal timestamp, so a migration
+          # renumbered or re-stamped in a merge reads as unapplied on a database
+          # that already has it, and its DDL runs again. That is how #40 failed.
+          # New migrations here are written idempotently; this is the check.
+          node scripts/ci/forget-new-migrations.mjs "$RUNNER_TEMP/base-journal.json"
+          pnpm run db:migrate
