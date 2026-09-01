@@ -5,7 +5,9 @@ import {
   decideRelease,
   decideReschedule,
   describeReleaseEffect,
+  type RescheduleTarget,
   type ScheduleState,
+  selectRescheduleTargets,
 } from "@/lib/bookings/transitions";
 
 const CARD_BOOKING: BookingState = {
@@ -254,5 +256,67 @@ describe("decideReschedule", () => {
       decrementSource: false,
       nextStatus: "confirmed",
     });
+  });
+});
+
+describe("selectRescheduleTargets", () => {
+  const TODAY = "2026-06-01";
+  const SOURCE_REF = { scheduleId: 10, classId: 3 };
+
+  function schedule(overrides: Partial<RescheduleTarget>): RescheduleTarget {
+    return {
+      id: 20,
+      classId: 3,
+      date: "2026-06-10",
+      capacity: 8,
+      bookedCount: 2,
+      status: "open",
+      ...overrides,
+    };
+  }
+
+  it("offers a future date on the same class with room left", () => {
+    const target = schedule({});
+    expect(selectRescheduleTargets([target], SOURCE_REF, TODAY)).toEqual([
+      target,
+    ]);
+  });
+
+  it("never offers what the server would refuse", () => {
+    const refused = [
+      schedule({ id: 21, classId: 4 }),
+      schedule({ id: 22, status: "cancelled" }),
+      schedule({ id: 10 }),
+      schedule({ id: 23, bookedCount: 8 }),
+      schedule({ id: 24, bookedCount: 9 }),
+    ];
+    expect(selectRescheduleTargets(refused, SOURCE_REF, TODAY)).toEqual([]);
+  });
+
+  it("offers today's class but not yesterday's", () => {
+    const today = schedule({ id: 25, date: TODAY });
+    const yesterday = schedule({ id: 26, date: "2026-05-31" });
+    expect(
+      selectRescheduleTargets([today, yesterday], SOURCE_REF, TODAY),
+    ).toEqual([today]);
+  });
+
+  it("puts the soonest date first whatever order they arrive in", () => {
+    const later = schedule({ id: 27, date: "2026-07-01" });
+    const sooner = schedule({ id: 28, date: "2026-06-05" });
+    expect(
+      selectRescheduleTargets([later, sooner], SOURCE_REF, TODAY).map(
+        (s) => s.id,
+      ),
+    ).toEqual([28, 27]);
+  });
+
+  it("leaves the caller's array alone", () => {
+    const input = [
+      schedule({ id: 29, date: "2026-07-01" }),
+      schedule({ id: 30, date: "2026-06-05" }),
+    ];
+    selectRescheduleTargets(input, SOURCE_REF, TODAY);
+    expect(input.map((s) => s.id)).toEqual([29, 30]);
   });
 });
