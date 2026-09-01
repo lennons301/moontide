@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
 import { PillGroup } from "@/components/admin/pill-group";
 import { StatusBadge } from "@/components/admin/status-badge";
-import { buildAdminTableFilters } from "@/components/admin/table-filters";
+import {
+  buildAdminTableFilters,
+  type TimeFilter,
+} from "@/components/admin/table-filters";
 import {
   PlainHeader,
   SortableHead,
@@ -46,7 +49,6 @@ interface Schedule {
 }
 
 type StatusFilter = "all" | "open" | "full" | "cancelled";
-type TimeFilter = "upcoming" | "past" | "all";
 
 export default function SchedulePage() {
   const [scheduleList, setScheduleList] = useState<Schedule[]>([]);

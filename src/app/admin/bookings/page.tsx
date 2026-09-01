@@ -5,7 +5,10 @@ import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
 import { formatDate, formatDateTime } from "@/components/admin/format-date";
 import { PillGroup } from "@/components/admin/pill-group";
 import { StatusBadge } from "@/components/admin/status-badge";
-import { buildAdminTableFilters } from "@/components/admin/table-filters";
+import {
+  buildAdminTableFilters,
+  type TimeFilter,
+} from "@/components/admin/table-filters";
 import {
   PlainHeader,
   SortableHead,
@@ -78,7 +81,6 @@ type StatusFilter =
   | "cancelled"
   | "waitlisted"
   | "released";
-type TimeFilter = "upcoming" | "past" | "all";
 
 function formatPrice(priceInPence: number) {
   return `£${(priceInPence / 100).toFixed(2)}`;
