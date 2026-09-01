@@ -62,7 +62,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Apply every migration from scratch
-        run: pnpm run db:migrate
+        # drizzle-kit exits 1 and prints nothing but its spinner when a
+        # migration errors, so the explainer names the statement that failed.
+        run: pnpm run db:migrate || node scripts/ci/explain-migration-failure.mjs
 
   migrations-existing:
     # An empty database is the easy case. A migration meets rows, and it meets
@@ -121,7 +123,7 @@ jobs:
           # branch added, so clear the directory first.
           rm -rf drizzle/migrations
           git checkout "${{ steps.base.outputs.sha }}" -- drizzle/migrations
-          pnpm run db:migrate
+          pnpm run db:migrate || node scripts/ci/explain-migration-failure.mjs
 
       - name: Fill it with production-shaped data
         run: |
@@ -138,7 +140,7 @@ jobs:
           set -euo pipefail
           rm -rf drizzle/migrations
           git checkout HEAD -- drizzle/migrations drizzle/ci/seed.sql
-          pnpm run db:migrate
+          pnpm run db:migrate || node scripts/ci/explain-migration-failure.mjs
 
       - name: Apply them a second time
         run: |
@@ -148,4 +150,4 @@ jobs:
           # that already has it, and its DDL runs again. That is how #40 failed.
           # New migrations here are written idempotently; this is the check.
           node scripts/ci/forget-new-migrations.mjs "$RUNNER_TEMP/base-journal.json"
-          pnpm run db:migrate
+          pnpm run db:migrate || node scripts/ci/explain-migration-failure.mjs
