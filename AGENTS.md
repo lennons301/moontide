@@ -15,13 +15,14 @@ Wellbeing website for women navigating change through yoga, coaching, and embodi
 - **Secrets:** Doppler (project: moontide, configs: dev/stg/prd)
 - **Dev Environment:** mise + just
 - **Deployment:** Vercel Hobby
-- **Testing:** Vitest
+- **Testing:** Vitest (two projects: mocked unit tests, and integration tests against a real Postgres)
 
 ## Commands
 
 ```bash
 just dev              # Start dev server (Docker + Doppler + pnpm)
-just test             # Run tests
+just test             # Run tests (mocked + integration; starts the local Postgres)
+just test-unit        # Run only the mocked tests (no database, no Docker)
 just lint             # Lint and format (Biome)
 just typecheck        # Type check (tsc --noEmit)
 just build            # Production build
@@ -132,6 +133,14 @@ tests/
   lib/london-time.test.ts     # Class starts across the BST boundary
   admin/waitlist.test.ts      # Waiting list API tests
   admin/waitlist-offer.test.ts # Offer/withdraw route wiring
+  integration/            # Runs against a real Postgres, not mocks
+    support/database-url.ts # Which server, and the throwaway database on it
+    support/global-setup.ts # Drop, create and migrate that database, once per run
+    support/setup.ts        # Empty every table before each test
+    support/factories.ts    # Rows to test against
+    schedule-occupancy.test.ts # Real occupancy numbers, clamps and a seat race
+    booking-constraints.test.ts # The unique indexes, refusing duplicates
+    admin-bookings-cancel.test.ts # A route end to end: request in, rows out
 drizzle/
   migrations/             # Generated Drizzle migrations
   ci/seed.sql             # Production-shaped data the CI migration check runs against
@@ -176,7 +185,17 @@ drizzle/
 - **Confirmation emails:** Sent via Resend after Stripe webhook using `after()` from `next/server`. Customer gets HTML confirmation (branded with logo), Gabrielle gets plain text notification. `emailSent` flag on bookings/bundles tracks delivery; cron retries failures daily at 8am (24-hour cutoff), and the same run does the daily offer work. Vercel Hobby only allows daily cron jobs.
 - **Vercel Cron:** Configured in `vercel.json`. Cron endpoints at `/api/cron/*` are protected by `CRON_SECRET` bearer token.
 - **DB transactions:** Multi-step mutations (e.g., booking insert + count increment) wrapped in `db.transaction()` for atomicity.
-- **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI — all tests use mocks.
+- **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI: the mocked tests need nothing, and the integration project needs only the ephemeral Postgres the runner creates and destroys.
+- **Two test projects:** `vitest.config.ts` defines `unit` (everything in `tests/` except `tests/integration/`, drizzle mocked, no database) and `integration` (`tests/integration/**`, real Postgres). `just test` runs both; `just test-unit` runs the first alone.
+- **Which kind to write:** default to a **mocked** test — they are the fast ones, and a rule that is a decision belongs in a pure function that needs no database at all (`src/lib/bookings/transitions.ts`, `src/lib/waitlist/offers.ts`, `src/lib/waitlist/digest.ts`). Write an **integration** test when the behaviour under test is Postgres's, not TypeScript's, and so a mock would only be asserting the shape of the statement you just wrote:
+  - **SQL that has to execute** — the `GREATEST`/`LEAST` clamps, `CASE` expressions, anything inside a `sql` template.
+  - **Constraints and indexes** — `bookings_schedule_email_active_idx` is the only real defence against a double booking, and no mock can refuse a write.
+  - **Concurrency** — a guarded claim like `claimSeat` is only interesting when two of them race for one seat.
+  - **Transaction boundaries** — that a failure part way through leaves nothing behind.
+  - **A route end to end**, when the point is what the rows look like afterwards rather than which calls were made. `tests/integration/admin-bookings-cancel.test.ts` is the worked example: it asserts the bundle has 3 credits and the class 3 seats taken, not that `update` was called.
+  Assert values, not call counts — an integration test that checks a mock was called has paid for a database and bought nothing.
+- **How the integration project runs:** `tests/integration/support/global-setup.ts` drops, recreates and migrates `moontide_integration` once per run, so the schema under test is the one the migrations produce and a broken migration fails the tests. `support/setup.ts` truncates every table in `public` before each test (`RESTART IDENTITY CASCADE`), so tests are independent, ids are predictable and a crashed run leaves nothing to clean up. Truncation rather than a rolled-back transaction because the code under test uses the `db` singleton and opens transactions of its own. Files run serially — they share one database.
+- **Which Postgres the tests use:** `TEST_DATABASE_URL`, defaulting to docker-compose's server (`postgresql://postgres:postgres@localhost:5432/postgres`). Deliberately **not** `DATABASE_URL` — that points at whatever Doppler config is loaded, possibly a Neon branch, and the harness drops the database it is given. Only ever point it at a throwaway server. `tests/integration/support/factories.ts` has the row builders; add to those rather than hand-rolling inserts.
 - **Migrations in CI:** Two jobs in `.github/workflows/ci.yml` run the migrations against a Postgres service container the runner creates and destroys, so a migration that cannot apply fails the PR rather than the Vercel deploy (`"build": "drizzle-kit migrate && next build"` used to be the first thing that ever ran one). `migrations-empty` applies them all from scratch. `migrations-existing` applies the migrations as they stood on the base commit, loads `drizzle/ci/seed.sql`, then applies this branch's — so a migration meets rows, not empty tables. No credentials are involved: the container's password protects nothing and no real database is reachable from CI. Every migrate step falls through to `scripts/ci/explain-migration-failure.mjs` on failure, because drizzle-kit exits 1 printing nothing but its spinner — the explainer replays the pending migrations statement by statement in a rolled-back transaction and names the one Postgres rejected.
 - **Migrations must be re-runnable:** `migrations-existing` finishes by forgetting the migrations this branch adds (`scripts/ci/forget-new-migrations.mjs` deletes their rows from `drizzle.__drizzle_migrations`) and applying them again. Drizzle picks migrations by their journal timestamp, not by filename or hash, so one that is renumbered or re-stamped while resolving a merge reads as unapplied on a database a preview deploy already migrated, and its DDL runs a second time. So write new migrations idempotently — `ADD COLUMN IF NOT EXISTS`, `ADD VALUE IF NOT EXISTS`, and for constraints a `DO $$ ... EXCEPTION WHEN duplicate_object OR duplicate_table THEN null; END $$` block (a repeated UNIQUE constraint raises `duplicate_table`, because the clash is with the index it creates). Only migrations absent from the base commit are replayed, so the older non-idempotent ones are left alone.
 - **Renumbering a migration:** When a merge puts two migrations in the same numbered slot, rename the losing file but **keep its `when` in `_journal.json`** — re-stamping it re-runs its DDL on a database that already applied it (a preview deploy of an unmerged branch migrates stg), and stamping it below the entry before it makes drizzle skip it forever. Full rule, both constraints and the PR #40 worked example: `docs/agents/migrations.md`.
