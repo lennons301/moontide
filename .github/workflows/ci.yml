@@ -7,6 +7,29 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # `just test` runs the mocked tests and the integration project, and the
+    # integration project needs a real Postgres. It is the same ephemeral
+    # service container the migration jobs below use: created and destroyed by
+    # the runner, holding nothing, reachable from nowhere else. No real or
+    # shared database is involved, which is why the password can sit in plain
+    # sight. The harness builds its own database on it, so nothing here has to
+    # match the schema.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: moontide_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
 
