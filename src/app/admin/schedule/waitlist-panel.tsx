@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  formatDateWithWeekday,
+  formatDeadline,
+} from "@/components/admin/format-date";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -69,25 +73,6 @@ function formatRelative(createdAt: string) {
   }
   const m = Math.floor(diffMs / minute);
   return `${m}m ago`;
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-GB", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-}
-
-function formatDeadline(deadline: string) {
-  return new Date(deadline).toLocaleString("en-GB", {
-    timeZone: "Europe/London",
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 export function WaitlistPanel({
@@ -192,7 +177,9 @@ export function WaitlistPanel({
       <SheetContent className="w-full sm:max-w-md">
         <SheetHeader>
           <SheetTitle>Waiting list — {classTitle}</SheetTitle>
-          <p className="text-sm text-deep-ocean/70">{formatDate(date)}</p>
+          <p className="text-sm text-deep-ocean/70">
+            {formatDateWithWeekday(date)}
+          </p>
         </SheetHeader>
 
         <div className="px-4 pb-6">

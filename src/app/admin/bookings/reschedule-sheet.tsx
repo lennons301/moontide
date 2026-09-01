@@ -2,22 +2,24 @@
 
 import { useMemo, useState } from "react";
 import {
+  formatDateWithWeekday,
+  todayString,
+} from "@/components/admin/format-date";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  type RescheduleTarget,
+  selectRescheduleTargets,
+} from "@/lib/bookings/transitions";
 
-interface ScheduleRow {
-  id: number;
-  classId: number;
-  date: string;
+interface ScheduleRow extends RescheduleTarget {
   startTime: string;
   endTime: string;
-  capacity: number;
-  bookedCount: number;
   location: string | null;
-  status: string;
 }
 
 interface RescheduleSheetProps {
@@ -33,20 +35,6 @@ interface RescheduleSheetProps {
   sourceEndTime: string;
   allSchedules: ScheduleRow[];
   onMoved: () => void;
-}
-
-function todayString() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
 }
 
 export function RescheduleSheet({
@@ -69,16 +57,11 @@ export function RescheduleSheet({
   const today = todayString();
   const eligibleSchedules = useMemo(
     () =>
-      allSchedules
-        .filter(
-          (s) =>
-            s.classId === sourceClassId &&
-            s.status !== "cancelled" &&
-            s.date >= today &&
-            s.id !== sourceScheduleId &&
-            s.bookedCount < s.capacity,
-        )
-        .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
+      selectRescheduleTargets(
+        allSchedules,
+        { scheduleId: sourceScheduleId, classId: sourceClassId },
+        today,
+      ),
     [allSchedules, sourceClassId, sourceScheduleId, today],
   );
 
@@ -108,7 +91,7 @@ export function RescheduleSheet({
             Reschedule — {customerName} → {classTitle}
           </SheetTitle>
           <p className="text-sm text-deep-ocean/70">
-            Currently on {formatDate(sourceDate)}, {sourceStartTime}–
+            Currently on {formatDateWithWeekday(sourceDate)}, {sourceStartTime}–
             {sourceEndTime}
           </p>
         </SheetHeader>
@@ -143,7 +126,7 @@ export function RescheduleSheet({
                     >
                       <div className="min-w-0">
                         <p className="font-medium text-deep-tide-blue">
-                          {formatDate(s.date)}
+                          {formatDateWithWeekday(s.date)}
                         </p>
                         <p className="text-xs text-deep-ocean/60">
                           {s.startTime}–{s.endTime}

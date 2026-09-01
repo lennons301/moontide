@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
+import { PillGroup } from "@/components/admin/pill-group";
+import { StatusBadge } from "@/components/admin/status-badge";
+import { buildAdminTableFilters } from "@/components/admin/table-filters";
+import {
+  PlainHeader,
+  SortableHead,
+  SortHeader,
+} from "@/components/admin/table-headers";
 import { useTableControls } from "@/components/admin/use-table-controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,71 +47,6 @@ interface Schedule {
 
 type StatusFilter = "all" | "open" | "full" | "cancelled";
 type TimeFilter = "upcoming" | "past" | "all";
-
-function todayString() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
-
-function PillGroup<T extends string>({
-  value,
-  onChange,
-  options,
-  label,
-}: {
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: string }[];
-  label: string;
-}) {
-  return (
-    <div className="flex items-center gap-1">
-      <span className="text-xs text-deep-ocean/60">{label}:</span>
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-            value === opt.value
-              ? "bg-deep-tide-blue text-dawn-light"
-              : "bg-soft-moonstone/30 text-deep-ocean hover:bg-soft-moonstone/50"
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SortHeader({
-  label,
-  sortKey,
-  activeKey,
-  direction,
-  onClick,
-}: {
-  label: string;
-  sortKey: string;
-  activeKey: string;
-  direction: "asc" | "desc";
-  onClick: () => void;
-}) {
-  const active = sortKey === activeKey;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-deep-ocean hover:text-deep-tide-blue"
-    >
-      {label}
-      {active && (
-        <span aria-hidden="true">{direction === "asc" ? "↑" : "↓"}</span>
-      )}
-    </button>
-  );
-}
 
 export default function SchedulePage() {
   const [scheduleList, setScheduleList] = useState<Schedule[]>([]);
@@ -148,23 +91,18 @@ export default function SchedulePage() {
     fetchClassTypes();
   }, [fetchSchedules, fetchClassTypes]);
 
-  const filters = useMemo(() => {
-    const today = todayString();
-    const map: Record<string, (row: Schedule) => boolean> = {};
-    if (statusFilter !== "all") {
-      map.status = (row) => row.schedules.status === statusFilter;
-    }
-    if (classFilter !== "all") {
-      const id = Number(classFilter);
-      map.class = (row) => row.classes.id === id;
-    }
-    if (timeFilter === "upcoming") {
-      map.time = (row) => row.schedules.date >= today;
-    } else if (timeFilter === "past") {
-      map.time = (row) => row.schedules.date < today;
-    }
-    return map;
-  }, [statusFilter, classFilter, timeFilter]);
+  const filters = useMemo(
+    () =>
+      buildAdminTableFilters<Schedule>(
+        { status: statusFilter, classId: classFilter, time: timeFilter },
+        {
+          status: (row) => row.schedules.status,
+          classId: (row) => row.classes.id,
+          date: (row) => row.schedules.date,
+        },
+      ),
+    [statusFilter, classFilter, timeFilter],
+  );
 
   const { rows, search, setSearch, sort, toggleSort, total } =
     useTableControls<Schedule>({
@@ -291,21 +229,6 @@ export default function SchedulePage() {
     }
 
     setSubmitting(false);
-  }
-
-  function statusBadge(status: string) {
-    const colours: Record<string, string> = {
-      open: "bg-seagrass/20 text-seagrass",
-      full: "bg-bright-orange/20 text-bright-orange",
-      cancelled: "bg-red-100 text-red-700",
-    };
-    return (
-      <span
-        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colours[status] || "bg-gray-100 text-gray-600"}`}
-      >
-        {status}
-      </span>
-    );
   }
 
   return (
@@ -520,49 +443,15 @@ export default function SchedulePage() {
 
       <div className="overflow-x-auto rounded-lg border border-soft-moonstone/30 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-soft-moonstone/20 bg-dawn-light">
-            <tr>
-              <th className="px-4 py-3">
-                <SortHeader
-                  label="Class"
-                  sortKey="class"
-                  activeKey={sort.key}
-                  direction={sort.direction}
-                  onClick={() => toggleSort("class")}
-                />
-              </th>
-              <th className="px-4 py-3">
-                <SortHeader
-                  label="Date"
-                  sortKey="date"
-                  activeKey={sort.key}
-                  direction={sort.direction}
-                  onClick={() => toggleSort("date")}
-                />
-              </th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
-                Time
-              </th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
-                Location
-              </th>
-              <th className="px-4 py-3">
-                <SortHeader
-                  label="Booked"
-                  sortKey="booked"
-                  activeKey={sort.key}
-                  direction={sort.direction}
-                  onClick={() => toggleSort("booked")}
-                />
-              </th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
-                Status
-              </th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
-                Actions
-              </th>
-            </tr>
-          </thead>
+          <SortableHead sort={sort} toggleSort={toggleSort}>
+            <SortHeader label="Class" sortKey="class" />
+            <SortHeader label="Date" sortKey="date" />
+            <PlainHeader label="Time" />
+            <PlainHeader label="Location" />
+            <SortHeader label="Booked" sortKey="booked" />
+            <PlainHeader label="Status" />
+            <PlainHeader label="Actions" />
+          </SortableHead>
           <tbody className="divide-y divide-soft-moonstone/10">
             {scheduleList.length === 0 ? (
               <tr>
@@ -619,7 +508,7 @@ export default function SchedulePage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
-                      {statusBadge(item.schedules.status)}
+                      <StatusBadge status={item.schedules.status} />
                       {item.waitlistCount > 0 && (
                         <button
                           type="button"
