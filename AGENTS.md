@@ -89,6 +89,8 @@ src/
       index.ts            # Drizzle client (postgres.js driver)
       schema.ts           # Drizzle schema (all tables including bundleConfig + re-exports auth-schema)
       auth-schema.ts      # Better Auth tables (user, session, account, verification)
+    content/
+      homepage.ts         # Homepage CMS fetches + their hardcoded fallbacks
     sanity/
       client.ts           # Sanity client + urlFor() image helper
       queries.ts          # GROQ queries for all document types
@@ -132,6 +134,8 @@ tests/
   lib/london-time.test.ts     # Class starts across the BST boundary
   admin/waitlist.test.ts      # Waiting list API tests
   admin/waitlist-offer.test.ts # Offer/withdraw route wiring
+  lib/homepage-content.test.ts # Homepage CMS fallbacks, section by section
+  app/homepage.test.ts    # Homepage renders with the CMS up and with it down
 drizzle/
   migrations/             # Generated Drizzle migrations
   ci/seed.sql             # Production-shaped data the CI migration check runs against
@@ -147,7 +151,7 @@ drizzle/
 - **Nav layout:** Burger menu left, logo (MOONTIDE) right.
 - **Services grouping:** Classes shown as 2x2 photo grid, coaching/private as featured cards, community as light text block.
 - **Sanity images:** Use `urlFor(image).width(x).height(y).url()` from `@/lib/sanity/client`.
-- **Page fallbacks:** All content pages try Sanity first, fall back to hardcoded content if CMS returns null.
+- **Page fallbacks:** All content pages try Sanity first, fall back to hardcoded content if CMS returns null — and a failed fetch degrades the same way, so a Sanity outage never takes a page down. The homepage's three fetches (services, trainer, site settings) live in `src/lib/content/homepage.ts` rather than inline: each is caught separately, so hero, services grid and about preview degrade one at a time instead of all-or-nothing.
 - **Local dev:** Docker Compose for Postgres, mise for tool versions, just for commands, Doppler for secrets.
 - **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
 - **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
