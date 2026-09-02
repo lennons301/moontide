@@ -85,6 +85,13 @@
       "when": 1786617718708,
       "tag": "0011_waitlist_seat_offers",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788298445858,
+      "tag": "0012_admin_role",
+      "breakpoints": true
     }
   ]
 }

@@ -156,8 +156,10 @@ drizzle/
 - **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
 - **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
 - **Linting:** Biome runs on pre-commit via husky. Run `just lint` to check/fix manually.
-- **Auth:** Better Auth protects `/admin/*` routes via proxy. Login at `/admin/login`.
-- **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on proxy for page access).
+- **Auth:** Better Auth protects `/admin/*` routes via proxy. Login at `/admin/login`. There is one account — Gabrielle's — and no customer auth at all: bookings are keyed by email address. So **sign-up is disabled** (`disableSignUp` on the mounted instance, and `/api/auth/sign-up*` is refused at the proxy, which is why the matcher covers `/api/auth/:path*`). Accounts are created only by `scripts/seed-admin.ts`, which builds its own `createAuth({ allowSignUp: true })` instance in-process.
+- **The admin role:** `user.role` must be `"admin"` to get past the proxy. It is declared to Better Auth as an additional field with `input: false`, so no auth endpoint can set it — the seed script grants it with a direct `UPDATE`. Migration `0012` backfills every user that predates it, because they are all admin logins.
+- **Proxy session check:** `src/proxy.ts` resolves the cookie through `auth.api.getSession` rather than testing that a cookie exists — a cookie is a string a visitor can type. No session, a forged or expired token, a non-admin user, or a session lookup that throws are all refused (401 for `/api/admin/*`, redirect to login for pages). The proxy runs on the Node runtime, so it can reach the database directly. Tests: `tests/proxy.test.ts`.
+- **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on the proxy; handler-level enforcement is a separate piece of work).
 - **Stripe webhook:** At `/api/stripe/webhook` — reads raw body for signature verification, never parse JSON before verifying.
 - **Booking flow:** `/api/book/checkout` (Stripe Checkout) and `/api/book/redeem` (bundle credit). Checkout handles both individual and bundle purchases via `type` field, and an offered held seat via `offerToken`.
 - **Prices in pence:** Class prices stored in `classes.priceInPence`. Bundle config (price, credits, expiry) stored in `bundleConfig` table — editable via admin UI at `/admin/pricing`.
