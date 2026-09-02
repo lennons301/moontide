@@ -197,6 +197,9 @@ export async function POST(request: Request) {
         creditsRemaining: config.credits,
         stripePaymentId: session.id,
         expiresAt,
+        // Which product this was. Recorded here so nothing downstream has to
+        // infer it from the credit count.
+        bundleConfigId: config.id,
       });
 
       const expiryDateFormatted = expiresAt.toLocaleDateString("en-GB", {

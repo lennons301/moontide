@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   date,
   integer,
@@ -95,6 +96,11 @@ export const bundles = pgTable("bundles", {
   expiresAt: timestamp("expires_at").notNull(),
   status: bundleStatus("status").notNull().default("active"),
   emailSent: boolean("email_sent").default(false).notNull(),
+  // Which product was bought. Nullable because bundles predating the column
+  // have no record of it beyond the credit count the backfill guessed from.
+  bundleConfigId: integer("bundle_config_id").references(
+    (): AnyPgColumn => bundleConfig.id,
+  ),
 });
 
 export const bundleConfig = pgTable("bundle_config", {

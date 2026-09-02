@@ -1,9 +1,11 @@
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { bundleConfig, classes } from "@/lib/db/schema";
+import { withAdmin } from "../_lib";
 
-export async function GET() {
+export const GET = withAdmin({}, async () => {
   const allClasses = await db
     .select({
       id: classes.id,
@@ -24,78 +26,61 @@ export async function GET() {
     classes: allClasses,
     bundleConfigs: activeBundleConfigs,
   });
-}
+});
 
-interface ClassUpdate {
-  id: number;
-  priceInPence?: number;
-  bundleEligible?: boolean;
-}
+const id = z.number().int().positive();
 
-interface BundleConfigUpdate {
-  id: number;
-  priceInPence?: number;
-  credits?: number;
-  expiryDays?: number;
-}
+const classUpdate = z
+  .object({
+    id,
+    priceInPence: z
+      .number()
+      .int({ error: "Class prices must be greater than 0" })
+      .positive({ error: "Class prices must be greater than 0" })
+      .optional(),
+    bundleEligible: z.boolean().optional(),
+  })
+  // A class row that names neither field asks for nothing; the caller meant
+  // something by sending it, so say so rather than silently doing nothing.
+  .refine(
+    (c) => c.priceInPence !== undefined || c.bundleEligible !== undefined,
+    {
+      error: "Class updates must include a price or bundle eligibility",
+    },
+  );
 
-export async function PUT(request: Request) {
-  const body = await request.json();
-  const classUpdates: ClassUpdate[] | undefined = body.classes;
-  const bundleConfigUpdates: BundleConfigUpdate[] | undefined =
-    body.bundleConfigs;
+const bundleConfigUpdate = z.object({
+  id,
+  priceInPence: z
+    .number()
+    .int({ error: "Bundle price must be greater than 0" })
+    .positive({ error: "Bundle price must be greater than 0" })
+    .optional(),
+  credits: z
+    .number()
+    .int({ error: "Bundle credits must be greater than 0" })
+    .positive({ error: "Bundle credits must be greater than 0" })
+    .optional(),
+  expiryDays: z
+    .number()
+    .int({ error: "Bundle expiry days must be greater than 0" })
+    .positive({ error: "Bundle expiry days must be greater than 0" })
+    .optional(),
+});
 
-  if (!classUpdates?.length && !bundleConfigUpdates?.length) {
-    return NextResponse.json({ error: "No updates provided" }, { status: 400 });
-  }
+const pricingBody = z
+  .object({
+    classes: z.array(classUpdate).optional(),
+    bundleConfigs: z.array(bundleConfigUpdate).optional(),
+  })
+  .refine(
+    (b) => Boolean(b.classes?.length) || Boolean(b.bundleConfigs?.length),
+    { error: "No updates provided" },
+  );
 
-  // Validate class prices
-  if (
-    classUpdates?.some(
-      (c) => c.priceInPence !== undefined && c.priceInPence <= 0,
-    )
-  ) {
-    return NextResponse.json(
-      { error: "Class prices must be greater than 0" },
-      { status: 400 },
-    );
-  }
-
-  // Every class update must change something
-  if (
-    classUpdates?.some(
-      (c) => c.priceInPence === undefined && c.bundleEligible === undefined,
-    )
-  ) {
-    return NextResponse.json(
-      { error: "Class updates must include a price or bundle eligibility" },
-      { status: 400 },
-    );
-  }
-
-  // Validate bundle config
-  if (bundleConfigUpdates) {
-    for (const bc of bundleConfigUpdates) {
-      if (bc.priceInPence !== undefined && bc.priceInPence <= 0) {
-        return NextResponse.json(
-          { error: "Bundle price must be greater than 0" },
-          { status: 400 },
-        );
-      }
-      if (bc.credits !== undefined && bc.credits <= 0) {
-        return NextResponse.json(
-          { error: "Bundle credits must be greater than 0" },
-          { status: 400 },
-        );
-      }
-      if (bc.expiryDays !== undefined && bc.expiryDays <= 0) {
-        return NextResponse.json(
-          { error: "Bundle expiry days must be greater than 0" },
-          { status: 400 },
-        );
-      }
-    }
-  }
+export const PUT = withAdmin({ body: pricingBody }, async ({ body }) => {
+  const classUpdates = body.classes;
+  const bundleConfigUpdates = body.bundleConfigs;
 
   await db.transaction(async (tx) => {
     if (classUpdates) {
@@ -111,14 +96,14 @@ export async function PUT(request: Request) {
 
     if (bundleConfigUpdates) {
       for (const bc of bundleConfigUpdates) {
-        const { id, ...fields } = bc;
+        const { id: bundleConfigId, ...fields } = bc;
         await tx
           .update(bundleConfig)
           .set({ ...fields, updatedAt: new Date() })
-          .where(eq(bundleConfig.id, id));
+          .where(eq(bundleConfig.id, bundleConfigId));
       }
     }
   });
 
   return NextResponse.json({ success: true });
-}
+});

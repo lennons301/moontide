@@ -92,6 +92,13 @@
       "when": 1788298445858,
       "tag": "0012_admin_role",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788332569973,
+      "tag": "0013_bundle_config_link",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock(
+  "@/lib/auth",
+  async () => (await import("../support/admin-session")).authModuleMock,
+);
+
 // Hoisted mocks
 const {
   mockSelectFrom,
@@ -167,7 +172,9 @@ describe("GET /api/admin/schedules", () => {
     ];
     mockOrderBy.mockResolvedValue(mockSchedules);
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost:3000/api/admin/schedules"),
+    );
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toHaveLength(1);
@@ -179,7 +186,9 @@ describe("GET /api/admin/schedules", () => {
   it("returns 200 with empty list when no schedules", async () => {
     mockOrderBy.mockResolvedValue([]);
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost:3000/api/admin/schedules"),
+    );
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toEqual([]);
@@ -251,7 +260,9 @@ describe("GET /api/admin/schedules", () => {
         }),
       }); // held-seat count query
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost:3000/api/admin/schedules"),
+    );
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toHaveLength(2);
@@ -287,7 +298,9 @@ describe("GET /api/admin/schedules", () => {
         }),
       });
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost:3000/api/admin/schedules"),
+    );
     const body = await response.json();
     // A full class with a held seat is not eight people coming.
     expect(body[0].heldCount).toBe(1);

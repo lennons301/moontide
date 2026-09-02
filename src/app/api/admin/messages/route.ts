@@ -1,34 +1,36 @@
 import { desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { contactSubmissions } from "@/lib/db/schema";
+import { ApiError, withAdmin } from "../_lib";
 
-export async function GET() {
+export const GET = withAdmin({}, async () => {
   const result = await db
     .select()
     .from(contactSubmissions)
     .orderBy(desc(contactSubmissions.createdAt));
   return NextResponse.json(result);
-}
+});
 
-export async function PUT(request: Request) {
-  const body = await request.json();
-  const { id, read } = body as { id?: unknown; read?: boolean };
+const markReadBody = z.object({
+  id: z
+    .number({ error: "Missing id" })
+    .int({ error: "Missing id" })
+    .positive({ error: "Missing id" }),
+  read: z.boolean().optional(),
+});
 
-  const numericId = typeof id === "number" ? id : NaN;
-  if (!numericId || Number.isNaN(numericId)) {
-    return NextResponse.json({ error: "Missing id" }, { status: 400 });
-  }
-
+export const PUT = withAdmin({ body: markReadBody }, async ({ body }) => {
   const updated = await db
     .update(contactSubmissions)
-    .set({ read: read === true })
-    .where(eq(contactSubmissions.id, numericId))
+    .set({ read: body.read === true })
+    .where(eq(contactSubmissions.id, body.id))
     .returning();
 
   if (updated.length === 0) {
-    return NextResponse.json({ error: "Message not found" }, { status: 404 });
+    throw new ApiError(404, "Message not found");
   }
 
   return NextResponse.json(updated[0]);
-}
+});

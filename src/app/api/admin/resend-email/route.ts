@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import {
   bookings,
@@ -13,13 +14,17 @@ import {
   sendBookingNotification,
   sendBundleConfirmation,
 } from "@/lib/email";
+import { ApiError, withAdmin } from "../_lib";
 
-export async function POST(request: Request) {
-  const { type, id } = await request.json();
+const missingId = { error: "Missing id" };
 
-  if (!type || !id) {
-    return NextResponse.json({ error: "Missing type or id" }, { status: 400 });
-  }
+const resendBody = z.object({
+  type: z.enum(["booking", "bundle"], { error: "Invalid type" }),
+  id: z.number(missingId).int(missingId).positive(missingId),
+});
+
+export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
+  const { type, id } = body;
 
   if (type === "booking") {
     const result = await db
@@ -30,7 +35,7 @@ export async function POST(request: Request) {
       .where(eq(bookings.id, id));
 
     if (result.length === 0) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      throw new ApiError(404, "Booking not found");
     }
 
     const row = result[0];
@@ -38,10 +43,7 @@ export async function POST(request: Request) {
     // A held seat is an offer nobody has taken up: there is no booking to
     // confirm, and a confirmation would tell them they are coming.
     if (row.bookings.status === "held") {
-      return NextResponse.json(
-        { error: "This seat is being held, not booked" },
-        { status: 400 },
-      );
+      throw new ApiError(400, "This seat is being held, not booked");
     }
 
     await sendBookingConfirmation({
@@ -74,42 +76,41 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true });
   }
 
-  if (type === "bundle") {
-    const result = await db
-      .select()
-      .from(bundles)
-      .innerJoin(bundleConfig, eq(bundles.creditsTotal, bundleConfig.credits))
-      .where(eq(bundles.id, id));
+  // Joined on the config the purchase actually recorded. It used to be joined
+  // on `creditsTotal = credits` — a guess that names the wrong product the
+  // moment two configs sell the same number of classes.
+  const result = await db
+    .select()
+    .from(bundles)
+    .innerJoin(bundleConfig, eq(bundles.bundleConfigId, bundleConfig.id))
+    .where(eq(bundles.id, id));
 
-    if (result.length === 0) {
-      return NextResponse.json({ error: "Bundle not found" }, { status: 404 });
-    }
-
-    const row = result[0];
-    const expiryDate = new Date(row.bundles.expiresAt).toLocaleDateString(
-      "en-GB",
-      { day: "numeric", month: "short", year: "numeric" },
-    );
-
-    await sendBundleConfirmation({
-      customerEmail: row.bundles.customerEmail,
-      bundleName: row.bundle_config.name,
-      credits: row.bundle_config.credits,
-      expiryDate,
-    });
-
-    await sendBookingNotification({
-      type: "bundle",
-      customerEmail: row.bundles.customerEmail,
-      bundleName: row.bundle_config.name,
-      credits: row.bundle_config.credits,
-      expiryDate,
-    });
-
-    await db.update(bundles).set({ emailSent: true }).where(eq(bundles.id, id));
-
-    return NextResponse.json({ success: true });
+  if (result.length === 0) {
+    throw new ApiError(404, "Bundle not found");
   }
 
-  return NextResponse.json({ error: "Invalid type" }, { status: 400 });
-}
+  const row = result[0];
+  const expiryDate = new Date(row.bundles.expiresAt).toLocaleDateString(
+    "en-GB",
+    { day: "numeric", month: "short", year: "numeric" },
+  );
+
+  await sendBundleConfirmation({
+    customerEmail: row.bundles.customerEmail,
+    bundleName: row.bundle_config.name,
+    credits: row.bundle_config.credits,
+    expiryDate,
+  });
+
+  await sendBookingNotification({
+    type: "bundle",
+    customerEmail: row.bundles.customerEmail,
+    bundleName: row.bundle_config.name,
+    credits: row.bundle_config.credits,
+    expiryDate,
+  });
+
+  await db.update(bundles).set({ emailSent: true }).where(eq(bundles.id, id));
+
+  return NextResponse.json({ success: true });
+});
