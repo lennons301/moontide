@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import { bookings, classes, schedules } from "@/lib/db/schema";
 import { sendRescheduleNotification } from "@/lib/email";
 import { claimSeat, releaseSeat } from "@/lib/schedule-occupancy";
+import { londonDateString } from "@/lib/time/london";
 import { ApiError, refuse, withAdmin } from "../_lib";
 
 export const GET = withAdmin({}, async () => {
@@ -114,6 +115,9 @@ export const PUT = withAdmin({ body: transitionBody }, async ({ body }) => {
       source: await findSchedule(booking.scheduleId),
       target: await findSchedule(newScheduleId),
       newScheduleId,
+      // Gabrielle's today, not the runtime's: a schedule's date is a London
+      // wall-clock date, and Vercel runs in UTC.
+      today: londonDateString(new Date()),
     });
     if (!decision.ok) refuse(decision);
     const { source, target } = decision;

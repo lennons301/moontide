@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock(
   "@/lib/auth",
@@ -274,9 +274,17 @@ describe("PUT /api/admin/bookings — release branch", () => {
 });
 
 describe("PUT /api/admin/bookings — reschedule branch", () => {
+  // The route compares the target's date against today, so the sample dates
+  // only mean "next week" if the clock is held still.
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T09:00:00Z"));
     mockSelectFrom.mockReturnValue({ where: mockSelectWhere });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("returns 404 when booking not found", async () => {
@@ -352,6 +360,37 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe("Target class is full");
+  });
+
+  it("returns 400 and sends nothing when the target class has already happened", async () => {
+    mockSelectWhere
+      .mockResolvedValueOnce([SAMPLE_BOOKING])
+      .mockResolvedValueOnce([SAMPLE_SOURCE])
+      .mockResolvedValueOnce([{ ...SAMPLE_TARGET, date: "2026-05-25" }]);
+
+    const response = await PUT(makeRequest({ id: 1, newScheduleId: 20 }));
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe(
+      "Cannot reschedule to a class that has already happened",
+    );
+    // No seat moved, and no email telling her the class is on a date gone by.
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockSendRescheduleNotification).not.toHaveBeenCalled();
+  });
+
+  it("moves a booking onto a class later today", async () => {
+    mockSelectWhere
+      .mockResolvedValueOnce([SAMPLE_BOOKING])
+      .mockResolvedValueOnce([SAMPLE_SOURCE])
+      .mockResolvedValueOnce([{ ...SAMPLE_TARGET, date: "2026-06-01" }])
+      .mockResolvedValueOnce([SAMPLE_CLASS]);
+
+    const response = await PUT(makeRequest({ id: 1, newScheduleId: 20 }));
+
+    expect(response.status).toBe(200);
+    expect(mockSendRescheduleNotification).toHaveBeenCalled();
   });
 
   it("returns 200 on first reschedule, sets originalScheduleId, sends email", async () => {
