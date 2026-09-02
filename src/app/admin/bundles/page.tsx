@@ -1,53 +1,48 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { AdminAlert } from "@/components/admin/admin-alert";
+import { mutateAdmin, useAdminResource } from "@/components/admin/admin-fetch";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
 import { formatDate } from "@/components/admin/format-date";
 import { PillGroup } from "@/components/admin/pill-group";
 import { StatusBadge } from "@/components/admin/status-badge";
+import { buildAdminTableFilters } from "@/components/admin/table-filters";
 import {
   PlainHeader,
   SortableHead,
   SortHeader,
 } from "@/components/admin/table-headers";
+import {
+  adminStateMessage,
+  TableStateRow,
+} from "@/components/admin/table-state";
 import { useTableControls } from "@/components/admin/use-table-controls";
+import type { BundleRow } from "@/lib/admin/rows";
 
-interface Bundle {
-  id: number;
-  customerEmail: string;
-  creditsTotal: number;
-  creditsRemaining: number;
-  stripePaymentId: string;
-  purchasedAt: string;
-  expiresAt: string;
-  status: string;
-  emailSent: boolean;
-}
+type Bundle = BundleRow;
 
 type StatusFilter = "all" | "active" | "expired" | "exhausted";
 
+const NO_BUNDLES: Bundle[] = [];
+
 export default function BundlesPage() {
-  const [allBundles, setAllBundles] = useState<Bundle[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    data: allBundles,
+    loading,
+    error: loadError,
+    refetch: fetchBundles,
+  } = useAdminResource<Bundle[]>("/api/admin/bundles", NO_BUNDLES);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [expiringSoon, setExpiringSoon] = useState(false);
 
-  const fetchBundles = useCallback(async () => {
-    const res = await fetch("/api/admin/bundles");
-    const data = await res.json();
-    setAllBundles(data);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    fetchBundles();
-  }, [fetchBundles]);
-
   const filters = useMemo(() => {
-    const map: Record<string, (b: Bundle) => boolean> = {};
-    if (statusFilter !== "all") {
-      map.status = (b) => b.status === statusFilter;
-    }
+    const map = buildAdminTableFilters<Bundle>(
+      { status: statusFilter },
+      { status: (b) => b.status },
+    );
+    // "Expiring soon" is this table's own, and sits alongside the shared set.
     if (expiringSoon) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() + 14);
@@ -71,15 +66,27 @@ export default function BundlesPage() {
       defaultSort: { key: "expires", direction: "asc" },
     });
 
+  const tableState = {
+    loading,
+    error: loadError,
+    isEmpty: rows.length === 0,
+    emptyMessage:
+      allBundles.length === 0
+        ? "No bundles yet."
+        : "No bundles match the current filters.",
+  };
+
   async function handleResendEmail(bundleId: number) {
-    const res = await fetch("/api/admin/resend-email", {
+    setActionError(null);
+    const result = await mutateAdmin("/api/admin/resend-email", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "bundle", id: bundleId }),
+      body: { type: "bundle", id: bundleId },
     });
-    if (res.ok) {
-      await fetchBundles();
+    if (!result.ok) {
+      setActionError(result.error);
+      return;
     }
+    await fetchBundles();
   }
 
   return (
@@ -87,6 +94,8 @@ export default function BundlesPage() {
       <h1 className="mb-6 text-2xl font-semibold text-deep-tide-blue">
         Bundles
       </h1>
+
+      <AdminAlert message={actionError} className="mb-4" />
 
       <AdminTableToolbar
         search={search}
@@ -129,26 +138,8 @@ export default function BundlesPage() {
             <PlainHeader label="Status" />
           </SortableHead>
           <tbody className="divide-y divide-soft-moonstone/10">
-            {loading ? (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="px-4 py-8 text-center text-soft-moonstone"
-                >
-                  Loading...
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="px-4 py-8 text-center text-soft-moonstone"
-                >
-                  {allBundles.length === 0
-                    ? "No bundles yet."
-                    : "No bundles match the current filters."}
-                </td>
-              </tr>
+            {adminStateMessage(tableState) !== null ? (
+              <TableStateRow colSpan={5} {...tableState} />
             ) : (
               rows.map((bundle) => (
                 <tr key={bundle.id} className="hover:bg-ocean-light-blue/10">

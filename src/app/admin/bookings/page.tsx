@@ -1,12 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { AdminAlert } from "@/components/admin/admin-alert";
+import { mutateAdmin, useAdminResource } from "@/components/admin/admin-fetch";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
+import { ClassFilterSelect } from "@/components/admin/class-filter-select";
 import { formatDate, formatDateTime } from "@/components/admin/format-date";
 import { PillGroup } from "@/components/admin/pill-group";
 import { StatusBadge } from "@/components/admin/status-badge";
 import {
   buildAdminTableFilters,
+  TIME_FILTER_OPTIONS,
   type TimeFilter,
 } from "@/components/admin/table-filters";
 import {
@@ -14,65 +18,24 @@ import {
   SortableHead,
   SortHeader,
 } from "@/components/admin/table-headers";
+import {
+  adminStateMessage,
+  TableStateRow,
+} from "@/components/admin/table-state";
 import { useTableControls } from "@/components/admin/use-table-controls";
+import type {
+  AdminBookingRow,
+  AdminScheduleRow,
+  ClassRow,
+} from "@/lib/admin/rows";
 import { describeReleaseEffect } from "@/lib/bookings/transitions";
 import { RescheduleSheet } from "./reschedule-sheet";
 
-interface BookingRow {
-  bookings: {
-    id: number;
-    scheduleId: number;
-    customerName: string;
-    customerEmail: string;
-    stripePaymentId: string | null;
-    bundleId: number | null;
-    status: string;
-    createdAt: string;
-    emailSent: boolean;
-    originalScheduleId: number | null;
-    rescheduledAt: string | null;
-    releasedAt: string | null;
-  };
-  schedules: {
-    id: number;
-    classId: number;
-    date: string;
-    startTime: string;
-    endTime: string;
-    capacity: number;
-    bookedCount: number;
-    location: string | null;
-    status: string;
-  };
-  classes: {
-    id: number;
-    slug: string;
-    title: string;
-    category: string;
-    bookingType: string;
-    active: boolean;
-    priceInPence: number;
-  };
-}
+type BookingRow = AdminBookingRow;
 
-interface ClassType {
-  id: number;
-  title: string;
-}
-
-interface ScheduleApiRow {
-  schedules: {
-    id: number;
-    classId: number;
-    date: string;
-    startTime: string;
-    endTime: string;
-    capacity: number;
-    bookedCount: number;
-    location: string | null;
-    status: string;
-  };
-}
+const NO_BOOKINGS: BookingRow[] = [];
+const NO_SCHEDULES: AdminScheduleRow[] = [];
+const NO_CLASSES: ClassRow[] = [];
 
 type StatusFilter =
   | "all"
@@ -95,10 +58,28 @@ function daysWaiting(releasedAt: string) {
 }
 
 export default function BookingsPage() {
-  const [allBookings, setAllBookings] = useState<BookingRow[]>([]);
-  const [classTypes, setClassTypes] = useState<ClassType[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [allSchedules, setAllSchedules] = useState<ScheduleApiRow[]>([]);
+  const {
+    data: allBookings,
+    loading,
+    error: loadError,
+    refetch: fetchBookings,
+  } = useAdminResource<BookingRow[]>("/api/admin/bookings", NO_BOOKINGS);
+  // The reschedule sheet's list of dates. Its own failure is carried into the
+  // sheet: an empty list there would otherwise read as "no other dates for this
+  // class" when the truth is that the load never arrived.
+  const {
+    data: allSchedules,
+    error: schedulesError,
+    refetch: fetchSchedules,
+  } = useAdminResource<AdminScheduleRow[]>(
+    "/api/admin/schedules",
+    NO_SCHEDULES,
+  );
+  const { data: classTypes } = useAdminResource<ClassRow[]>(
+    "/api/admin/classes",
+    NO_CLASSES,
+  );
+  const [actionError, setActionError] = useState<string | null>(null);
   const [reschedulingBooking, setReschedulingBooking] =
     useState<BookingRow | null>(null);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
@@ -106,29 +87,6 @@ export default function BookingsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [classFilter, setClassFilter] = useState<string>("all");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("upcoming");
-
-  const fetchBookings = useCallback(async () => {
-    const res = await fetch("/api/admin/bookings");
-    const data = await res.json();
-    setAllBookings(data);
-    setLoading(false);
-  }, []);
-
-  const fetchSchedules = useCallback(async () => {
-    const res = await fetch("/api/admin/schedules");
-    if (res.ok) {
-      const data = await res.json();
-      setAllSchedules(data);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchBookings();
-    fetchSchedules();
-    fetch("/api/admin/classes")
-      .then((r) => r.json())
-      .then((d) => setClassTypes(d));
-  }, [fetchBookings, fetchSchedules]);
 
   const filters = useMemo(
     () =>
@@ -156,6 +114,16 @@ export default function BookingsPage() {
       filters,
       defaultSort: { key: "date", direction: "asc" },
     });
+
+  const tableState = {
+    loading,
+    error: loadError,
+    isEmpty: rows.length === 0,
+    emptyMessage:
+      allBookings.length === 0
+        ? "No bookings yet."
+        : "No bookings match the current filters.",
+  };
 
   // Released bookings are card payers who are owed a class: the seat is back,
   // the money is not. Longest wait first.
@@ -186,14 +154,19 @@ export default function BookingsPage() {
     ) {
       return;
     }
-    const res = await fetch("/api/admin/bookings", {
+    setActionError(null);
+    // "Booking is already cancelled" is a sentence the API went to the trouble
+    // of writing; dropping it left the row not moving and no reason given.
+    const result = await mutateAdmin("/api/admin/bookings", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: bookingId, status: "cancelled" }),
+      body: { id: bookingId, status: "cancelled" },
     });
-    if (res.ok) {
-      await fetchBookings();
+    if (!result.ok) {
+      setActionError(result.error);
+      return;
     }
+    await fetchBookings();
+    await fetchSchedules();
   }
 
   async function handleRelease(row: BookingRow) {
@@ -205,26 +178,30 @@ export default function BookingsPage() {
     ) {
       return;
     }
-    const res = await fetch("/api/admin/bookings", {
+    setActionError(null);
+    const result = await mutateAdmin("/api/admin/bookings", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: row.bookings.id, status: "released" }),
+      body: { id: row.bookings.id, status: "released" },
     });
-    if (res.ok) {
-      await fetchBookings();
-      await fetchSchedules();
+    if (!result.ok) {
+      setActionError(result.error);
+      return;
     }
+    await fetchBookings();
+    await fetchSchedules();
   }
 
   async function handleResendEmail(bookingId: number) {
-    const res = await fetch("/api/admin/resend-email", {
+    setActionError(null);
+    const result = await mutateAdmin("/api/admin/resend-email", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "booking", id: bookingId }),
+      body: { type: "booking", id: bookingId },
     });
-    if (res.ok) {
-      await fetchBookings();
+    if (!result.ok) {
+      setActionError(result.error);
+      return;
     }
+    await fetchBookings();
   }
 
   function openReschedule(row: BookingRow) {
@@ -242,6 +219,8 @@ export default function BookingsPage() {
       <h1 className="mb-6 text-2xl font-semibold text-deep-tide-blue">
         Bookings
       </h1>
+
+      <AdminAlert message={actionError} className="mb-4" />
 
       {owedRows.length > 0 && (
         <section className="mb-6 rounded-lg border border-bright-orange/30 bg-bright-orange/5 p-4">
@@ -319,30 +298,16 @@ export default function BookingsPage() {
             { value: "waitlisted", label: "Waitlisted" },
           ]}
         />
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-deep-ocean/60">Class:</span>
-          <select
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-            className="h-7 rounded-full bg-soft-moonstone/30 px-2.5 text-xs text-deep-ocean focus:outline-none focus:ring-2 focus:ring-ring/50"
-          >
-            <option value="all">All</option>
-            {classTypes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
-              </option>
-            ))}
-          </select>
-        </div>
+        <ClassFilterSelect
+          value={classFilter}
+          onChange={setClassFilter}
+          classes={classTypes}
+        />
         <PillGroup
           label="Time"
           value={timeFilter}
           onChange={setTimeFilter}
-          options={[
-            { value: "upcoming", label: "Upcoming" },
-            { value: "past", label: "Past" },
-            { value: "all", label: "All" },
-          ]}
+          options={TIME_FILTER_OPTIONS}
         />
       </AdminTableToolbar>
 
@@ -358,24 +323,8 @@ export default function BookingsPage() {
             <PlainHeader label="Actions" />
           </SortableHead>
           <tbody className="divide-y divide-soft-moonstone/10">
-            {loading ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="px-4 py-8 text-center text-soft-moonstone"
-                >
-                  Loading...
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="px-4 py-8 text-center text-soft-moonstone"
-                >
-                  No bookings match the current filters.
-                </td>
-              </tr>
+            {adminStateMessage(tableState) !== null ? (
+              <TableStateRow colSpan={7} {...tableState} />
             ) : (
               rows.map((item) => (
                 <tr
@@ -474,6 +423,7 @@ export default function BookingsPage() {
           sourceStartTime={reschedulingBooking.schedules.startTime}
           sourceEndTime={reschedulingBooking.schedules.endTime}
           allSchedules={allSchedules.map((s) => s.schedules)}
+          schedulesError={schedulesError}
           onMoved={handleRescheduleMoved}
         />
       )}

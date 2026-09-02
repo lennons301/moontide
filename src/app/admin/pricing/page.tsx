@@ -1,28 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { AdminAlert } from "@/components/admin/admin-alert";
+import { mutateAdmin, useAdminResource } from "@/components/admin/admin-fetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  type BundleConfigRow as BundleConfig,
   buildChangeSummary,
   buildPricingPayload,
-  type ClassPriceRow,
   penceToPounds,
 } from "@/lib/admin/pricing-changes";
+import type { AdminPricingResponse } from "@/lib/admin/rows";
 
-interface ClassPrice extends ClassPriceRow {
-  slug: string;
-}
+type ClassPrice = AdminPricingResponse["classes"][number];
+type BundleConfigRow = AdminPricingResponse["bundleConfigs"][number];
 
-interface BundleConfigRow extends BundleConfig {
-  active: boolean;
-}
+const NO_PRICING: AdminPricingResponse = { classes: [], bundleConfigs: [] };
 
 export default function PricingPage() {
-  const [classes, setClasses] = useState<ClassPrice[]>([]);
-  const [bundleConfigs, setBundleConfigs] = useState<BundleConfigRow[]>([]);
+  const {
+    data: pricing,
+    loading,
+    error: loadError,
+    refetch,
+  } = useAdminResource<AdminPricingResponse>("/api/admin/pricing", NO_PRICING);
+  const { classes, bundleConfigs } = pricing;
   const [classEdits, setClassEdits] = useState<Record<number, string>>({});
   const [eligibilityEdits, setEligibilityEdits] = useState<
     Record<number, boolean>
@@ -34,21 +37,14 @@ export default function PricingPage() {
     >
   >({});
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const fetchPricing = useCallback(async () => {
-    const res = await fetch("/api/admin/pricing");
-    const data = await res.json();
-    setClasses(data.classes);
-    setBundleConfigs(data.bundleConfigs);
+  async function reloadPricing() {
     setClassEdits({});
     setEligibilityEdits({});
     setBundleEdits({});
-  }, []);
-
-  useEffect(() => {
-    fetchPricing();
-  }, [fetchPricing]);
+    await refetch();
+  }
 
   function getClassDisplayPrice(c: ClassPrice) {
     return classEdits[c.id] ?? penceToPounds(c.priceInPence);
@@ -87,19 +83,20 @@ export default function PricingPage() {
     if (!confirmed) return;
 
     setSaving(true);
-    setError(null);
+    setSaveError(null);
 
-    const res = await fetch("/api/admin/pricing", {
+    // Nothing between here and `setSaving(false)` may throw: reading a failure
+    // body as JSON used to, and a 502 answering with HTML left the button
+    // disabled until the page was reloaded.
+    const result = await mutateAdmin("/api/admin/pricing", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildPricingPayload(rows, edits)),
+      body: buildPricingPayload(rows, edits),
     });
 
-    if (res.ok) {
-      await fetchPricing();
+    if (result.ok) {
+      await reloadPricing();
     } else {
-      const data = await res.json();
-      setError(data.error || "Failed to save changes");
+      setSaveError(result.error);
     }
 
     setSaving(false);
@@ -110,6 +107,11 @@ export default function PricingPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-deep-tide-blue">Pricing</h1>
       </div>
+
+      <AdminAlert message={loadError} className="mb-4" />
+      {loading && (
+        <p className="mb-4 text-sm text-soft-moonstone">Loading...</p>
+      )}
 
       {/* Class Prices */}
       <div className="overflow-x-auto rounded-lg border border-soft-moonstone/30 bg-white shadow-sm mb-6">
@@ -257,7 +259,7 @@ export default function PricingPage() {
       ))}
 
       {/* Error + Save */}
-      {error && <p className="text-red-600 text-sm mb-4 text-right">{error}</p>}
+      <AdminAlert message={saveError} className="mb-4" />
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={saving || !hasChanges}>
           {saving ? "Saving..." : "Save Changes"}
