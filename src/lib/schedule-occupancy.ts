@@ -14,8 +14,11 @@ export type OccupancyWriter = Pick<typeof db, "update">;
 /** Outcome of a guarded claim. Refusal is a value, never an exception. */
 export type SeatClaim = { claimed: true } | { claimed: false };
 
-/** Outcome of an unguarded claim: it always takes the seat. */
-export type ForcedSeatClaim = { overCapacity: boolean };
+/**
+ * Outcome of an unguarded claim: it always takes the seat. `capacityRaised`
+ * says the class was full and its capacity moved up to admit the seat.
+ */
+export type ForcedSeatClaim = { capacityRaised: boolean };
 
 /**
  * Take a seat only while occupancy is below capacity.
@@ -46,25 +49,37 @@ export async function claimSeat(
  * Take a seat whether or not capacity allows it.
  *
  * For paths where the customer has already been charged: refusing them is the
- * wrong outcome, so the claim succeeds and the breach is reported back instead.
+ * wrong outcome. So when the class is full the seat is still taken, and the
+ * class's capacity moves up with it — `booked_count <= capacity` is a database
+ * constraint, and occupancy must not claim seats the class does not admit.
+ * The raise is reported back rather than swallowed — it is a real change to a
+ * number Gabrielle set, made by a sale rather than by her — and the caller
+ * logs it.
  */
 export async function forceClaimSeat(
   writer: OccupancyWriter,
   scheduleId: number,
 ): Promise<ForcedSeatClaim> {
-  const rows = await writer
-    .update(schedules)
-    .set({ bookedCount: sql`${schedules.bookedCount} + 1` })
-    .where(eq(schedules.id, scheduleId))
-    .returning({
-      bookedCount: schedules.bookedCount,
-      capacity: schedules.capacity,
-    });
+  // Below capacity there is nothing to force: the guarded claim takes the seat
+  // and leaves the capacity Gabrielle set alone.
+  const claim = await claimSeat(writer, scheduleId);
+  if (claim.claimed) return { capacityRaised: false };
 
-  const claimed = rows[0];
-  return {
-    overCapacity: claimed ? claimed.bookedCount > claimed.capacity : false,
-  };
+  // Full — or gone. GREATEST rather than an assignment because a seat may have
+  // been freed since the claim above failed, and capacity must never come
+  // down: reducing it is Gabrielle's decision, never a side effect of a sale.
+  // In that (vanishing) case the seat is taken, capacity stays where it is and
+  // the flag over-reports — a log line, not a decision.
+  const raised = await writer
+    .update(schedules)
+    .set({
+      bookedCount: sql`${schedules.bookedCount} + 1`,
+      capacity: sql`GREATEST(${schedules.capacity}, ${schedules.bookedCount} + 1)`,
+    })
+    .where(eq(schedules.id, scheduleId))
+    .returning({ id: schedules.id });
+
+  return { capacityRaised: raised.length > 0 };
 }
 
 /**

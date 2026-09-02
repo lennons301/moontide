@@ -12,8 +12,14 @@ import {
  * first would blow up here, which is the point: the guard has to live in the
  * write itself.
  */
-function makeWriter(returnedRows: unknown[] = []) {
-  const returning = vi.fn().mockResolvedValue(returnedRows);
+function makeWriter(...returnedRows: unknown[][]) {
+  const returning = vi.fn();
+  // One row set per statement, in order; the last stands for any statement
+  // beyond it, so a single-statement test can pass a single set.
+  for (const rows of returnedRows.length ? returnedRows : [[]]) {
+    returning.mockResolvedValueOnce(rows);
+  }
+  returning.mockResolvedValue(returnedRows[returnedRows.length - 1] ?? []);
   const where = vi.fn().mockReturnValue({ returning });
   const set = vi.fn().mockReturnValue({ where });
   const update = vi.fn().mockReturnValue({ set });
@@ -58,28 +64,36 @@ describe("claimSeat", () => {
 });
 
 describe("forceClaimSeat", () => {
-  it("claims the seat and reports staying within capacity", async () => {
-    const w = makeWriter([{ bookedCount: 8, capacity: 8 }]);
+  it("leaves capacity alone while the guarded claim can take the seat", async () => {
+    const w = makeWriter([{ id: 5 }]);
 
     await expect(forceClaimSeat(w.writer, 5)).resolves.toEqual({
-      overCapacity: false,
+      capacityRaised: false,
     });
+    // One statement, and it did not touch capacity: the number Gabrielle set
+    // moves only when a sale cannot be seated without it.
     expect(w.update).toHaveBeenCalledTimes(1);
+    expect(w.set.mock.calls[0][0].capacity).toBeUndefined();
   });
 
-  it("claims the seat and reports the capacity breach", async () => {
-    const w = makeWriter([{ bookedCount: 9, capacity: 8 }]);
+  it("raises capacity with the seat when the class is full", async () => {
+    const w = makeWriter([], [{ id: 5 }]);
 
     await expect(forceClaimSeat(w.writer, 5)).resolves.toEqual({
-      overCapacity: true,
+      capacityRaised: true,
     });
+    expect(w.update).toHaveBeenCalledTimes(2);
+    // GREATEST, so a seat freed between the two statements cannot make this
+    // write pull capacity down.
+    expect(sqlText(w.set.mock.calls[1][0].capacity)).toContain("GREATEST");
+    expect(sqlText(w.set.mock.calls[1][0].bookedCount)).toContain("+ 1");
   });
 
-  it("does not report a breach when the schedule no longer exists", async () => {
-    const w = makeWriter([]);
+  it("reports no raise when the schedule no longer exists", async () => {
+    const w = makeWriter([], []);
 
     await expect(forceClaimSeat(w.writer, 5)).resolves.toEqual({
-      overCapacity: false,
+      capacityRaised: false,
     });
   });
 });

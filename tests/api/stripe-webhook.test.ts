@@ -521,14 +521,20 @@ describe("POST /api/stripe/webhook", () => {
       expect(mockInsert).toHaveBeenCalled();
     });
 
-    it("books a paid customer over capacity and logs the breach", async () => {
+    it("books a paid customer onto a full class and logs the capacity raise", async () => {
       // Never refuse a payment on capacity grounds: the customer is charged by
-      // the time this runs. Gabrielle learns about it instead.
+      // the time this runs. The class gains the seat, and its capacity gains
+      // one with it — occupancy may not exceed capacity. Gabrielle learns
+      // about it instead of being asked to allow it.
       const consoleError = vi
         .spyOn(console, "error")
         .mockImplementation(() => {});
       selectsReturning([]);
-      mockUpdateReturning.mockResolvedValue([{ bookedCount: 9, capacity: 8 }]);
+      // The guarded claim finds no room; the forced write that follows takes
+      // the seat and raises the capacity.
+      mockUpdateReturning
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 1 }]);
 
       const response = await POST(paymentEvent({}, "cs_oversold"));
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -536,7 +542,7 @@ describe("POST /api/stripe/webhook", () => {
 
       expect(mockInsert).toHaveBeenCalled();
       expect(consoleError).toHaveBeenCalledWith(
-        expect.stringContaining("Over capacity"),
+        expect.stringContaining("Capacity raised"),
       );
       consoleError.mockRestore();
     });

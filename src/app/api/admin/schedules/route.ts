@@ -135,6 +135,25 @@ export async function PUT(request: Request) {
     ...(classId && { classId }),
   };
 
+  // Occupancy may not exceed capacity — the database refuses it. Caught here so
+  // the answer names the bookings in the way, rather than being a 500 on the
+  // schedule form: the seats have to be given back before the class shrinks.
+  if (capacity) {
+    const [existing] = await db
+      .select({ bookedCount: schedules.bookedCount })
+      .from(schedules)
+      .where(eq(schedules.id, id));
+
+    if (existing && capacity < existing.bookedCount) {
+      return NextResponse.json(
+        {
+          error: `This class has ${existing.bookedCount} seats taken, so its capacity cannot go down to ${capacity}. Cancel or release a booking first.`,
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   // Cancelling takes the offers outstanding on the class with it: the same
   // transaction, so a class that is cancelled never keeps seats held for a class
   // that is not happening. Nothing is asked of Gabrielle first — she cancels at

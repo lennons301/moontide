@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   date,
   integer,
   pgEnum,
@@ -70,20 +71,32 @@ export const classes = pgTable("classes", {
   bundleEligible: boolean("bundle_eligible").default(true).notNull(),
 });
 
-export const schedules = pgTable("schedules", {
-  id: serial("id").primaryKey(),
-  classId: integer("class_id")
-    .references(() => classes.id)
-    .notNull(),
-  date: date("date").notNull(),
-  startTime: time("start_time").notNull(),
-  endTime: time("end_time").notNull(),
-  capacity: integer("capacity").notNull().default(8),
-  bookedCount: integer("booked_count").notNull().default(0),
-  location: text("location"),
-  recurringRule: text("recurring_rule"),
-  status: scheduleStatus("status").notNull().default("open"),
-});
+export const schedules = pgTable(
+  "schedules",
+  {
+    id: serial("id").primaryKey(),
+    classId: integer("class_id")
+      .references(() => classes.id)
+      .notNull(),
+    date: date("date").notNull(),
+    startTime: time("start_time").notNull(),
+    endTime: time("end_time").notNull(),
+    capacity: integer("capacity").notNull().default(8),
+    bookedCount: integer("booked_count").notNull().default(0),
+    location: text("location"),
+    recurringRule: text("recurring_rule"),
+    status: scheduleStatus("status").notNull().default("open"),
+  },
+  (table) => ({
+    // Occupancy cannot record seats the class does not admit, and cannot go
+    // negative. Every capacity gate in the application is a read, and a read
+    // cannot refuse a write that a concurrent one has already made.
+    bookedCountWithinCapacity: check(
+      "schedules_booked_count_within_capacity",
+      sql`${table.bookedCount} >= 0 AND ${table.bookedCount} <= ${table.capacity}`,
+    ),
+  }),
+);
 
 export const bundles = pgTable("bundles", {
   id: serial("id").primaryKey(),

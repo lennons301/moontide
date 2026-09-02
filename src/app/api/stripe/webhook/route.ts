@@ -116,12 +116,13 @@ export async function POST(request: Request) {
           });
           // The customer has already paid, so the seat is taken regardless of
           // capacity: refusing someone who has been charged is the wrong
-          // outcome. The breach is reported instead of swallowed, and shows on
-          // the class in the admin so Gabrielle hears about it before the class.
+          // outcome. A full class has its capacity raised to admit the seat,
+          // and the raise is logged rather than swallowed: it is a change to a
+          // number Gabrielle set, made by a sale rather than by her.
           const claim = await forceClaimSeat(tx, scheduleId);
-          if (claim.overCapacity) {
+          if (claim.capacityRaised) {
             console.error(
-              `Over capacity: schedule ${scheduleId} is oversold after paid booking ${session.id}`,
+              `Capacity raised: schedule ${scheduleId} was full and took paid booking ${session.id}`,
             );
           }
         });

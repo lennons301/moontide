@@ -7,6 +7,7 @@ const {
   mockOrderBy,
   mockSelectWhere,
   mockSelectLimit,
+  mockSelectRows,
   mockInsertValues,
   mockReturning,
   mockUpdateSet,
@@ -22,7 +23,14 @@ const {
   const mockOrderBy = vi.fn().mockResolvedValue([]);
   const mockInnerJoin = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
   const mockSelectLimit = vi.fn().mockResolvedValue([]);
-  const mockSelectWhere = vi.fn().mockReturnValue({ limit: mockSelectLimit });
+  // The capacity guard awaits the where() directly; other reads go on to
+  // limit(). So the chain has to be both awaitable and chainable.
+  const mockSelectRows = vi.fn().mockReturnValue([]);
+  const mockSelectWhere = vi.fn(() =>
+    Object.assign(Promise.resolve(mockSelectRows()), {
+      limit: mockSelectLimit,
+    }),
+  );
   const mockSelectFrom = vi.fn().mockReturnValue({
     innerJoin: mockInnerJoin,
     where: mockSelectWhere,
@@ -76,6 +84,7 @@ const {
     mockOrderBy,
     mockSelectWhere,
     mockSelectLimit,
+    mockSelectRows,
     mockInsertValues,
     mockReturning,
     mockUpdateSet,
@@ -513,6 +522,13 @@ describe("PUT /api/admin/schedules", () => {
     vi.clearAllMocks();
     mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
     mockUpdateWhere.mockReturnValue({ returning: mockUpdateReturning });
+    // The GET suite resets this one to queue per-call results; the capacity
+    // guard reads through it, so put the base chain back.
+    mockSelectFrom.mockReturnValue({
+      innerJoin: mockInnerJoin,
+      where: mockSelectWhere,
+    });
+    mockSelectRows.mockReturnValue([]);
   });
 
   it("returns 200 when updating a schedule", async () => {
@@ -584,6 +600,39 @@ describe("PUT /api/admin/schedules", () => {
     expect(response.status).toBe(404);
     const body = await response.json();
     expect(body.error).toBe("Schedule not found");
+  });
+
+  it("refuses a capacity below the seats already taken", async () => {
+    // Occupancy may not exceed capacity, so the seats have to be given back
+    // before the class shrinks. Answering with the number in the way beats a
+    // constraint violation surfacing as a 500.
+    mockSelectRows.mockReturnValue([{ bookedCount: 6 }]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: 1, capacity: 5 }),
+    });
+
+    const response = await PUT(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toContain("6 seats taken");
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+  });
+
+  it("allows a capacity that still covers the seats already taken", async () => {
+    mockSelectRows.mockReturnValue([{ bookedCount: 6 }]);
+    mockUpdateReturning.mockResolvedValue([{ id: 1, capacity: 6 }]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: 1, capacity: 6 }),
+    });
+
+    const response = await PUT(request);
+    expect(response.status).toBe(200);
   });
 
   it("does not touch bookings or occupancy on an ordinary update", async () => {
@@ -710,7 +759,9 @@ describe("DELETE /api/admin/schedules", () => {
       innerJoin: mockInnerJoin,
       where: mockSelectWhere,
     });
-    mockSelectWhere.mockReturnValue({ limit: mockSelectLimit });
+    mockSelectWhere.mockReturnValue(
+      Object.assign(Promise.resolve([]), { limit: mockSelectLimit }),
+    );
     mockSelectLimit.mockResolvedValue([]);
     mockDeleteFrom.mockReturnValue({ where: mockDeleteWhere });
     mockDeleteWhere.mockResolvedValue(undefined);

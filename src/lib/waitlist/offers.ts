@@ -404,7 +404,8 @@ export function decideCheckoutSeat(input: {
  *
  * There is no refusal here, by design: the customer has been charged, so
  * "no seat for you" is never an answer. Capacity is not consulted — the paid
- * path takes the seat and reports the breach (see `forceClaimSeat`).
+ * path takes the seat and raises a full class's capacity to admit it, reporting
+ * the raise (see `forceClaimSeat`).
  */
 export type PaidSeatDecision =
   | {
