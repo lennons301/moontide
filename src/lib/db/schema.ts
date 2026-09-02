@@ -90,7 +90,11 @@ export const bundles = pgTable("bundles", {
   customerEmail: text("customer_email").notNull(),
   creditsTotal: integer("credits_total").notNull().default(6),
   creditsRemaining: integer("credits_remaining").notNull().default(6),
-  stripePaymentId: text("stripe_payment_id").notNull(),
+  stripePaymentId: text("stripe_payment_id").notNull().unique(),
+  // Which bundle product was bought. Nullable: bundles purchased before this
+  // column existed can only have it inferred from their credit count, and that
+  // is ambiguous once two configs sell the same number of credits.
+  bundleConfigId: integer("bundle_config_id").references(() => bundleConfig.id),
   purchasedAt: timestamp("purchased_at").defaultNow().notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   status: bundleStatus("status").notNull().default("active"),

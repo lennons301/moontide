@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Hoisted mocks - available inside vi.mock factories
 const {
   mockInsertValues,
+  mockInsertReturning,
   mockInsert,
   mockUpdateWhere,
   mockUpdateReturning,
@@ -19,7 +20,15 @@ const {
   mockDeleteWhere,
   mockFindOfferByToken,
 } = vi.hoisted(() => {
-  const mockInsertValues = vi.fn().mockResolvedValue([{ id: 1 }]);
+  // The bundle insert is guarded on the unique payment id and reads back what
+  // it wrote; the booking insert just awaits the values(). So the chain has to
+  // be both awaitable and chainable, as the update chain below already is.
+  const mockInsertReturning = vi.fn().mockResolvedValue([{ id: 1 }]);
+  const mockInsertValues = vi.fn((_values: Record<string, unknown>) =>
+    Object.assign(Promise.resolve([{ id: 1 }]), {
+      onConflictDoNothing: () => ({ returning: mockInsertReturning }),
+    }),
+  );
   const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
   // Occupancy writes read back the row via .returning(); plain updates just
   // await the where(), so the chain has to be both awaitable and chainable.
@@ -58,6 +67,7 @@ const {
     .mockResolvedValue({ success: true });
   return {
     mockInsertValues,
+    mockInsertReturning,
     mockInsert,
     mockUpdateWhere,
     mockUpdateReturning,
@@ -139,7 +149,12 @@ describe("POST /api/stripe/webhook", () => {
     vi.clearAllMocks();
     // Re-setup mock return values after clear
     mockInsert.mockReturnValue({ values: mockInsertValues });
-    mockInsertValues.mockResolvedValue([{ id: 1 }]);
+    mockInsertValues.mockImplementation((_values: Record<string, unknown>) =>
+      Object.assign(Promise.resolve([{ id: 1 }]), {
+        onConflictDoNothing: () => ({ returning: mockInsertReturning }),
+      }),
+    );
+    mockInsertReturning.mockResolvedValue([{ id: 1 }]);
     mockUpdate.mockReturnValue({ set: mockUpdateSet });
     mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
     mockUpdateWhere.mockImplementation(() =>
@@ -564,6 +579,9 @@ describe("POST /api/stripe/webhook", () => {
         stripePaymentId: "cs_test_bundle_456",
         creditsTotal: 6,
         creditsRemaining: 6,
+        // Recorded outright, so nothing downstream has to infer the product
+        // from the credit count.
+        bundleConfigId: 1,
       }),
     );
 
@@ -589,6 +607,43 @@ describe("POST /api/stripe/webhook", () => {
         customerEmail: "jane@example.com",
       }),
     );
+  });
+
+  it("grants nothing twice when a bundle purchase is redelivered", async () => {
+    mockBundleConfigWhere.mockResolvedValue([
+      { id: 1, name: "6-Class Bundle", credits: 6, expiryDays: 90 },
+    ]);
+    // The unique payment id caught it: this bundle is already on the table.
+    mockInsertReturning.mockResolvedValue([]);
+
+    mockConstructEvent.mockReturnValue({
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_test_bundle_456",
+          metadata: {
+            type: "bundle",
+            bundleConfigId: "1",
+            customerEmail: "jane@example.com",
+          },
+        },
+      },
+    } as unknown as Stripe.Event);
+
+    const request = new Request("http://localhost:3000/api/stripe/webhook", {
+      method: "POST",
+      headers: { "stripe-signature": "valid" },
+      body: "{}",
+    });
+
+    const response = await POST(request);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // 200, not an error: the first delivery did the work, so there is nothing
+    // for Stripe to retry.
+    expect(response.status).toBe(200);
+    expect(mockSendBundleConfirmation).not.toHaveBeenCalled();
+    expect(mockSendBookingNotification).not.toHaveBeenCalled();
   });
 
   it("returns 500 when bundle config not found", async () => {

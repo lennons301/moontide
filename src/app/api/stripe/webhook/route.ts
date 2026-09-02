@@ -191,13 +191,25 @@ export async function POST(request: Request) {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + config.expiryDays);
 
-      await db.insert(bundles).values({
-        customerEmail: metadata.customerEmail,
-        creditsTotal: config.credits,
-        creditsRemaining: config.credits,
-        stripePaymentId: session.id,
-        expiresAt,
-      });
+      // `stripe_payment_id` is unique, so a redelivered event conflicts rather
+      // than granting a second bundle of free credits. Nothing to insert means
+      // an earlier delivery already did the work — including the email.
+      const inserted = await db
+        .insert(bundles)
+        .values({
+          customerEmail: metadata.customerEmail,
+          creditsTotal: config.credits,
+          creditsRemaining: config.credits,
+          stripePaymentId: session.id,
+          bundleConfigId: config.id,
+          expiresAt,
+        })
+        .onConflictDoNothing({ target: bundles.stripePaymentId })
+        .returning({ id: bundles.id });
+
+      if (inserted.length === 0) {
+        return NextResponse.json({ received: true });
+      }
 
       const expiryDateFormatted = expiresAt.toLocaleDateString("en-GB", {
         day: "numeric",

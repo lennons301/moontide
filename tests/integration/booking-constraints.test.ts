@@ -2,27 +2,13 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { bookings, waitlistEntries } from "@/lib/db/schema";
+import { violatedConstraint } from "./support/constraints";
 import { createBooking, createSchedule } from "./support/factories";
 
 /**
  * The indexes that are the last line of defence against double booking. No
  * mocked test can reach them: they live in Postgres, not in the handlers.
  */
-
-/**
- * The index Postgres refused the write on. Drizzle wraps the driver error in
- * one of its own, so the constraint name is on the cause rather than the
- * message — asserting on the name keeps these tests about a specific index.
- */
-async function violatedConstraint(work: Promise<unknown>): Promise<string> {
-  try {
-    await work;
-  } catch (error) {
-    const cause = (error as { cause?: { constraint_name?: string } }).cause;
-    return cause?.constraint_name ?? String(error);
-  }
-  throw new Error("Expected the write to be refused, but it succeeded");
-}
 
 describe("bookings_schedule_email_active_idx", () => {
   it("refuses a second active booking for the same customer on the same class", async () => {
