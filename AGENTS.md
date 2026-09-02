@@ -15,7 +15,7 @@ Wellbeing website for women navigating change through yoga, coaching, and embodi
 - **Secrets:** Doppler (project: moontide, configs: dev/stg/prd)
 - **Dev Environment:** mise + just
 - **Deployment:** Vercel Hobby
-- **Testing:** Vitest (two projects: mocked unit tests, and integration tests against a real Postgres)
+- **Testing:** Vitest (three projects: mocked node + jsdom unit tests, and integration tests against a real Postgres)
 
 ## Commands
 
@@ -72,6 +72,14 @@ src/
     classes/[slug]/       # Dynamic class detail pages
   components/
     ui/                   # shadcn/ui components (button, input, textarea, label, sheet)
+    admin/                # Shared chrome for the admin tables
+      use-table-controls.ts   # Search + sort + filter state, and deriveTableRows
+      admin-table-toolbar.tsx # Search box, filter slot, "showing n of m"
+      table-headers.tsx       # SortableHead + SortHeader/PlainHeader (sort state by context)
+      table-filters.ts        # The status/class/upcoming-or-past filter set
+      pill-group.tsx          # Single-choice filter pills
+      status-badge.tsx        # Every admin status colour, in one map
+      format-date.ts          # The four date shapes the admin uses, plus todayString
     nav.tsx               # Header: burger left, logo right
     mobile-menu.tsx       # Full-screen menu with collapsible Classes section
     footer.tsx            # Site footer with service links
@@ -83,6 +91,8 @@ src/
   lib/
     auth.ts               # Better Auth server config
     auth-client.ts        # Better Auth client config
+    admin/
+      pricing-changes.ts  # The pricing page diff: confirm summary + PUT payload
     stripe.ts             # Stripe client singleton
     bookings/
       transitions.ts      # Pure cancel/release/reschedule decisions (no DB)
@@ -119,6 +129,12 @@ scripts/
     forget-new-migrations.mjs # Make this branch's migrations look unapplied, to replay them
     explain-migration-failure.mjs # Name the statement drizzle-kit died on (it says nothing)
 tests/
+  setup-dom.ts            # jsdom setup: jest-dom matchers, cleanup between tests
+  components/admin/*.test.tsx # Rendered admin chrome (PillGroup, headers, badge)
+  components/admin/use-table-controls.test.ts # deriveTableRows / toggleSortState
+  components/admin/format-date.test.ts # The four date shapes, and todayString
+  components/admin/table-filters.test.ts # Status/class/time filter composition
+  lib/admin-pricing-changes.test.ts # Pricing diff: summary and payload agree
   api/contact.test.ts     # Contact form API tests
   api/stripe-webhook.test.ts  # Stripe webhook handler tests
   api/book-checkout.test.ts   # Checkout session tests
@@ -165,6 +181,9 @@ drizzle/
 - **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
 - **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
 - **Linting:** Biome runs on pre-commit via husky. Run `just lint` to check/fix manually.
+- **Test environments:** the mocked suite is split by file extension — `tests/**/*.test.ts` runs in the `unit` project (node), `tests/**/*.test.tsx` runs in the `dom` project (jsdom, with `@testing-library/react` and `tests/setup-dom.ts`). The split is by extension, not directory, so a folder can hold both. Both are pinned to `TZ=UTC`: the admin date helpers format in the runtime timezone, so their expectations only hold on a machine that happens to be on UTC.
+- **Admin table chrome:** `src/components/admin/` holds one definition each of the pieces every admin table needs — the toolbar, the header row, the filter pills, the status badge and the date formats. Add to it rather than copying into a page. `SortableHead` carries the sort state from `useTableControls` by context, so a sortable column is declared as `<SortHeader label="Date" sortKey="date" />` and never wires `activeKey`/`direction`/`onClick`. Dates have four deliberate shapes (`formatDate`, `formatDateWithWeekday`, `formatDateTime`, `formatDeadline`); a fifth wants a fifth question, not a fifth option bag.
+- **Logic in `"use client"` pages:** a page component cannot be imported by a node test, so anything with branches goes into a module the page then wires up — `buildAdminTableFilters`, `buildChangeSummary`/`buildPricingPayload` (`src/lib/admin/pricing-changes.ts`), `selectRescheduleTargets` (`src/lib/bookings/transitions.ts`, beside the server rules it mirrors). `deriveTableRows` is the pattern.
 - **Auth:** Better Auth protects `/admin/*` routes via proxy. Login at `/admin/login`. There is one account — Gabrielle's — and no customer auth at all: bookings are keyed by email address. So **sign-up is disabled** (`disableSignUp` on the mounted instance, and `/api/auth/sign-up*` is refused at the proxy, which is why the matcher covers `/api/auth/:path*`). Accounts are created only by `scripts/seed-admin.ts`, which builds its own `createAuth({ allowSignUp: true })` instance in-process.
 - **The admin role:** `user.role` must be `"admin"` to get past the proxy. It is declared to Better Auth as an additional field with `input: false`, so no auth endpoint can set it — the seed script grants it with a direct `UPDATE`. Migration `0012` backfills every user that predates it, because they are all admin logins.
 - **Proxy session check:** `src/proxy.ts` resolves the cookie through `auth.api.getSession` rather than testing that a cookie exists — a cookie is a string a visitor can type. No session, a forged or expired token, a non-admin user, or a session lookup that throws are all refused (401 for `/api/admin/*`, redirect to login for pages). The proxy runs on the Node runtime, so it can reach the database directly. Tests: `tests/proxy.test.ts`.
@@ -192,7 +211,7 @@ drizzle/
 - **Vercel Cron:** Configured in `vercel.json`. Cron endpoints at `/api/cron/*` are protected by `CRON_SECRET` bearer token.
 - **DB transactions:** Multi-step mutations (e.g., booking insert + count increment) wrapped in `db.transaction()` for atomicity.
 - **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI: the mocked tests need nothing, and the integration project needs only the ephemeral Postgres the runner creates and destroys.
-- **Two test projects:** `vitest.config.ts` defines `unit` (everything in `tests/` except `tests/integration/`, drizzle mocked, no database) and `integration` (`tests/integration/**`, real Postgres). `just test` runs both; `just test-unit` runs the first alone.
+- **Three test projects:** `vitest.config.ts` defines `unit` (every `.test.ts` in `tests/` except `tests/integration/`, drizzle mocked, no database), `dom` (every `.test.tsx`, jsdom, components rendered) and `integration` (`tests/integration/**`, real Postgres). `just test` runs all three; `just test-unit` runs the two mocked ones, which need no database.
 - **Which kind to write:** default to a **mocked** test — they are the fast ones, and a rule that is a decision belongs in a pure function that needs no database at all (`src/lib/bookings/transitions.ts`, `src/lib/waitlist/offers.ts`, `src/lib/waitlist/digest.ts`). Write an **integration** test when the behaviour under test is Postgres's, not TypeScript's, and so a mock would only be asserting the shape of the statement you just wrote:
   - **SQL that has to execute** — the `GREATEST`/`LEAST` clamps, `CASE` expressions, anything inside a `sql` template.
   - **Constraints and indexes** — `bookings_schedule_email_active_idx` is the only real defence against a double booking, and no mock can refuse a write.

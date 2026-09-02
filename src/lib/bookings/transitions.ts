@@ -186,6 +186,35 @@ export function checkReschedulable<B extends BookingState>(
   return { ok: true, booking };
 }
 
+/** A schedule considered as somewhere a booking could be moved to. */
+export type RescheduleTarget = ScheduleState & { date: string };
+
+/**
+ * The schedules a booking may be offered as new dates, soonest first.
+ *
+ * These are the refusals `decideReschedule` would give, applied ahead of time
+ * so Gabrielle is never shown a date the server would reject — plus one the
+ * server has no opinion on: a date in the past, which is not a refusal but is
+ * never a useful offer. `today` is passed in rather than read so the boundary
+ * is testable.
+ */
+export function selectRescheduleTargets<S extends RescheduleTarget>(
+  schedules: S[],
+  source: { scheduleId: number; classId: number },
+  today: string,
+): S[] {
+  return schedules
+    .filter(
+      (s) =>
+        s.classId === source.classId &&
+        s.status !== "cancelled" &&
+        s.date >= today &&
+        s.id !== source.scheduleId &&
+        s.bookedCount < s.capacity,
+    )
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
 export function decideReschedule<
   B extends BookingState,
   S extends ScheduleState,

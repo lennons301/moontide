@@ -5,6 +5,15 @@ import { integrationDatabaseUrl } from "./tests/integration/support/database-url
 const alias = { "@": path.resolve(__dirname, "./src") };
 const ignored = ["**/node_modules/**", "**/.worktrees/**"];
 
+// The admin date helpers format in the runtime timezone, so pin it: otherwise
+// their expected strings only hold on a machine that happens to be on UTC.
+const env = { TZ: "UTC" };
+
+// Three projects. The mocked suite is split by file extension: `.test.ts` is
+// server/pure logic and runs in node, `.test.tsx` renders components and runs
+// in jsdom. The split is by extension rather than by directory so a folder can
+// hold both. `tests/integration` is the third: node again, but against a real
+// throwaway database.
 export default defineConfig({
   test: {
     projects: [
@@ -15,6 +24,18 @@ export default defineConfig({
           environment: "node",
           include: ["tests/**/*.test.ts"],
           exclude: [...ignored, "tests/integration/**"],
+          env,
+        },
+      },
+      {
+        resolve: { alias },
+        test: {
+          name: "dom",
+          environment: "jsdom",
+          include: ["tests/**/*.test.tsx"],
+          setupFiles: ["./tests/setup-dom.ts"],
+          exclude: ignored,
+          env,
         },
       },
       {
@@ -33,7 +54,7 @@ export default defineConfig({
           fileParallelism: false,
           // The code under test reads DATABASE_URL when it is imported, so the
           // singleton client can only ever reach the throwaway database.
-          env: { DATABASE_URL: integrationDatabaseUrl() },
+          env: { ...env, DATABASE_URL: integrationDatabaseUrl() },
         },
       },
     ],

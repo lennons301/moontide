@@ -2,6 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
+import { formatDate, formatDateTime } from "@/components/admin/format-date";
+import { PillGroup } from "@/components/admin/pill-group";
+import { StatusBadge } from "@/components/admin/status-badge";
+import {
+  buildAdminTableFilters,
+  type TimeFilter,
+} from "@/components/admin/table-filters";
+import {
+  PlainHeader,
+  SortableHead,
+  SortHeader,
+} from "@/components/admin/table-headers";
 import { useTableControls } from "@/components/admin/use-table-controls";
 import { describeReleaseEffect } from "@/lib/bookings/transitions";
 import { RescheduleSheet } from "./reschedule-sheet";
@@ -69,30 +81,6 @@ type StatusFilter =
   | "cancelled"
   | "waitlisted"
   | "released";
-type TimeFilter = "upcoming" | "past" | "all";
-
-function todayString() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function formatDateTime(dateStr: string) {
-  return new Date(dateStr).toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function formatPrice(priceInPence: number) {
   return `£${(priceInPence / 100).toFixed(2)}`;
@@ -104,66 +92,6 @@ function daysWaiting(releasedAt: string) {
   );
   if (days <= 0) return "today";
   return `${days} ${days === 1 ? "day" : "days"}`;
-}
-
-function PillGroup<T extends string>({
-  value,
-  onChange,
-  options,
-  label,
-}: {
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: string }[];
-  label: string;
-}) {
-  return (
-    <div className="flex items-center gap-1">
-      <span className="text-xs text-deep-ocean/60">{label}:</span>
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-            value === opt.value
-              ? "bg-deep-tide-blue text-dawn-light"
-              : "bg-soft-moonstone/30 text-deep-ocean hover:bg-soft-moonstone/50"
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SortHeader({
-  label,
-  sortKey,
-  activeKey,
-  direction,
-  onClick,
-}: {
-  label: string;
-  sortKey: string;
-  activeKey: string;
-  direction: "asc" | "desc";
-  onClick: () => void;
-}) {
-  const active = sortKey === activeKey;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-deep-ocean hover:text-deep-tide-blue"
-    >
-      {label}
-      {active && (
-        <span aria-hidden="true">{direction === "asc" ? "↑" : "↓"}</span>
-      )}
-    </button>
-  );
 }
 
 export default function BookingsPage() {
@@ -202,23 +130,18 @@ export default function BookingsPage() {
       .then((d) => setClassTypes(d));
   }, [fetchBookings, fetchSchedules]);
 
-  const filters = useMemo(() => {
-    const today = todayString();
-    const map: Record<string, (row: BookingRow) => boolean> = {};
-    if (statusFilter !== "all") {
-      map.status = (row) => row.bookings.status === statusFilter;
-    }
-    if (classFilter !== "all") {
-      const id = Number(classFilter);
-      map.class = (row) => row.classes.id === id;
-    }
-    if (timeFilter === "upcoming") {
-      map.time = (row) => row.schedules.date >= today;
-    } else if (timeFilter === "past") {
-      map.time = (row) => row.schedules.date < today;
-    }
-    return map;
-  }, [statusFilter, classFilter, timeFilter]);
+  const filters = useMemo(
+    () =>
+      buildAdminTableFilters<BookingRow>(
+        { status: statusFilter, classId: classFilter, time: timeFilter },
+        {
+          status: (row) => row.bookings.status,
+          classId: (row) => row.classes.id,
+          date: (row) => row.schedules.date,
+        },
+      ),
+    [statusFilter, classFilter, timeFilter],
+  );
 
   const { rows, search, setSearch, sort, toggleSort, total } =
     useTableControls<BookingRow>({
@@ -247,23 +170,6 @@ export default function BookingsPage() {
         ),
     [allBookings],
   );
-
-  function statusBadge(status: string) {
-    const colours: Record<string, string> = {
-      confirmed: "bg-seagrass/20 text-seagrass",
-      cancelled: "bg-red-100 text-red-700",
-      waitlisted: "bg-ocean-light-blue/20 text-ocean-light-blue",
-      released: "bg-bright-orange/20 text-bright-orange",
-      held: "bg-deep-tide-blue/10 text-deep-tide-blue",
-    };
-    return (
-      <span
-        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colours[status] || "bg-gray-100 text-gray-600"}`}
-      >
-        {status}
-      </span>
-    );
-  }
 
   function paymentType(row: BookingRow) {
     // A held seat occupies capacity but nobody has paid for it — calling that
@@ -442,55 +348,15 @@ export default function BookingsPage() {
 
       <div className="overflow-x-auto rounded-lg border border-soft-moonstone/30 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-soft-moonstone/20 bg-dawn-light">
-            <tr>
-              <th className="px-4 py-3">
-                <SortHeader
-                  label="Customer"
-                  sortKey="customer"
-                  activeKey={sort.key}
-                  direction={sort.direction}
-                  onClick={() => toggleSort("customer")}
-                />
-              </th>
-              <th className="px-4 py-3">
-                <SortHeader
-                  label="Class"
-                  sortKey="class"
-                  activeKey={sort.key}
-                  direction={sort.direction}
-                  onClick={() => toggleSort("class")}
-                />
-              </th>
-              <th className="px-4 py-3">
-                <SortHeader
-                  label="Date"
-                  sortKey="date"
-                  activeKey={sort.key}
-                  direction={sort.direction}
-                  onClick={() => toggleSort("date")}
-                />
-              </th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
-                Time
-              </th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
-                Payment
-              </th>
-              <th className="px-4 py-3">
-                <SortHeader
-                  label="Status"
-                  sortKey="status"
-                  activeKey={sort.key}
-                  direction={sort.direction}
-                  onClick={() => toggleSort("status")}
-                />
-              </th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
-                Actions
-              </th>
-            </tr>
-          </thead>
+          <SortableHead sort={sort} toggleSort={toggleSort}>
+            <SortHeader label="Customer" sortKey="customer" />
+            <SortHeader label="Class" sortKey="class" />
+            <SortHeader label="Date" sortKey="date" />
+            <PlainHeader label="Time" />
+            <PlainHeader label="Payment" />
+            <SortHeader label="Status" sortKey="status" />
+            <PlainHeader label="Actions" />
+          </SortableHead>
           <tbody className="divide-y divide-soft-moonstone/10">
             {loading ? (
               <tr>
@@ -543,7 +409,7 @@ export default function BookingsPage() {
                   </td>
                   <td className="px-4 py-3">{paymentType(item)}</td>
                   <td className="px-4 py-3">
-                    {statusBadge(item.bookings.status)}
+                    <StatusBadge status={item.bookings.status} />
                     {!item.bookings.emailSent &&
                       item.bookings.status !== "held" && (
                         <button

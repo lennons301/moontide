@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
+import { formatDate } from "@/components/admin/format-date";
+import { PillGroup } from "@/components/admin/pill-group";
+import { StatusBadge } from "@/components/admin/status-badge";
+import {
+  PlainHeader,
+  SortableHead,
+  SortHeader,
+} from "@/components/admin/table-headers";
 import { useTableControls } from "@/components/admin/use-table-controls";
 
 interface Bundle {
@@ -17,74 +25,6 @@ interface Bundle {
 }
 
 type StatusFilter = "all" | "active" | "expired" | "exhausted";
-
-function PillGroup<T extends string>({
-  value,
-  onChange,
-  options,
-  label,
-}: {
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: string }[];
-  label: string;
-}) {
-  return (
-    <div className="flex items-center gap-1">
-      <span className="text-xs text-deep-ocean/60">{label}:</span>
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-            value === opt.value
-              ? "bg-deep-tide-blue text-dawn-light"
-              : "bg-soft-moonstone/30 text-deep-ocean hover:bg-soft-moonstone/50"
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SortHeader({
-  label,
-  sortKey,
-  activeKey,
-  direction,
-  onClick,
-}: {
-  label: string;
-  sortKey: string;
-  activeKey: string;
-  direction: "asc" | "desc";
-  onClick: () => void;
-}) {
-  const active = sortKey === activeKey;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-deep-ocean hover:text-deep-tide-blue"
-    >
-      {label}
-      {active && (
-        <span aria-hidden="true">{direction === "asc" ? "↑" : "↓"}</span>
-      )}
-    </button>
-  );
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 export default function BundlesPage() {
   const [allBundles, setAllBundles] = useState<Bundle[]>([]);
@@ -130,21 +70,6 @@ export default function BundlesPage() {
       filters,
       defaultSort: { key: "expires", direction: "asc" },
     });
-
-  function statusBadge(status: string) {
-    const colours: Record<string, string> = {
-      active: "bg-seagrass/20 text-seagrass",
-      expired: "bg-red-100 text-red-700",
-      exhausted: "bg-ocean-light-blue/20 text-ocean-light-blue",
-    };
-    return (
-      <span
-        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colours[status] || "bg-gray-100 text-gray-600"}`}
-      >
-        {status}
-      </span>
-    );
-  }
 
   async function handleResendEmail(bundleId: number) {
     const res = await fetch("/api/admin/resend-email", {
@@ -196,49 +121,13 @@ export default function BundlesPage() {
 
       <div className="overflow-x-auto rounded-lg border border-soft-moonstone/30 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-soft-moonstone/20 bg-dawn-light">
-            <tr>
-              <th className="px-4 py-3">
-                <SortHeader
-                  label="Customer"
-                  sortKey="customer"
-                  activeKey={sort.key}
-                  direction={sort.direction}
-                  onClick={() => toggleSort("customer")}
-                />
-              </th>
-              <th className="px-4 py-3">
-                <SortHeader
-                  label="Purchased"
-                  sortKey="purchased"
-                  activeKey={sort.key}
-                  direction={sort.direction}
-                  onClick={() => toggleSort("purchased")}
-                />
-              </th>
-              <th className="px-4 py-3">
-                <SortHeader
-                  label="Expires"
-                  sortKey="expires"
-                  activeKey={sort.key}
-                  direction={sort.direction}
-                  onClick={() => toggleSort("expires")}
-                />
-              </th>
-              <th className="px-4 py-3">
-                <SortHeader
-                  label="Credits used"
-                  sortKey="used"
-                  activeKey={sort.key}
-                  direction={sort.direction}
-                  onClick={() => toggleSort("used")}
-                />
-              </th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-deep-ocean">
-                Status
-              </th>
-            </tr>
-          </thead>
+          <SortableHead sort={sort} toggleSort={toggleSort}>
+            <SortHeader label="Customer" sortKey="customer" />
+            <SortHeader label="Purchased" sortKey="purchased" />
+            <SortHeader label="Expires" sortKey="expires" />
+            <SortHeader label="Credits used" sortKey="used" />
+            <PlainHeader label="Status" />
+          </SortableHead>
           <tbody className="divide-y divide-soft-moonstone/10">
             {loading ? (
               <tr>
@@ -275,7 +164,7 @@ export default function BundlesPage() {
                     {bundle.creditsTotal}
                   </td>
                   <td className="px-4 py-3">
-                    {statusBadge(bundle.status)}
+                    <StatusBadge status={bundle.status} />
                     {!bundle.emailSent && (
                       <button
                         type="button"
