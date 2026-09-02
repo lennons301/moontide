@@ -321,9 +321,14 @@ describe("POST /api/book/checkout", () => {
             quantity: 1,
           }),
         ],
+        // The terms travel with the payment, so the webhook grants what she
+        // was sold rather than the config as it stands when it runs.
         metadata: expect.objectContaining({
           type: "bundle",
           bundleConfigId: "1",
+          bundleName: "6-Class Bundle",
+          bundleCredits: "6",
+          bundleExpiryDays: "90",
           customerEmail: "jane@example.com",
         }),
       }),
