@@ -11,4 +11,9 @@ interface ImportMeta {
     pattern: string,
     options: { eager: true },
   ): Record<string, Record<string, unknown>>;
+  /** The same sweep, reading the files as text rather than importing them. */
+  glob(
+    pattern: string,
+    options: { eager: true; query: "?raw"; import: "default" },
+  ): Record<string, string>;
 }

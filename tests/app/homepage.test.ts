@@ -1,49 +1,31 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
-import { sanityClient } from "@/lib/sanity/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  servicesQuery,
-  siteSettingsQuery,
-  trainerQuery,
-} from "@/lib/sanity/queries";
+  CMS_IMAGE,
+  givenCmsHolds,
+  givenCmsUnreachable,
+  resetContentSource,
+} from "../support/content";
+import { IMAGE_URL } from "../support/sanity-client";
 
-vi.mock("@/lib/sanity/client", () => ({
-  sanityClient: { fetch: vi.fn() },
-  urlFor: () => ({
-    width: () => ({ height: () => ({ url: () => "https://cdn/photo.jpg" }) }),
-  }),
-}));
+vi.mock(
+  "@/lib/sanity/client",
+  async () => (await import("../support/sanity-client")).sanityModuleMock,
+);
 
-// `fetch` is heavily overloaded; the homepage only ever calls the query form.
-const fetchMock = sanityClient.fetch as unknown as Mock<
-  (query: string) => Promise<unknown>
->;
-
-/** Answer each homepage query with a value, or throw when given an Error. */
-function respondWith(answers: Record<string, unknown>) {
-  fetchMock.mockImplementation(async (query: string) => {
-    const answer = answers[query];
-    if (answer instanceof Error) throw answer;
-    return answer ?? null;
-  });
-}
+afterEach(resetContentSource);
 
 async function renderHomePage() {
   const { default: HomePage } = await import("@/app/page");
   return renderToStaticMarkup(await HomePage());
 }
 
-beforeEach(() => {
-  fetchMock.mockReset();
-});
+/** next/image URL-encodes the src it was given. */
+const encodedImageUrl = encodeURIComponent(IMAGE_URL);
 
 describe("HomePage", () => {
-  it("renders fallback content when every Sanity fetch fails", async () => {
-    respondWith({
-      [servicesQuery]: new Error("ENOTFOUND api.sanity.io"),
-      [trainerQuery]: new Error("ENOTFOUND api.sanity.io"),
-      [siteSettingsQuery]: new Error("ENOTFOUND api.sanity.io"),
-    });
+  it("renders fallback content when Sanity is unreachable", async () => {
+    givenCmsUnreachable();
 
     const html = await renderHomePage();
 
@@ -57,13 +39,12 @@ describe("HomePage", () => {
     expect(html).toContain("Private Classes");
     // About preview — still there, named, without a photo
     expect(html).toContain("Gabrielle");
-    // next/image URL-encodes the src it was given
-    expect(html).not.toContain("cdn%2Fphoto.jpg");
+    expect(html).not.toContain(encodedImageUrl);
   });
 
   it("renders CMS content when Sanity answers", async () => {
-    respondWith({
-      [servicesQuery]: [
+    givenCmsHolds({
+      services: [
         {
           _id: "service-prenatal",
           title: "Prenatal Yoga (CMS)",
@@ -72,13 +53,13 @@ describe("HomePage", () => {
           bookingType: "stripe",
         },
       ],
-      [trainerQuery]: {
+      trainer: {
         _id: "trainer",
         name: "Gabrielle Waring",
         shortBio: "Yoga teacher, coach, and mother.",
-        photo: { _type: "image", asset: { _ref: "image-abc", _type: "ref" } },
+        photo: CMS_IMAGE,
       },
-      [siteSettingsQuery]: {
+      siteSettings: {
         title: "Moontide",
         contactEmail: "hello@example.com",
         heroTagline: "Light moving across water",
@@ -91,18 +72,18 @@ describe("HomePage", () => {
     expect(html).toContain("Prenatal Yoga (CMS)");
     expect(html).toContain("Gabrielle Waring");
     expect(html).toContain("Yoga teacher, coach, and mother.");
-    expect(html).toContain("cdn%2Fphoto.jpg");
+    expect(html).toContain(encodedImageUrl);
   });
 
   it("degrades each section independently", async () => {
-    respondWith({
-      [servicesQuery]: new Error("query failed"),
-      [trainerQuery]: {
+    givenCmsHolds({
+      services: new Error("query failed"),
+      trainer: {
         _id: "trainer",
         name: "Gabrielle Waring",
         shortBio: "Yoga teacher, coach, and mother.",
       },
-      [siteSettingsQuery]: {
+      siteSettings: {
         title: "Moontide",
         contactEmail: "hello@example.com",
         heroTagline: "Light moving across water",

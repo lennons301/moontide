@@ -6,9 +6,7 @@ import {
 } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Nav } from "@/components/nav";
-import { sanityClient } from "@/lib/sanity/client";
-import { siteSettingsQuery } from "@/lib/sanity/queries";
-import type { SiteSettings } from "@/lib/sanity/types";
+import { getSiteSettings } from "@/lib/content/site-settings";
 import "./globals.css";
 
 const playfair = Playfair_Display({
@@ -38,25 +36,17 @@ export const metadata: Metadata = {
 
 /**
  * The root layout wraps every route, including `/book`, which has no Sanity
- * dependency of its own. The only thing this read is used for is the footer's
- * Instagram link, so a CMS outage must cost that link and nothing else — an
- * uncaught throw here would throw inside every page's render.
+ * dependency of its own. The only thing its site-settings read is used for is
+ * the footer's Instagram link, so a CMS outage must cost that link and nothing
+ * else — an uncaught throw here would throw inside every page's render.
+ * `getSiteSettings` is where that is guaranteed.
  */
-async function loadSiteSettings(): Promise<SiteSettings | null> {
-  try {
-    return await sanityClient.fetch<SiteSettings | null>(siteSettingsQuery);
-  } catch {
-    // Sanity unreachable — the footer renders without its Instagram link
-    return null;
-  }
-}
-
 export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const siteSettings = await loadSiteSettings();
+  const siteSettings = await getSiteSettings();
 
   return (
     <html
@@ -66,7 +56,7 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Nav />
         <main className="flex-1">{children}</main>
-        <Footer instagramUrl={siteSettings?.instagramUrl} />
+        <Footer instagramUrl={siteSettings.instagramUrl} />
       </body>
     </html>
   );

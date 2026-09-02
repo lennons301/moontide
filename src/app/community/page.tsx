@@ -1,41 +1,21 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { PortableText } from "next-sanity";
-import { sanityClient, urlFor } from "@/lib/sanity/client";
-import { communityEventsQuery, serviceBySlugQuery } from "@/lib/sanity/queries";
-import type { CommunityEvent, Service } from "@/lib/sanity/types";
+import { getCommunityEvents } from "@/lib/content/community";
+import { getService } from "@/lib/content/services";
+import { urlFor } from "@/lib/sanity/client";
 
 export const metadata: Metadata = { title: "Creating Community — Moontide" };
 
 export const revalidate = 3600;
 
-const fallbackDescription = `Connection is at the heart of everything I do. Creating Community is about bringing women together to share, to grow and to be seen — away from the relentless pace of everyday life.
-
-Gatherings take the form of seasonal rituals, workshops, day retreats and online events. Each one is thoughtfully held, weaving together movement, reflection, conversation and rest.
-
-Whether you are new to this kind of gathering or have been part of women's circles for years, all are welcome.`;
-
 export default async function CommunityPage() {
-  let service: Service | null = null;
-  let events: CommunityEvent[] = [];
+  const [service, events] = await Promise.all([
+    getService("community"),
+    getCommunityEvents(),
+  ]);
 
-  try {
-    service = await sanityClient.fetch<Service>(serviceBySlugQuery, {
-      slug: "community",
-    });
-  } catch {
-    // Sanity not connected yet — use fallback content
-  }
-
-  try {
-    const fetched =
-      await sanityClient.fetch<CommunityEvent[]>(communityEventsQuery);
-    events = fetched ?? [];
-  } catch {
-    // Sanity not connected yet
-  }
-
-  const imageUrl = service?.image
+  const imageUrl = service.image
     ? urlFor(service.image).width(1200).height(500).url()
     : null;
 
@@ -66,14 +46,14 @@ export default async function CommunityPage() {
           <div className="w-8 h-0.5 bg-bright-orange mb-8" />
 
           <div className="text-deep-ocean leading-relaxed mb-12 space-y-4">
-            {service?.fullDescription ? (
+            {service.fullDescription ? (
               <div className="prose prose-stone">
                 <PortableText value={service.fullDescription} />
               </div>
             ) : (
-              fallbackDescription
-                .split("\n\n")
-                .map((para, i) => <p key={i}>{para}</p>)
+              service.descriptionParagraphs.map((para, i) => (
+                <p key={i}>{para}</p>
+              ))
             )}
           </div>
         </div>
