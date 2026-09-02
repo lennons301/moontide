@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock(
+  "@/lib/auth",
+  async () => (await import("../support/admin-session")).authModuleMock,
+);
+
 const { mockUpdateSet, mockUpdateWhere, mockUpdateReturning } = vi.hoisted(
   () => {
     const mockUpdateReturning = vi.fn();

@@ -1,5 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { bookings, schedules, waitlistEntries } from "@/lib/db/schema";
 import {
@@ -7,15 +8,20 @@ import {
   findWaitlistEntry,
 } from "@/lib/waitlist/held-seats";
 import { hasOfferLapsed, summariseOfferOccupancy } from "@/lib/waitlist/offers";
+import { ApiError, withAdmin } from "../_lib";
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const raw = url.searchParams.get("scheduleId");
-  const scheduleId = raw ? Number(raw) : NaN;
+/** Query strings are strings; the coercion is the parse. */
+function idParam(message: string) {
+  return z.coerce
+    .number({ error: message })
+    .int({ error: message })
+    .positive({ error: message });
+}
 
-  if (!raw || Number.isNaN(scheduleId)) {
-    return NextResponse.json({ error: "Missing scheduleId" }, { status: 400 });
-  }
+const listQuery = z.object({ scheduleId: idParam("Missing scheduleId") });
+
+export const GET = withAdmin({ query: listQuery }, async ({ query }) => {
+  const { scheduleId } = query;
 
   const rows = await db
     .select()
@@ -75,16 +81,12 @@ export async function GET(request: Request) {
         }
       : null,
   });
-}
+});
 
-export async function DELETE(request: Request) {
-  const url = new URL(request.url);
-  const raw = url.searchParams.get("id");
-  const id = raw ? Number(raw) : NaN;
+const removeQuery = z.object({ id: idParam("Missing id") });
 
-  if (!raw || Number.isNaN(id)) {
-    return NextResponse.json({ error: "Missing id" }, { status: 400 });
-  }
+export const DELETE = withAdmin({ query: removeQuery }, async ({ query }) => {
+  const { id } = query;
 
   // Removing someone who is holding a seat would strand it, so the two actions
   // stay distinct: withdraw the offer first, then remove them if that is what
@@ -93,12 +95,9 @@ export async function DELETE(request: Request) {
   if (entry?.heldBookingId) {
     const heldBookingStatus = await findHeldBookingStatus(entry.heldBookingId);
     if (heldBookingStatus === "held") {
-      return NextResponse.json(
-        {
-          error:
-            "This person has an offer outstanding — withdraw it first, then remove them",
-        },
-        { status: 409 },
+      throw new ApiError(
+        409,
+        "This person has an offer outstanding — withdraw it first, then remove them",
       );
     }
   }
@@ -109,11 +108,8 @@ export async function DELETE(request: Request) {
     .returning();
 
   if (removed.length === 0) {
-    return NextResponse.json(
-      { error: "Waitlist entry not found" },
-      { status: 404 },
-    );
+    throw new ApiError(404, "Waitlist entry not found");
   }
 
   return NextResponse.json({ deleted: true });
-}
+});

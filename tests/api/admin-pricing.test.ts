@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock(
+  "@/lib/auth",
+  async () => (await import("../support/admin-session")).authModuleMock,
+);
+
 const {
   mockSelectFrom,
   mockWhere,
@@ -88,7 +93,9 @@ describe("GET /api/admin/pricing", () => {
         where: vi.fn().mockResolvedValue(mockBundleConfigs),
       });
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost:3000/api/admin/pricing"),
+    );
     expect(response.status).toBe(200);
 
     const body = await response.json();

@@ -4,32 +4,20 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  type BundleConfigRow as BundleConfig,
+  buildChangeSummary,
+  buildPricingPayload,
+  type ClassPriceRow,
+  penceToPounds,
+} from "@/lib/admin/pricing-changes";
 
-interface ClassPrice {
-  id: number;
-  title: string;
+interface ClassPrice extends ClassPriceRow {
   slug: string;
-  priceInPence: number;
-  bundleEligible: boolean;
 }
 
-interface BundleConfigRow {
-  id: number;
-  name: string;
-  priceInPence: number;
-  credits: number;
-  expiryDays: number;
+interface BundleConfigRow extends BundleConfig {
   active: boolean;
-}
-
-function penceToPounds(pence: number) {
-  return (pence / 100).toFixed(2);
-}
-
-function poundsToPence(pounds: string) {
-  const parsed = Number.parseFloat(pounds);
-  if (Number.isNaN(parsed) || parsed < 0) return 0;
-  return Math.round(parsed * 100);
 }
 
 export default function PricingPage() {
@@ -80,60 +68,17 @@ export default function PricingPage() {
     return String(bc[field]);
   }
 
-  function buildChangeSummary(): string[] {
-    const changes: string[] = [];
+  const rows = { classes, bundleConfigs };
+  const edits = {
+    classPrices: classEdits,
+    classEligibility: eligibilityEdits,
+    bundles: bundleEdits,
+  };
 
-    for (const c of classes) {
-      if (classEdits[c.id] !== undefined) {
-        const newPence = poundsToPence(classEdits[c.id]);
-        if (newPence !== c.priceInPence) {
-          changes.push(
-            `${c.title}: £${penceToPounds(c.priceInPence)} → £${penceToPounds(newPence)}`,
-          );
-        }
-      }
-
-      const eligible = eligibilityEdits[c.id];
-      if (eligible !== undefined && eligible !== c.bundleEligible) {
-        changes.push(
-          `${c.title}: ${eligible ? "now bookable" : "no longer bookable"} with a bundle`,
-        );
-      }
-    }
-
-    for (const bc of bundleConfigs) {
-      const edits = bundleEdits[bc.id];
-      if (!edits) continue;
-
-      if (edits.priceInPence !== undefined) {
-        const newPence = poundsToPence(edits.priceInPence);
-        if (newPence !== bc.priceInPence) {
-          changes.push(
-            `${bc.name} price: £${penceToPounds(bc.priceInPence)} → £${penceToPounds(newPence)}`,
-          );
-        }
-      }
-      if (edits.credits !== undefined) {
-        const newCredits = Number.parseInt(edits.credits, 10);
-        if (newCredits !== bc.credits) {
-          changes.push(`${bc.name} credits: ${bc.credits} → ${newCredits}`);
-        }
-      }
-      if (edits.expiryDays !== undefined) {
-        const newDays = Number.parseInt(edits.expiryDays, 10);
-        if (newDays !== bc.expiryDays) {
-          changes.push(
-            `${bc.name} expiry: ${bc.expiryDays} days → ${newDays} days`,
-          );
-        }
-      }
-    }
-
-    return changes;
-  }
+  const changes = buildChangeSummary(rows, edits);
+  const hasChanges = changes.length > 0;
 
   async function handleSave() {
-    const changes = buildChangeSummary();
     if (changes.length === 0) return;
 
     const confirmed = window.confirm(
@@ -142,74 +87,12 @@ export default function PricingPage() {
     if (!confirmed) return;
 
     setSaving(true);
-
-    const classUpdatePayload = classes
-      .map((c) => {
-        const update: {
-          id: number;
-          priceInPence?: number;
-          bundleEligible?: boolean;
-        } = { id: c.id };
-
-        if (classEdits[c.id] !== undefined) {
-          const newPence = poundsToPence(classEdits[c.id]);
-          if (newPence !== c.priceInPence) update.priceInPence = newPence;
-        }
-        const eligible = eligibilityEdits[c.id];
-        if (eligible !== undefined && eligible !== c.bundleEligible) {
-          update.bundleEligible = eligible;
-        }
-
-        return update;
-      })
-      .filter(
-        (u) => u.priceInPence !== undefined || u.bundleEligible !== undefined,
-      );
-
-    const bundleUpdatePayload = bundleConfigs
-      .filter((bc) => bundleEdits[bc.id])
-      .map((bc) => {
-        const edits = bundleEdits[bc.id];
-        const update: {
-          id: number;
-          priceInPence?: number;
-          credits?: number;
-          expiryDays?: number;
-        } = { id: bc.id };
-
-        if (edits.priceInPence !== undefined) {
-          const newPence = poundsToPence(edits.priceInPence);
-          if (newPence !== bc.priceInPence) update.priceInPence = newPence;
-        }
-        if (edits.credits !== undefined) {
-          const newCredits = Number.parseInt(edits.credits, 10);
-          if (newCredits !== bc.credits) update.credits = newCredits;
-        }
-        if (edits.expiryDays !== undefined) {
-          const newDays = Number.parseInt(edits.expiryDays, 10);
-          if (newDays !== bc.expiryDays) update.expiryDays = newDays;
-        }
-
-        return update;
-      })
-      .filter(
-        (u) =>
-          u.priceInPence !== undefined ||
-          u.credits !== undefined ||
-          u.expiryDays !== undefined,
-      );
-
-    const payload: Record<string, unknown> = {};
-    if (classUpdatePayload.length > 0) payload.classes = classUpdatePayload;
-    if (bundleUpdatePayload.length > 0)
-      payload.bundleConfigs = bundleUpdatePayload;
-
     setError(null);
 
     const res = await fetch("/api/admin/pricing", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(buildPricingPayload(rows, edits)),
     });
 
     if (res.ok) {
@@ -221,8 +104,6 @@ export default function PricingPage() {
 
     setSaving(false);
   }
-
-  const hasChanges = buildChangeSummary().length > 0;
 
   return (
     <div>

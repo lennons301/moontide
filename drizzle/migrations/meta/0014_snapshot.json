@@ -1,6 +1,6 @@
 {
-  "id": "347e5d65-65dc-4eb8-928e-c0c4bd599f18",
-  "prevId": "36216bc2-05f4-42c1-89a9-4a6931c1d750",
+  "id": "7d9947e9-245e-4fa7-a795-3e688ed98715",
+  "prevId": "53630dec-9921-4a2a-bbf9-9fd15f33d463",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -368,12 +368,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "bundle_config_id": {
-          "name": "bundle_config_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "purchased_at": {
           "name": "purchased_at",
           "type": "timestamp",
@@ -401,6 +395,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "bundle_config_id": {
+          "name": "bundle_config_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -416,13 +416,7 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "bundles_stripe_payment_id_unique": {
-          "name": "bundles_stripe_payment_id_unique",
-          "nullsNotDistinct": false,
-          "columns": ["stripe_payment_id"]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

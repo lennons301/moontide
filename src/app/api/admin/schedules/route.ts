@@ -1,10 +1,12 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import { voidOffersOnCancellation } from "@/lib/waitlist/cancellation";
+import { ApiError, withAdmin } from "../_lib";
 
-export async function GET() {
+export const GET = withAdmin({}, async () => {
   const scheduleRows = await db
     .select()
     .from(schedules)
@@ -45,10 +47,42 @@ export async function GET() {
   }));
 
   return NextResponse.json(enriched);
-}
+});
 
-export async function POST(request: Request) {
-  const body = await request.json();
+const missingFields = { error: "Missing required fields" };
+const missingId = { error: "Missing schedule ID" };
+const badCapacity = { error: "Capacity must be a whole number of seats" };
+const badWeeks = { error: "Number of weeks must be a whole number" };
+const badLocation = { error: "Location must be text" };
+const badRepeat = { error: "Repeat weekly must be true or false" };
+
+const scheduleId = z.number(missingId).int(missingId).positive(missingId);
+
+/**
+ * Zero is accepted, not refused. The capacity box on `/admin/schedule` is not
+ * required, so clearing it sends `Number("") === 0`, and both handlers already
+ * read that as "use the default" (`capacity || 8`) or "leave it alone"
+ * (`...(capacity && …)`). Refusing it here would fail the whole edit — silently,
+ * because the form only reacts to success.
+ */
+const seatCount = z
+  .number(badCapacity)
+  .int(badCapacity)
+  .nonnegative(badCapacity);
+const weekCount = z.number(badWeeks).int(badWeeks).nonnegative(badWeeks);
+
+const createBody = z.object({
+  classId: z.number(missingFields).int(missingFields).positive(missingFields),
+  date: z.string(missingFields).min(1, missingFields),
+  startTime: z.string(missingFields).min(1, missingFields),
+  endTime: z.string(missingFields).min(1, missingFields),
+  capacity: seatCount.nullish(),
+  location: z.string(badLocation).nullish(),
+  repeatWeekly: z.boolean(badRepeat).nullish(),
+  numberOfWeeks: weekCount.nullish(),
+});
+
+export const POST = withAdmin({ body: createBody }, async ({ body }) => {
   const {
     classId,
     date,
@@ -59,13 +93,6 @@ export async function POST(request: Request) {
     repeatWeekly,
     numberOfWeeks,
   } = body;
-
-  if (!classId || !date || !startTime || !endTime) {
-    return NextResponse.json(
-      { error: "Missing required fields" },
-      { status: 400 },
-    );
-  }
 
   if (repeatWeekly) {
     const weeks = numberOfWeeks || 1;
@@ -104,52 +131,62 @@ export async function POST(request: Request) {
     .returning();
 
   return NextResponse.json(result[0], { status: 201 });
-}
+});
 
-export async function PUT(request: Request) {
-  const body = await request.json();
-  const {
-    id,
-    date,
-    startTime,
-    endTime,
-    capacity,
-    location,
-    status,
-    classId,
-    repeatWeekly,
-    numberOfWeeks,
-  } = body;
+/**
+ * An update applies only the fields that are set, so anything the form leaves
+ * empty means "leave it alone" rather than "refuse the edit" — the same reason
+ * `seatCount` allows zero. The schema types the fields and no more.
+ */
+const updateBody = z.object({
+  id: scheduleId,
+  date: z.string({ error: "Date must be a date like 2026-06-09" }).nullish(),
+  startTime: z
+    .string({ error: "Start time must be a time like 09:00" })
+    .nullish(),
+  endTime: z.string({ error: "End time must be a time like 10:00" }).nullish(),
+  capacity: seatCount.nullish(),
+  location: z.string(badLocation).nullable().optional(),
+  status: z
+    .enum(["open", "full", "cancelled"], {
+      error: "Status must be open, full or cancelled",
+    })
+    .nullish(),
+  classId: z
+    .number({ error: "Class must be a whole number" })
+    .int({ error: "Class must be a whole number" })
+    .nonnegative({ error: "Class must be a whole number" })
+    .nullish(),
+  repeatWeekly: z.boolean(badRepeat).nullish(),
+  numberOfWeeks: weekCount.nullish(),
+});
 
-  if (!id) {
-    return NextResponse.json({ error: "Missing schedule ID" }, { status: 400 });
-  }
+export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
+  const { id, location, repeatWeekly, numberOfWeeks } = body;
 
   const updateFields = {
-    ...(date && { date }),
-    ...(startTime && { startTime }),
-    ...(endTime && { endTime }),
-    ...(capacity && { capacity }),
+    ...(body.date && { date: body.date }),
+    ...(body.startTime && { startTime: body.startTime }),
+    ...(body.endTime && { endTime: body.endTime }),
+    ...(body.capacity && { capacity: body.capacity }),
     ...(location !== undefined && { location }),
-    ...(status && { status }),
-    ...(classId && { classId }),
+    ...(body.status && { status: body.status }),
+    ...(body.classId && { classId: body.classId }),
   };
 
   // Occupancy may not exceed capacity — the database refuses it. Caught here so
   // the answer names the bookings in the way, rather than being a 500 on the
   // schedule form: the seats have to be given back before the class shrinks.
-  if (capacity) {
+  if (body.capacity) {
     const [existing] = await db
       .select({ bookedCount: schedules.bookedCount })
       .from(schedules)
       .where(eq(schedules.id, id));
 
-    if (existing && capacity < existing.bookedCount) {
-      return NextResponse.json(
-        {
-          error: `This class has ${existing.bookedCount} seats taken, so its capacity cannot go down to ${capacity}. Cancel or release a booking first.`,
-        },
-        { status: 400 },
+    if (existing && body.capacity < existing.bookedCount) {
+      throw new ApiError(
+        400,
+        `This class has ${existing.bookedCount} seats taken, so its capacity cannot go down to ${body.capacity}. Cancel or release a booking first.`,
       );
     }
   }
@@ -177,10 +214,7 @@ export async function PUT(request: Request) {
     });
 
     if (!cancelled) {
-      return NextResponse.json(
-        { error: "Schedule not found" },
-        { status: 404 },
-      );
+      throw new ApiError(404, "Schedule not found");
     }
 
     return NextResponse.json(cancelled);
@@ -188,7 +222,7 @@ export async function PUT(request: Request) {
 
   // If adding recurrence to an existing schedule, update the original
   // and create N-1 additional weekly rows
-  if (repeatWeekly && numberOfWeeks > 1) {
+  if (repeatWeekly && numberOfWeeks && numberOfWeeks > 1) {
     const groupId = crypto.randomUUID();
     const recurringRule = `weekly:${groupId}`;
 
@@ -200,10 +234,7 @@ export async function PUT(request: Request) {
       .returning();
 
     if (updated.length === 0) {
-      return NextResponse.json(
-        { error: "Schedule not found" },
-        { status: 404 },
-      );
+      throw new ApiError(404, "Schedule not found");
     }
 
     const base = updated[0];
@@ -239,17 +270,16 @@ export async function PUT(request: Request) {
     .returning();
 
   if (result.length === 0) {
-    return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
+    throw new ApiError(404, "Schedule not found");
   }
 
   return NextResponse.json(result[0]);
-}
+});
 
-export async function DELETE(request: Request) {
-  const { id } = await request.json();
-  if (!id) {
-    return NextResponse.json({ error: "Missing schedule ID" }, { status: 400 });
-  }
+const deleteBody = z.object({ id: scheduleId });
+
+export const DELETE = withAdmin({ body: deleteBody }, async ({ body }) => {
+  const { id } = body;
 
   const existingBookings = await db
     .select({ id: bookings.id })
@@ -258,15 +288,12 @@ export async function DELETE(request: Request) {
     .limit(1);
 
   if (existingBookings.length > 0) {
-    return NextResponse.json(
-      {
-        error:
-          "Cannot delete a schedule that has bookings. Cancel the class instead.",
-      },
-      { status: 409 },
+    throw new ApiError(
+      409,
+      "Cannot delete a schedule that has bookings. Cancel the class instead.",
     );
   }
 
   await db.delete(schedules).where(eq(schedules.id, id));
   return NextResponse.json({ deleted: true });
-}
+});

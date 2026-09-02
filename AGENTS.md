@@ -8,6 +8,7 @@ Wellbeing website for women navigating change through yoga, coaching, and embodi
 - **Database:** Neon (Postgres) with Drizzle ORM
 - **CMS:** Sanity (project ID: 77icfczp, dataset: production)
 - **Auth:** Better Auth (admin-only, email/password)
+- **Validation:** Zod 4 (request schemas for `/api/admin/*`)
 - **Payments:** Stripe Checkout + webhooks
 - **UI:** shadcn/ui + Tailwind CSS v4
 - **Email:** Resend
@@ -15,7 +16,7 @@ Wellbeing website for women navigating change through yoga, coaching, and embodi
 - **Secrets:** Doppler (project: moontide, configs: dev/stg/prd)
 - **Dev Environment:** mise + just
 - **Deployment:** Vercel Hobby
-- **Testing:** Vitest (two projects: mocked unit tests, and integration tests against a real Postgres)
+- **Testing:** Vitest (three projects: mocked node + jsdom unit tests, and integration tests against a real Postgres)
 
 ## Commands
 
@@ -47,6 +48,8 @@ src/
         checkout/         # Create Stripe Checkout session (individual + bundle, or an offered held seat)
         redeem/           # Redeem bundle credit (new seat or an offered held seat)
       admin/
+        _lib/             # withAdmin: session + role, body/query parsing, one error shape
+        resend-email/     # POST resend a booking or bundle confirmation
         schedules/        # CRUD API for class schedules
         waitlist/         # GET waiting list + occupancy, DELETE an entry
         waitlist/offer/   # POST offer a held seat, DELETE withdraw it
@@ -72,6 +75,14 @@ src/
     classes/[slug]/       # Dynamic class detail pages
   components/
     ui/                   # shadcn/ui components (button, input, textarea, label, sheet)
+    admin/                # Shared chrome for the admin tables
+      use-table-controls.ts   # Search + sort + filter state, and deriveTableRows
+      admin-table-toolbar.tsx # Search box, filter slot, "showing n of m"
+      table-headers.tsx       # SortableHead + SortHeader/PlainHeader (sort state by context)
+      table-filters.ts        # The status/class/upcoming-or-past filter set
+      pill-group.tsx          # Single-choice filter pills
+      status-badge.tsx        # Every admin status colour, in one map
+      format-date.ts          # The four date shapes the admin uses, plus todayString
     nav.tsx               # Header: burger left, logo right
     mobile-menu.tsx       # Full-screen menu with collapsible Classes section
     footer.tsx            # Site footer with service links
@@ -83,6 +94,8 @@ src/
   lib/
     auth.ts               # Better Auth server config
     auth-client.ts        # Better Auth client config
+    admin/
+      pricing-changes.ts  # The pricing page diff: confirm summary + PUT payload
     stripe.ts             # Stripe client singleton
     bookings/
       transitions.ts      # Pure cancel/release/reschedule decisions (no DB)
@@ -119,6 +132,21 @@ scripts/
     forget-new-migrations.mjs # Make this branch's migrations look unapplied, to replay them
     explain-migration-failure.mjs # Name the statement drizzle-kit died on (it says nothing)
 tests/
+  setup-dom.ts            # jsdom setup: jest-dom matchers, cleanup between tests
+  support/admin-session.ts # The fake admin session the admin route tests run behind
+  admin/with-admin.test.ts # The request module: auth, parsing, error shape
+  admin/routes-are-protected.test.ts # Every /api/admin handler, signed out and demoted
+  admin/bookings.test.ts      # Booking list + cancel/release/reschedule wiring
+  admin/bundles.test.ts       # Bundle list
+  admin/classes.test.ts       # Active class list
+  admin/messages.test.ts      # Contact message read flag
+  admin/resend-email.test.ts  # Resending a booking or bundle confirmation
+  admin/validation-messages.test.ts # No admin refusal is phrased by zod
+  components/admin/*.test.tsx # Rendered admin chrome (PillGroup, headers, badge)
+  components/admin/use-table-controls.test.ts # deriveTableRows / toggleSortState
+  components/admin/format-date.test.ts # The four date shapes, and todayString
+  components/admin/table-filters.test.ts # Status/class/time filter composition
+  lib/admin-pricing-changes.test.ts # Pricing diff: summary and payload agree
   api/contact.test.ts     # Contact form API tests
   api/stripe-webhook.test.ts  # Stripe webhook handler tests
   api/book-checkout.test.ts   # Checkout session tests
@@ -167,14 +195,17 @@ drizzle/
 - **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
 - **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
 - **Linting:** Biome runs on pre-commit via husky. Run `just lint` to check/fix manually.
+- **Test environments:** the mocked suite is split by file extension — `tests/**/*.test.ts` runs in the `unit` project (node), `tests/**/*.test.tsx` runs in the `dom` project (jsdom, with `@testing-library/react` and `tests/setup-dom.ts`). The split is by extension, not directory, so a folder can hold both. Both are pinned to `TZ=UTC`: the admin date helpers format in the runtime timezone, so their expectations only hold on a machine that happens to be on UTC.
+- **Admin table chrome:** `src/components/admin/` holds one definition each of the pieces every admin table needs — the toolbar, the header row, the filter pills, the status badge and the date formats. Add to it rather than copying into a page. `SortableHead` carries the sort state from `useTableControls` by context, so a sortable column is declared as `<SortHeader label="Date" sortKey="date" />` and never wires `activeKey`/`direction`/`onClick`. Dates have four deliberate shapes (`formatDate`, `formatDateWithWeekday`, `formatDateTime`, `formatDeadline`); a fifth wants a fifth question, not a fifth option bag.
+- **Logic in `"use client"` pages:** a page component cannot be imported by a node test, so anything with branches goes into a module the page then wires up — `buildAdminTableFilters`, `buildChangeSummary`/`buildPricingPayload` (`src/lib/admin/pricing-changes.ts`), `selectRescheduleTargets` (`src/lib/bookings/transitions.ts`, beside the server rules it mirrors). `deriveTableRows` is the pattern.
 - **Auth:** Better Auth protects `/admin/*` routes via proxy. Login at `/admin/login`. There is one account — Gabrielle's — and no customer auth at all: bookings are keyed by email address. So **sign-up is disabled** (`disableSignUp` on the mounted instance, and `/api/auth/sign-up*` is refused at the proxy, which is why the matcher covers `/api/auth/:path*`). Accounts are created only by `scripts/seed-admin.ts`, which builds its own `createAuth({ allowSignUp: true })` instance in-process.
 - **The admin role:** `user.role` must be `"admin"` to get past the proxy. It is declared to Better Auth as an additional field with `input: false`, so no auth endpoint can set it — the seed script grants it with a direct `UPDATE`. Migration `0012` backfills every user that predates it, because they are all admin logins.
 - **Proxy session check:** `src/proxy.ts` resolves the cookie through `auth.api.getSession` rather than testing that a cookie exists — a cookie is a string a visitor can type. No session, a forged or expired token, a non-admin user, or a session lookup that throws are all refused (401 for `/api/admin/*`, redirect to login for pages). The proxy runs on the Node runtime, so it can reach the database directly. Tests: `tests/proxy.test.ts`.
-- **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on the proxy; handler-level enforcement is a separate piece of work).
+- **Admin APIs:** Every handler under `/api/admin/*` is `withAdmin(schema, handler)` from `src/app/api/admin/_lib`, and nothing else. It resolves the session through `auth.api.getSession` and insists on the admin role (401 with no session, a forged one or a lookup that throws; 403 for a real session on a non-admin), parses `schema.body` and `schema.query` with zod, and renders every failure as `{ error }` through the one `jsonError`. So a handler receives `{ body, query, user, request }` — parsed values, never a `Request` to pick apart — and never validates, never reads `request.json()`, never constructs an error response. **Every validation message is written into the schema** (`z.number({ error: "Missing schedule ID" })`), because the response says exactly what the schema said; repeated messages are collapsed, so three fields sharing "Missing required fields" answer with it once. A refusal is **thrown** as `ApiError(status, message)` — including from inside `db.transaction`, where the throw is also the rollback — and `refuse(decision)` is the shorthand for the `{ ok: false, error, httpStatus }` the pure decision functions return. Anything else thrown is a fault: logged, and answered `500 { error: "Something went wrong" }`. Checking auth here as well as at the proxy is deliberate: the proxy is a matcher, and a handler that refuses on its own does not depend on being routed through anything. Tests: `tests/admin/with-admin.test.ts` for the module, `tests/admin/routes-are-protected.test.ts` for the sweep — it **discovers** the routes with `import.meta.glob("/src/app/api/admin/**/route.ts")` rather than listing them, so a new route directory is swept the moment it exists and a handler that forgets the module fails. `tests/admin/validation-messages.test.ts` holds the convention up: it feeds every admin schema the awkward bodies and asserts the answer is never one of zod's own phrasings, because the admin pages put `data.error` straight into a `window.alert`.
 - **Stripe webhook:** At `/api/stripe/webhook` — reads raw body for signature verification, never parse JSON before verifying.
 - **Booking flow:** `/api/book/checkout` (Stripe Checkout) and `/api/book/redeem` (bundle credit). Checkout handles both individual and bundle purchases via `type` field, and an offered held seat via `offerToken`.
 - **Prices in pence:** Class prices stored in `classes.priceInPence`. Bundle config (price, credits, expiry) stored in `bundleConfig` table — editable via admin UI at `/admin/pricing`.
-- **Bundle config:** The `bundleConfig` table holds bundle products (price, credits, expiry days). Checkout attaches `bundleConfigId` to Stripe session metadata; webhook reads it back to set credits and expiry on the purchased bundle. Changes only affect new purchases. The purchased bundle records the product it came from in `bundles.bundleConfigId`, a real FK — nullable, because bundles bought before that column existed can only have it inferred from their credit count, and that inference is ambiguous the moment two configs sell the same number of credits. Migration `0013` backfills the ones where the credit count names exactly one config and leaves the rest null.
+- **Bundle config:** The `bundleConfig` table holds bundle products (price, credits, expiry days). Checkout attaches `bundleConfigId` to Stripe session metadata; webhook reads it back to set credits and expiry on the purchased bundle. Changes only affect new purchases. The webhook also **records which config was bought** on `bundles.bundleConfigId`, a real FK, so a later read names the right product: the resend route used to join on `creditsTotal = credits`, which picks the wrong config the moment two of them sell the same number of classes. Nullable, because bundles bought before the column existed can only have it inferred from their credit count. Migration `0013` adds the column and backfills the old rows with exactly that credit-count guess, once. `/api/cron/retry-emails` still joins on credits and should be moved onto the column too.
 - **One bundle per payment:** `bundles.stripePaymentId` is unique, and the webhook's bundle insert is guarded with `onConflictDoNothing` and returns early when it wrote nothing. A redelivered `checkout.session.completed` is then a no-op rather than a second bundle of free credits and a second confirmation email — the individual branch has always had a guard of its own, and this is the bundle branch's. The constraint is the part that holds under two deliveries at once; the guard is what keeps a redelivery from becoming a 500 Stripe would retry forever.
 - **Bundle redemption:** Email-based lookup, no customer auth required. Expiry set per-bundle from config at purchase time. Refuses cancelled classes (read of `schedules.status`) and full classes (via `claimSeat`, so the capacity check is never a read taken beforehand). Capacity is enforced by `claimSeat`, and backstopped by the `schedules_booked_count_within_capacity` CHECK.
 - **Schedule occupancy:** `src/lib/schedule-occupancy.ts` owns every write to `schedules.bookedCount` — routes never adjust it directly. `claimSeat` is a guarded, atomic claim (the capacity check is the UPDATE's WHERE clause) that returns `{ claimed: false }` rather than throwing; `forceClaimSeat` always takes the seat for already-paid paths — a guarded claim first, and when the class is full a second write that takes the seat and raises `capacity` with it (`GREATEST`, so a seat freed in between can never pull capacity down), reporting `{ capacityRaised }`; `releaseSeat` frees a seat clamped at zero, and `releaseSeats` frees several in one clamped statement so a batch release cannot be half applied.
@@ -198,7 +229,7 @@ drizzle/
 - **Vercel Cron:** Configured in `vercel.json`. Cron endpoints at `/api/cron/*` are protected by `CRON_SECRET` bearer token.
 - **DB transactions:** Multi-step mutations (e.g., booking insert + count increment) wrapped in `db.transaction()` for atomicity.
 - **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI: the mocked tests need nothing, and the integration project needs only the ephemeral Postgres the runner creates and destroys.
-- **Two test projects:** `vitest.config.ts` defines `unit` (everything in `tests/` except `tests/integration/`, drizzle mocked, no database) and `integration` (`tests/integration/**`, real Postgres). `just test` runs both; `just test-unit` runs the first alone.
+- **Three test projects:** `vitest.config.ts` defines `unit` (every `.test.ts` in `tests/` except `tests/integration/`, drizzle mocked, no database), `dom` (every `.test.tsx`, jsdom, components rendered) and `integration` (`tests/integration/**`, real Postgres). `just test` runs all three; `just test-unit` runs the two mocked ones, which need no database.
 - **Which kind to write:** default to a **mocked** test — they are the fast ones, and a rule that is a decision belongs in a pure function that needs no database at all (`src/lib/bookings/transitions.ts`, `src/lib/waitlist/offers.ts`, `src/lib/waitlist/digest.ts`). Write an **integration** test when the behaviour under test is Postgres's, not TypeScript's, and so a mock would only be asserting the shape of the statement you just wrote:
   - **SQL that has to execute** — the `GREATEST`/`LEAST` clamps, `CASE` expressions, anything inside a `sql` template.
   - **Constraints and indexes** — `bookings_schedule_email_active_idx` is the only real defence against a double booking, and no mock can refuse a write.

@@ -1,5 +1,6 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
+import { z } from "zod";
 import {
   checkReschedulable,
   decideCancel,
@@ -10,11 +11,9 @@ import { db } from "@/lib/db";
 import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
 import { sendRescheduleNotification } from "@/lib/email";
 import { claimSeat, releaseSeat } from "@/lib/schedule-occupancy";
+import { ApiError, refuse, withAdmin } from "../_lib";
 
-/** Signals that the atomic claim on the target schedule was refused. */
-class TargetFullError extends Error {}
-
-export async function GET() {
+export const GET = withAdmin({}, async () => {
   const result = await db
     .select()
     .from(bookings)
@@ -22,7 +21,7 @@ export async function GET() {
     .innerJoin(classes, eq(schedules.classId, classes.id))
     .orderBy(desc(bookings.createdAt));
   return NextResponse.json(result);
-}
+});
 
 async function findBooking(id: number) {
   const rows = await db.select().from(bookings).where(eq(bookings.id, id));
@@ -48,30 +47,36 @@ function restoreBundleCredit(tx: Tx, bundleId: number) {
     .where(eq(bundles.id, bundleId));
 }
 
-export async function PUT(request: Request) {
-  const body = await request.json();
-  const { id, status, newScheduleId } = body as {
-    id?: number;
-    status?: string;
-    newScheduleId?: number;
-  };
+const missing = { error: "Missing required fields" };
+const badTarget = { error: "Choose a class to move the booking to" };
 
-  if (!id || (!status && !newScheduleId)) {
-    return NextResponse.json(
-      { error: "Missing required fields" },
-      { status: 400 },
-    );
-  }
+const transitionBody = z
+  .object({
+    id: z.number(missing).int(missing).positive(missing),
+    // Left as a string, not an enum: the branches below name the two statuses
+    // they handle and answer "Invalid status" for anything else, so the schema
+    // and the handler say the same thing.
+    status: z.string({ error: "Invalid status" }).optional(),
+    newScheduleId: z
+      .number(badTarget)
+      .int(badTarget)
+      .positive(badTarget)
+      .optional(),
+  })
+  // One of the two says what to do with the booking; without either there is
+  // no transition to make.
+  .refine(
+    (b) => b.status !== undefined || b.newScheduleId !== undefined,
+    missing,
+  );
+
+export const PUT = withAdmin({ body: transitionBody }, async ({ body }) => {
+  const { id, status, newScheduleId } = body;
 
   // Cancel branch
   if (status === "cancelled") {
     const decision = decideCancel(await findBooking(id));
-    if (!decision.ok) {
-      return NextResponse.json(
-        { error: decision.error },
-        { status: decision.httpStatus },
-      );
-    }
+    if (!decision.ok) refuse(decision);
 
     await db.transaction(async (tx) => {
       await tx
@@ -95,12 +100,7 @@ export async function PUT(request: Request) {
   // Gabrielle reschedules them.
   if (status === "released") {
     const decision = decideRelease(await findBooking(id));
-    if (!decision.ok) {
-      return NextResponse.json(
-        { error: decision.error },
-        { status: decision.httpStatus },
-      );
-    }
+    if (!decision.ok) refuse(decision);
 
     await db.transaction(async (tx) => {
       await tx
@@ -119,12 +119,7 @@ export async function PUT(request: Request) {
   // Reschedule branch
   if (newScheduleId) {
     const reschedulable = checkReschedulable(await findBooking(id));
-    if (!reschedulable.ok) {
-      return NextResponse.json(
-        { error: reschedulable.error },
-        { status: reschedulable.httpStatus },
-      );
-    }
+    if (!reschedulable.ok) refuse(reschedulable);
     const { booking } = reschedulable;
 
     const decision = decideReschedule({
@@ -133,12 +128,7 @@ export async function PUT(request: Request) {
       target: await findSchedule(newScheduleId),
       newScheduleId,
     });
-    if (!decision.ok) {
-      return NextResponse.json(
-        { error: decision.error },
-        { status: decision.httpStatus },
-      );
-    }
+    if (!decision.ok) refuse(decision);
     const { source, target } = decision;
 
     const classRows = await db
@@ -147,39 +137,30 @@ export async function PUT(request: Request) {
       .where(eq(classes.id, source.classId));
     const classInfo = classRows[0];
 
-    try {
-      await db.transaction(async (tx) => {
-        await tx
-          .update(bookings)
-          .set({
-            scheduleId: newScheduleId,
-            rescheduledAt: new Date(),
-            originalScheduleId: decision.originalScheduleId,
-            // Moving a released booking onto a new date settles what was owed.
-            status: decision.nextStatus,
-            releasedAt: null,
-          })
-          .where(eq(bookings.id, id));
-        // A released booking already handed its seat back, so only the target
-        // schedule moves.
-        if (decision.decrementSource) {
-          await releaseSeat(tx, source.id);
-        }
-        const claim = await claimSeat(tx, target.id);
-        if (!claim.claimed) {
-          // Lost a race for the last place since the check above; roll back.
-          throw new TargetFullError();
-        }
-      });
-    } catch (error) {
-      if (error instanceof TargetFullError) {
-        return NextResponse.json(
-          { error: "Target class is full" },
-          { status: 400 },
-        );
+    await db.transaction(async (tx) => {
+      await tx
+        .update(bookings)
+        .set({
+          scheduleId: newScheduleId,
+          rescheduledAt: new Date(),
+          originalScheduleId: decision.originalScheduleId,
+          // Moving a released booking onto a new date settles what was owed.
+          status: decision.nextStatus,
+          releasedAt: null,
+        })
+        .where(eq(bookings.id, id));
+      // A released booking already handed its seat back, so only the target
+      // schedule moves.
+      if (decision.decrementSource) {
+        await releaseSeat(tx, source.id);
       }
-      throw error;
-    }
+      const claim = await claimSeat(tx, target.id);
+      if (!claim.claimed) {
+        // Lost a race for the last place since the check above. The throw is
+        // both the refusal and the rollback.
+        throw new ApiError(400, "Target class is full");
+      }
+    });
 
     after(async () => {
       try {
@@ -203,5 +184,5 @@ export async function PUT(request: Request) {
     return NextResponse.json({ success: true });
   }
 
-  return NextResponse.json({ error: "Invalid status" }, { status: 400 });
-}
+  throw new ApiError(400, "Invalid status");
+});

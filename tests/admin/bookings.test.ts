@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock(
+  "@/lib/auth",
+  async () => (await import("../support/admin-session")).authModuleMock,
+);
+
 const {
   mockSelectFrom,
   mockSelectWhere,
@@ -54,6 +59,7 @@ vi.mock("@/lib/db/schema", () => ({
     scheduleId: "schedule_id",
     status: "status",
     bundleId: "bundle_id",
+    createdAt: "created_at",
   },
   schedules: {
     id: "id",
@@ -91,7 +97,12 @@ vi.mock("next/server", async () => {
   return { ...actual, after: mockAfter };
 });
 
-import { PUT } from "@/app/api/admin/bookings/route";
+import { GET, PUT } from "@/app/api/admin/bookings/route";
+import {
+  signedInAsAdmin,
+  signedInAsNonAdmin,
+  signedOut,
+} from "../support/admin-session";
 
 function makeRequest(body: unknown) {
   return new Request("http://localhost:3000/api/admin/bookings", {
@@ -412,5 +423,66 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
     await PUT(makeRequest({ id: 1, newScheduleId: 20 }));
     const bookingUpdateCall = mockTxUpdateSet.mock.calls[0]?.[0];
     expect(bookingUpdateCall.originalScheduleId).toBe(5);
+  });
+});
+
+describe("GET /api/admin/bookings", () => {
+  const ROW = {
+    bookings: SAMPLE_BOOKING,
+    schedules: SAMPLE_SOURCE,
+    classes: SAMPLE_CLASS,
+  };
+
+  // The list joins twice and orders, where every other read here ends at
+  // .where(); give this describe its own tail on the chain.
+  let mockOrderBy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    signedInAsAdmin();
+    mockOrderBy = vi.fn().mockResolvedValue([ROW]);
+    const innerJoin: ReturnType<typeof vi.fn> = vi.fn(() => ({
+      innerJoin,
+      orderBy: mockOrderBy,
+    }));
+    mockSelectFrom.mockReturnValue({ innerJoin });
+  });
+
+  function listRequest() {
+    return new Request("http://localhost:3000/api/admin/bookings");
+  }
+
+  it("returns every booking with its schedule and class, newest first", async () => {
+    const response = await GET(listRequest());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([ROW]);
+    expect(mockOrderBy).toHaveBeenCalledWith("created_at");
+  });
+
+  it("returns an empty list when there are no bookings", async () => {
+    mockOrderBy.mockResolvedValue([]);
+
+    const response = await GET(listRequest());
+    expect(await response.json()).toEqual([]);
+  });
+
+  it("refuses an unauthenticated caller without reading the table", async () => {
+    signedOut();
+
+    const response = await GET(listRequest());
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "Unauthorized" });
+    expect(mockSelectFrom).not.toHaveBeenCalled();
+  });
+
+  it("refuses a signed-in caller who is not the admin", async () => {
+    signedInAsNonAdmin();
+
+    const response = await GET(listRequest());
+
+    expect(response.status).toBe(403);
+    expect(mockSelectFrom).not.toHaveBeenCalled();
   });
 });

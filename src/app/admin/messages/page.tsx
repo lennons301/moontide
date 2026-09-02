@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
+import { formatDateTime } from "@/components/admin/format-date";
+import { PillGroup } from "@/components/admin/pill-group";
 import { useTableControls } from "@/components/admin/use-table-controls";
 import { Button } from "@/components/ui/button";
 
@@ -17,48 +19,6 @@ interface Message {
 }
 
 type StatusFilter = "all" | "unread" | "read";
-
-function PillGroup<T extends string>({
-  value,
-  onChange,
-  options,
-  label,
-}: {
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: string }[];
-  label: string;
-}) {
-  return (
-    <div className="flex items-center gap-1">
-      <span className="text-xs text-deep-ocean/60">{label}:</span>
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
-            value === opt.value
-              ? "bg-deep-tide-blue text-dawn-light"
-              : "bg-soft-moonstone/30 text-deep-ocean hover:bg-soft-moonstone/50"
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 export default function MessagesPage() {
   const router = useRouter();
@@ -139,7 +99,7 @@ export default function MessagesPage() {
             &lt;{selected.email}&gt;
           </div>
           <div className="mt-1 text-xs text-deep-ocean/40">
-            {formatDate(selected.createdAt)}
+            {formatDateTime(selected.createdAt)}
           </div>
           <div className="mt-6 whitespace-pre-wrap text-sm leading-relaxed text-deep-ocean">
             {selected.message}
@@ -209,7 +169,7 @@ export default function MessagesPage() {
                   </div>
                 </div>
                 <div className="shrink-0 text-xs text-deep-ocean/40">
-                  {formatDate(msg.createdAt)}
+                  {formatDateTime(msg.createdAt)}
                 </div>
               </div>
             </button>

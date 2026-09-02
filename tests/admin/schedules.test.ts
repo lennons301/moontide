@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock(
+  "@/lib/auth",
+  async () => (await import("../support/admin-session")).authModuleMock,
+);
+
 // Hoisted mocks
 const {
   mockSelectFrom,
@@ -176,7 +181,9 @@ describe("GET /api/admin/schedules", () => {
     ];
     mockOrderBy.mockResolvedValue(mockSchedules);
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost:3000/api/admin/schedules"),
+    );
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toHaveLength(1);
@@ -188,7 +195,9 @@ describe("GET /api/admin/schedules", () => {
   it("returns 200 with empty list when no schedules", async () => {
     mockOrderBy.mockResolvedValue([]);
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost:3000/api/admin/schedules"),
+    );
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toEqual([]);
@@ -260,7 +269,9 @@ describe("GET /api/admin/schedules", () => {
         }),
       }); // held-seat count query
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost:3000/api/admin/schedules"),
+    );
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toHaveLength(2);
@@ -296,7 +307,9 @@ describe("GET /api/admin/schedules", () => {
         }),
       });
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost:3000/api/admin/schedules"),
+    );
     const body = await response.json();
     // A full class with a held seat is not eight people coming.
     expect(body[0].heldCount).toBe(1);
@@ -374,6 +387,30 @@ describe("POST /api/admin/schedules", () => {
     const body = await response.json();
     expect(body.capacity).toBe(12);
     expect(body.location).toBe("Studio 1, Hove");
+  });
+
+  // The capacity box on /admin/schedule is not required, so clearing it sends
+  // 0. That has always meant "use the default"; refusing it would fail the whole
+  // create, and the form shows nothing when a request fails.
+  it("treats a cleared capacity box as the default, not a refusal", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        capacity: 0,
+        numberOfWeeks: 0,
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ capacity: 8 }),
+    );
   });
 
   it("returns 400 when required fields are missing", async () => {
@@ -565,6 +602,30 @@ describe("PUT /api/admin/schedules", () => {
     expect(body.id).toBe(1);
     expect(body.date).toBe("2026-05-02");
     expect(body.capacity).toBe(10);
+  });
+
+  it("leaves capacity alone when the box was cleared, and still saves the rest", async () => {
+    mockUpdateReturning.mockResolvedValue([
+      { id: 1, classId: 1, date: "2026-05-02", capacity: 8 },
+    ]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: 1,
+        date: "2026-05-02",
+        startTime: "10:00",
+        endTime: "11:00",
+        capacity: 0,
+      }),
+    });
+
+    const response = await PUT(request);
+    expect(response.status).toBe(200);
+    const fields = mockUpdateSet.mock.calls[0]?.[0];
+    expect(fields).not.toHaveProperty("capacity");
+    expect(fields).toMatchObject({ date: "2026-05-02", startTime: "10:00" });
   });
 
   it("returns 400 when id is missing", async () => {

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import { sendSeatOffer } from "@/lib/email";
@@ -14,14 +15,10 @@ import {
 import {
   decideMakeOffer,
   decideWithdrawOffer,
-  isHoldDuration,
+  HOLD_DURATIONS,
 } from "@/lib/waitlist/offers";
 import { releaseHeldSeat } from "@/lib/waitlist/settlement";
-
-/** Signals that the seat was gone by the time the guarded claim ran. */
-class NoFreeSeatError extends Error {}
-/** Signals that the person already holds an active booking for this class. */
-class AlreadyBookedError extends Error {}
+import { ApiError, refuse, withAdmin } from "../../_lib";
 
 /**
  * Possession of this link is the sole authorisation to take the seat, matching
@@ -32,36 +29,25 @@ function newOfferToken() {
   return randomBytes(32).toString("base64url");
 }
 
-function parseEntryId(request: Request, fromBody?: unknown) {
-  if (fromBody !== undefined) {
-    const value = Number(fromBody);
-    return Number.isNaN(value) ? null : value;
-  }
-  const raw = new URL(request.url).searchParams.get("entryId");
-  const value = raw ? Number(raw) : Number.NaN;
-  return raw && !Number.isNaN(value) ? value : null;
-}
+const missingEntryId = { error: "Missing entryId" };
+
+const entryId = z
+  .number(missingEntryId)
+  .int(missingEntryId)
+  .positive(missingEntryId);
+
+const offerBody = z.object({
+  entryId,
+  hold: z.enum(HOLD_DURATIONS, {
+    error: "Choose a hold of 24 hours, 48 hours, or until the class",
+  }),
+});
 
 /** Offer the free seat to one named person on the waiting list. */
-export async function POST(request: Request) {
-  const body = await request.json();
-  const { entryId: rawEntryId, hold } = body as {
-    entryId?: number;
-    hold?: string;
-  };
+export const POST = withAdmin({ body: offerBody }, async ({ body }) => {
+  const { hold } = body;
 
-  const entryId = parseEntryId(request, rawEntryId);
-  if (entryId === null) {
-    return NextResponse.json({ error: "Missing entryId" }, { status: 400 });
-  }
-  if (!isHoldDuration(hold)) {
-    return NextResponse.json(
-      { error: "Choose a hold of 24 hours, 48 hours, or until the class" },
-      { status: 400 },
-    );
-  }
-
-  const entry = await findWaitlistEntry(entryId);
+  const entry = await findWaitlistEntry(body.entryId);
 
   const scheduleRows = entry
     ? await db
@@ -92,71 +78,52 @@ export async function POST(request: Request) {
     now: new Date(),
   });
 
-  if (!decision.ok) {
-    return NextResponse.json(
-      { error: decision.error },
-      { status: decision.httpStatus },
-    );
-  }
+  if (!decision.ok) refuse(decision);
   if (!schedule || !classInfo) {
-    return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
+    throw new ApiError(404, "Schedule not found");
   }
 
   const token = newOfferToken();
 
-  try {
-    await db.transaction(async (tx) => {
-      // The seat is genuinely held: it occupies capacity, so the class reads as
-      // full to the public through the mechanism it always used. The guard is
-      // the claim's own WHERE clause, so offers can never outnumber free seats
-      // even if a booking landed since the read above.
-      const claim = await claimSeat(tx, schedule.id);
-      if (!claim.claimed) throw new NoFreeSeatError();
+  await db.transaction(async (tx) => {
+    // The seat is genuinely held: it occupies capacity, so the class reads as
+    // full to the public through the mechanism it always used. The guard is
+    // the claim's own WHERE clause, so offers can never outnumber free seats
+    // even if a booking landed since the read above.
+    const claim = await claimSeat(tx, schedule.id);
+    if (!claim.claimed) {
+      throw new ApiError(400, "There is no free seat to offer on this class");
+    }
 
-      let heldBookingId: number;
-      try {
-        const inserted = await tx
-          .insert(bookings)
-          .values({
-            scheduleId: schedule.id,
-            customerName: decision.entry.customerName,
-            customerEmail: decision.entry.customerEmail,
-            status: "held",
-          })
-          .returning({ id: bookings.id });
-        heldBookingId = inserted[0].id;
-      } catch (error) {
-        if ((error as { code?: string })?.code === "23505") {
-          throw new AlreadyBookedError();
-        }
-        throw error;
-      }
-
-      await tx
-        .update(waitlistEntries)
-        .set({
-          offeredAt: new Date(),
-          offerExpiresAt: decision.expiresAt,
-          offerToken: token,
-          heldBookingId,
+    let heldBookingId: number;
+    try {
+      const inserted = await tx
+        .insert(bookings)
+        .values({
+          scheduleId: schedule.id,
+          customerName: decision.entry.customerName,
+          customerEmail: decision.entry.customerEmail,
+          status: "held",
         })
-        .where(eq(waitlistEntries.id, decision.entry.id));
-    });
-  } catch (error) {
-    if (error instanceof NoFreeSeatError) {
-      return NextResponse.json(
-        { error: "There is no free seat to offer on this class" },
-        { status: 400 },
-      );
+        .returning({ id: bookings.id });
+      heldBookingId = inserted[0].id;
+    } catch (error) {
+      if ((error as { code?: string })?.code === "23505") {
+        throw new ApiError(409, "They already have a booking for this class");
+      }
+      throw error;
     }
-    if (error instanceof AlreadyBookedError) {
-      return NextResponse.json(
-        { error: "They already have a booking for this class" },
-        { status: 409 },
-      );
-    }
-    throw error;
-  }
+
+    await tx
+      .update(waitlistEntries)
+      .set({
+        offeredAt: new Date(),
+        offerExpiresAt: decision.expiresAt,
+        offerToken: token,
+        heldBookingId,
+      })
+      .where(eq(waitlistEntries.id, decision.entry.id));
+  });
 
   after(async () => {
     try {
@@ -180,20 +147,22 @@ export async function POST(request: Request) {
     success: true,
     expiresAt: decision.expiresAt.toISOString(),
   });
-}
+});
+
+const withdrawQuery = z.object({
+  entryId: z.coerce
+    .number(missingEntryId)
+    .int(missingEntryId)
+    .positive(missingEntryId),
+});
 
 /**
  * Withdraw an outstanding offer, freeing the seat. The person stays on the
  * waiting list — taking them off is the separate remove action — and nothing is
  * sent to them, because Gabrielle has already replied herself.
  */
-export async function DELETE(request: Request) {
-  const entryId = parseEntryId(request);
-  if (entryId === null) {
-    return NextResponse.json({ error: "Missing entryId" }, { status: 400 });
-  }
-
-  const entry = await findWaitlistEntry(entryId);
+export const DELETE = withAdmin({ query: withdrawQuery }, async ({ query }) => {
+  const entry = await findWaitlistEntry(query.entryId);
   const decision = decideWithdrawOffer({
     entry,
     heldBookingStatus: await findHeldBookingStatus(
@@ -201,15 +170,10 @@ export async function DELETE(request: Request) {
     ),
   });
 
-  if (!decision.ok) {
-    return NextResponse.json(
-      { error: decision.error },
-      { status: decision.httpStatus },
-    );
-  }
+  if (!decision.ok) refuse(decision);
 
-  // The same path an expiring offer takes: the two differ only in what triggers
-  // them and in whether the recipient is told.
+  // The same path an expiring offer takes: the two differ only in what
+  // triggers them and in whether the recipient is told.
   await db.transaction(async (tx) => {
     await releaseHeldSeat(tx, {
       entryId: decision.entry.id,
@@ -219,4 +183,4 @@ export async function DELETE(request: Request) {
   });
 
   return NextResponse.json({ withdrawn: true });
-}
+});
