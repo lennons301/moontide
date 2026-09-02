@@ -51,19 +51,35 @@ export const GET = withAdmin({}, async () => {
 
 const missingFields = { error: "Missing required fields" };
 const missingId = { error: "Missing schedule ID" };
+const badCapacity = { error: "Capacity must be a whole number of seats" };
+const badWeeks = { error: "Number of weeks must be a whole number" };
+const badLocation = { error: "Location must be text" };
+const badRepeat = { error: "Repeat weekly must be true or false" };
 
-const positiveInt = z.number().int().positive();
 const scheduleId = z.number(missingId).int(missingId).positive(missingId);
+
+/**
+ * Zero is accepted, not refused. The capacity box on `/admin/schedule` is not
+ * required, so clearing it sends `Number("") === 0`, and both handlers already
+ * read that as "use the default" (`capacity || 8`) or "leave it alone"
+ * (`...(capacity && …)`). Refusing it here would fail the whole edit — silently,
+ * because the form only reacts to success.
+ */
+const seatCount = z
+  .number(badCapacity)
+  .int(badCapacity)
+  .nonnegative(badCapacity);
+const weekCount = z.number(badWeeks).int(badWeeks).nonnegative(badWeeks);
 
 const createBody = z.object({
   classId: z.number(missingFields).int(missingFields).positive(missingFields),
   date: z.string(missingFields).min(1, missingFields),
   startTime: z.string(missingFields).min(1, missingFields),
   endTime: z.string(missingFields).min(1, missingFields),
-  capacity: positiveInt.nullish(),
-  location: z.string().nullish(),
-  repeatWeekly: z.boolean().nullish(),
-  numberOfWeeks: positiveInt.nullish(),
+  capacity: seatCount.nullish(),
+  location: z.string(badLocation).nullish(),
+  repeatWeekly: z.boolean(badRepeat).nullish(),
+  numberOfWeeks: weekCount.nullish(),
 });
 
 export const POST = withAdmin({ body: createBody }, async ({ body }) => {
@@ -117,17 +133,32 @@ export const POST = withAdmin({ body: createBody }, async ({ body }) => {
   return NextResponse.json(result[0], { status: 201 });
 });
 
+/**
+ * An update applies only the fields that are set, so anything the form leaves
+ * empty means "leave it alone" rather than "refuse the edit" — the same reason
+ * `seatCount` allows zero. The schema types the fields and no more.
+ */
 const updateBody = z.object({
   id: scheduleId,
-  date: z.string().min(1).nullish(),
-  startTime: z.string().min(1).nullish(),
-  endTime: z.string().min(1).nullish(),
-  capacity: positiveInt.nullish(),
-  location: z.string().nullable().optional(),
-  status: z.enum(["open", "full", "cancelled"]).nullish(),
-  classId: positiveInt.nullish(),
-  repeatWeekly: z.boolean().nullish(),
-  numberOfWeeks: positiveInt.nullish(),
+  date: z.string({ error: "Date must be a date like 2026-06-09" }).nullish(),
+  startTime: z
+    .string({ error: "Start time must be a time like 09:00" })
+    .nullish(),
+  endTime: z.string({ error: "End time must be a time like 10:00" }).nullish(),
+  capacity: seatCount.nullish(),
+  location: z.string(badLocation).nullable().optional(),
+  status: z
+    .enum(["open", "full", "cancelled"], {
+      error: "Status must be open, full or cancelled",
+    })
+    .nullish(),
+  classId: z
+    .number({ error: "Class must be a whole number" })
+    .int({ error: "Class must be a whole number" })
+    .nonnegative({ error: "Class must be a whole number" })
+    .nullish(),
+  repeatWeekly: z.boolean(badRepeat).nullish(),
+  numberOfWeeks: weekCount.nullish(),
 });
 
 export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {

@@ -48,12 +48,20 @@ function restoreBundleCredit(tx: Tx, bundleId: number) {
 }
 
 const missing = { error: "Missing required fields" };
+const badTarget = { error: "Choose a class to move the booking to" };
 
 const transitionBody = z
   .object({
     id: z.number(missing).int(missing).positive(missing),
-    status: z.string().optional(),
-    newScheduleId: z.number().int().positive().optional(),
+    // Left as a string, not an enum: the branches below name the two statuses
+    // they handle and answer "Invalid status" for anything else, so the schema
+    // and the handler say the same thing.
+    status: z.string({ error: "Invalid status" }).optional(),
+    newScheduleId: z
+      .number(badTarget)
+      .int(badTarget)
+      .positive(badTarget)
+      .optional(),
   })
   // One of the two says what to do with the booking; without either there is
   // no transition to make.

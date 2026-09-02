@@ -37,15 +37,6 @@ vi.mock("@/lib/email", () => ({
   sendSeatOffer: vi.fn(),
 }));
 
-import * as bookings from "@/app/api/admin/bookings/route";
-import * as bundles from "@/app/api/admin/bundles/route";
-import * as classes from "@/app/api/admin/classes/route";
-import * as messages from "@/app/api/admin/messages/route";
-import * as pricing from "@/app/api/admin/pricing/route";
-import * as resendEmail from "@/app/api/admin/resend-email/route";
-import * as schedules from "@/app/api/admin/schedules/route";
-import * as waitlistOffer from "@/app/api/admin/waitlist/offer/route";
-import * as waitlist from "@/app/api/admin/waitlist/route";
 import {
   signedInAsAdmin,
   signedInAsNonAdmin,
@@ -54,36 +45,71 @@ import {
 
 type Handler = (request: Request) => Promise<Response>;
 
+/**
+ * The routes are discovered, not listed: a new directory under /api/admin is
+ * swept the moment it exists, without anyone remembering to add it here.
+ */
+const MODULES = import.meta.glob("/src/app/api/admin/**/route.ts", {
+  eager: true,
+}) as Record<string, Record<string, unknown>>;
+
+/** A body each body-reading handler would otherwise accept, by method and route. */
+const BODIES: Record<string, unknown> = {
+  "PUT /api/admin/bookings": { id: 1, status: "cancelled" },
+  "PUT /api/admin/messages": { id: 1, read: true },
+  "PUT /api/admin/pricing": { classes: [{ id: 1, priceInPence: 1500 }] },
+  "POST /api/admin/resend-email": { type: "booking", id: 1 },
+  "POST /api/admin/schedules": {
+    classId: 1,
+    date: "2026-06-09",
+    startTime: "10:00",
+    endTime: "11:00",
+  },
+  "PUT /api/admin/schedules": { id: 1, capacity: 10 },
+  "DELETE /api/admin/schedules": { id: 1 },
+  "POST /api/admin/waitlist/offer": { entryId: 1, hold: "24h" },
+};
+
+/** The query string each query-reading route would otherwise accept. */
+const QUERIES: Record<string, string> = {
+  "/api/admin/waitlist": "?scheduleId=1&id=1",
+  "/api/admin/waitlist/offer": "?entryId=1",
+};
+
 /** Every handler under /api/admin, and a request each would otherwise accept. */
 const HANDLERS: Array<[string, Handler, Request]> = [];
 /** The subset that reads a JSON body, each paired with a broken one. */
 const BODY_HANDLERS: Array<[string, Handler, Request]> = [];
 
-function route(
-  name: string,
-  handlers: Record<string, unknown>,
-  path: string,
-  bodies: Record<string, unknown> = {},
-) {
+const DISCOVERED = Object.keys(MODULES).sort();
+
+for (const file of DISCOVERED) {
+  const module = MODULES[file];
+  const path = file.replace("/src/app", "").replace("/route.ts", "");
+  const url = `http://localhost:3000${path}${QUERIES[path] ?? ""}`;
+
   for (const method of ["GET", "POST", "PUT", "DELETE"]) {
-    const handler = handlers[method];
+    const handler = module[method];
     if (typeof handler !== "function") continue;
-    const body = bodies[method];
+    const name = `${method} ${path}`;
+    const body = BODIES[name];
+
     if (body !== undefined) {
       BODY_HANDLERS.push([
-        `${method} ${name}`,
+        name,
         handler as Handler,
-        new Request(`http://localhost:3000${path}`, {
+        new Request(url, {
           method,
           headers: { "Content-Type": "application/json" },
           body: "{ definitely not json",
         }),
       ]);
     }
+
     HANDLERS.push([
-      `${method} ${name}`,
+      name,
       handler as Handler,
-      new Request(`http://localhost:3000${path}`, {
+      new Request(url, {
         method,
         ...(body === undefined
           ? {}
@@ -96,46 +122,16 @@ function route(
   }
 }
 
-route("/api/admin/bookings", bookings, "/api/admin/bookings", {
-  PUT: { id: 1, status: "cancelled" },
-});
-route("/api/admin/bundles", bundles, "/api/admin/bundles");
-route("/api/admin/classes", classes, "/api/admin/classes");
-route("/api/admin/messages", messages, "/api/admin/messages", {
-  PUT: { id: 1, read: true },
-});
-route("/api/admin/pricing", pricing, "/api/admin/pricing", {
-  PUT: { classes: [{ id: 1, priceInPence: 1500 }] },
-});
-route("/api/admin/resend-email", resendEmail, "/api/admin/resend-email", {
-  POST: { type: "booking", id: 1 },
-});
-route("/api/admin/schedules", schedules, "/api/admin/schedules", {
-  POST: {
-    classId: 1,
-    date: "2026-06-09",
-    startTime: "10:00",
-    endTime: "11:00",
-  },
-  PUT: { id: 1, capacity: 10 },
-  DELETE: { id: 1 },
-});
-route("/api/admin/waitlist", waitlist, "/api/admin/waitlist?scheduleId=1&id=1");
-route(
-  "/api/admin/waitlist/offer",
-  waitlistOffer,
-  "/api/admin/waitlist/offer?entryId=1",
-  { POST: { entryId: 1, hold: "24h" } },
-);
-
 describe("every /api/admin handler checks the session itself", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  // Eight route files, seventeen exported handlers. The count is asserted so
-  // that a handler added without a session check cannot slip in unnoticed.
+  // Nine route files, seventeen exported handlers. The counts are asserted so
+  // that a route file emptied by a bad merge reads as a failure rather than as
+  // a sweep with nothing left to sweep.
   it("covers every handler under /api/admin", () => {
+    expect(DISCOVERED).toHaveLength(9);
     expect(HANDLERS).toHaveLength(17);
     expect(BODY_HANDLERS).toHaveLength(8);
   });

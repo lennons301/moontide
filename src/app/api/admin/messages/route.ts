@@ -18,7 +18,7 @@ const markReadBody = z.object({
     .number({ error: "Missing id" })
     .int({ error: "Missing id" })
     .positive({ error: "Missing id" }),
-  read: z.boolean().optional(),
+  read: z.boolean({ error: "Read must be true or false" }).optional(),
 });
 
 export const PUT = withAdmin({ body: markReadBody }, async ({ body }) => {
