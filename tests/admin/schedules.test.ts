@@ -72,9 +72,15 @@ const {
   });
   const mockTxUpdateSet = vi.fn().mockReturnValue({ where: mockTxUpdateWhere });
   const mockTxUpdate = vi.fn().mockReturnValue({ set: mockTxUpdateSet });
+  // The delete transaction reads and deletes as well as updating, through the
+  // same builders the unwrapped calls use.
   const mockTransaction = vi.fn(
     async (fn: (tx: unknown) => Promise<unknown>) =>
-      await fn({ update: mockTxUpdate }),
+      await fn({
+        update: mockTxUpdate,
+        select: vi.fn().mockReturnValue({ from: mockSelectFrom }),
+        delete: mockDeleteFrom,
+      }),
   );
 
   return {
@@ -129,6 +135,8 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 import { DELETE, GET, POST, PUT } from "@/app/api/admin/schedules/route";
+// The mocked stand-ins above, so a test can say which table a call named.
+import { bookings, schedules, waitlistEntries } from "@/lib/db/schema";
 
 describe("GET /api/admin/schedules", () => {
   beforeEach(() => {
@@ -887,6 +895,11 @@ describe("DELETE /api/admin/schedules", () => {
     });
   }
 
+  /** The tables the handler deleted from, in the order it reached them. */
+  function deletedTables() {
+    return mockDeleteFrom.mock.calls.map(([table]) => table);
+  }
+
   it("returns 200 and deletes the schedule when no bookings exist", async () => {
     mockSelectRows.mockReturnValue([]);
 
@@ -894,7 +907,19 @@ describe("DELETE /api/admin/schedules", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.deleted).toBe(true);
-    expect(mockDeleteFrom).toHaveBeenCalledTimes(1);
+    // Everything pointing at the schedule goes first: Postgres refuses the
+    // parent delete while any of it is there. The waiting list before the
+    // bookings, because an entry can still point at a held booking.
+    expect(deletedTables()).toEqual([waitlistEntries, bookings, schedules]);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("forgets the schedule on bookings that were moved off it", async () => {
+    mockSelectRows.mockReturnValue([]);
+
+    await DELETE(deleteRequest(1));
+
+    expect(mockTxUpdateSet).toHaveBeenCalledWith({ originalScheduleId: null });
   });
 
   // Was "when any booking exists": a booking row that no longer holds a place
@@ -921,7 +946,10 @@ describe("DELETE /api/admin/schedules", () => {
 
     const response = await DELETE(deleteRequest(1));
     expect(response.status).toBe(200);
-    expect(mockDeleteFrom).toHaveBeenCalledTimes(1);
+    // Those rows go with the class: they still reference it, and nobody is
+    // coming. Asserted for real in tests/integration/schedule-delete.test.ts.
+    expect(deletedTables()).toContain(bookings);
+    expect(deletedTables()).toContain(schedules);
   });
 
   it("refuses when one booking is cancelled and another is not", async () => {
