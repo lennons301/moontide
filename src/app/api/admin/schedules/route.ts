@@ -53,6 +53,15 @@ const missingFields = { error: "Missing required fields" };
 const missingId = { error: "Missing schedule ID" };
 const badCapacity = { error: "Capacity must be a whole number of seats" };
 const badWeeks = { error: "Number of weeks must be a whole number" };
+/**
+ * A year of weekly classes is as far ahead as Gabrielle ever sets a class up,
+ * and it is what the form's `max` already offers. Without a bound the count is
+ * a row count: every week asked for becomes a schedule in one insert.
+ */
+const MAX_WEEKS = 52;
+const tooManyWeeks = {
+  error: `Number of weeks cannot be more than ${MAX_WEEKS}`,
+};
 const badLocation = { error: "Location must be text" };
 const badRepeat = { error: "Repeat weekly must be true or false" };
 
@@ -69,7 +78,11 @@ const seatCount = z
   .number(badCapacity)
   .int(badCapacity)
   .nonnegative(badCapacity);
-const weekCount = z.number(badWeeks).int(badWeeks).nonnegative(badWeeks);
+const weekCount = z
+  .number(badWeeks)
+  .int(badWeeks)
+  .nonnegative(badWeeks)
+  .max(MAX_WEEKS, tooManyWeeks);
 
 const createBody = z.object({
   classId: z.number(missingFields).int(missingFields).positive(missingFields),

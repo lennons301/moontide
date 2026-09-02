@@ -536,6 +536,48 @@ describe("POST /api/admin/schedules", () => {
     expect(Array.isArray(body)).toBe(false);
   });
 
+  // The form's max="52" is an HTML attribute, so a direct call ignores it; the
+  // schema is what stops 100000 rows going in.
+  it("refuses more weeks than a year of them, naming the limit", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        repeatWeekly: true,
+        numberOfWeeks: 100000,
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Number of weeks cannot be more than 52");
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("accepts the full 52 weeks", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        repeatWeekly: true,
+        numberOfWeeks: 52,
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    expect(mockInsertValues.mock.calls[0]?.[0]).toHaveLength(52);
+  });
+
   it("returns 400 when classId is missing", async () => {
     const request = new Request("http://localhost:3000/api/admin/schedules", {
       method: "POST",
@@ -643,6 +685,25 @@ describe("PUT /api/admin/schedules", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe("Missing schedule ID");
+  });
+
+  it("refuses adding more weeks of recurrence than the limit", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: 1,
+        repeatWeekly: true,
+        numberOfWeeks: 100000,
+      }),
+    });
+
+    const response = await PUT(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Number of weeks cannot be more than 52");
+    expect(mockInsertValues).not.toHaveBeenCalled();
+    expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 
   it("returns 404 when schedule does not exist", async () => {
