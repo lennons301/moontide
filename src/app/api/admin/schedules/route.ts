@@ -1,6 +1,7 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { holdsAPlace } from "@/lib/bookings/transitions";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import { voidOffersOnCancellation } from "@/lib/waitlist/cancellation";
@@ -294,13 +295,15 @@ const deleteBody = z.object({ id: scheduleId });
 export const DELETE = withAdmin({ body: deleteBody }, async ({ body }) => {
   const { id } = body;
 
+  // Only a booking that still holds a place stands in the way. A class set up
+  // by mistake, whose one booking was cancelled, has nobody attending it and
+  // was otherwise undeletable forever.
   const existingBookings = await db
-    .select({ id: bookings.id })
+    .select({ status: bookings.status })
     .from(bookings)
-    .where(eq(bookings.scheduleId, id))
-    .limit(1);
+    .where(eq(bookings.scheduleId, id));
 
-  if (existingBookings.length > 0) {
+  if (existingBookings.some(holdsAPlace)) {
     throw new ApiError(
       409,
       "Cannot delete a schedule that has bookings. Cancel the class instead.",

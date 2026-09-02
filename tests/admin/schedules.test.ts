@@ -11,7 +11,6 @@ const {
   mockInnerJoin,
   mockOrderBy,
   mockSelectWhere,
-  mockSelectLimit,
   mockSelectRows,
   mockInsertValues,
   mockReturning,
@@ -27,15 +26,10 @@ const {
 } = vi.hoisted(() => {
   const mockOrderBy = vi.fn().mockResolvedValue([]);
   const mockInnerJoin = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
-  const mockSelectLimit = vi.fn().mockResolvedValue([]);
-  // The capacity guard awaits the where() directly; other reads go on to
-  // limit(). So the chain has to be both awaitable and chainable.
+  // Both filtered reads — the capacity guard and the delete guard — await the
+  // where() directly, and each takes whatever rows the test put here.
   const mockSelectRows = vi.fn().mockReturnValue([]);
-  const mockSelectWhere = vi.fn(() =>
-    Object.assign(Promise.resolve(mockSelectRows()), {
-      limit: mockSelectLimit,
-    }),
-  );
+  const mockSelectWhere = vi.fn(() => Promise.resolve(mockSelectRows()));
   const mockSelectFrom = vi.fn().mockReturnValue({
     innerJoin: mockInnerJoin,
     where: mockSelectWhere,
@@ -88,7 +82,6 @@ const {
     mockInnerJoin,
     mockOrderBy,
     mockSelectWhere,
-    mockSelectLimit,
     mockSelectRows,
     mockInsertValues,
     mockReturning,
@@ -881,43 +874,64 @@ describe("DELETE /api/admin/schedules", () => {
       innerJoin: mockInnerJoin,
       where: mockSelectWhere,
     });
-    mockSelectWhere.mockReturnValue(
-      Object.assign(Promise.resolve([]), { limit: mockSelectLimit }),
-    );
-    mockSelectLimit.mockResolvedValue([]);
+    mockSelectRows.mockReturnValue([]);
     mockDeleteFrom.mockReturnValue({ where: mockDeleteWhere });
     mockDeleteWhere.mockResolvedValue(undefined);
   });
 
-  it("returns 200 and deletes the schedule when no bookings exist", async () => {
-    mockSelectLimit.mockResolvedValue([]);
-
-    const request = new Request("http://localhost:3000/api/admin/schedules", {
+  function deleteRequest(id: number) {
+    return new Request("http://localhost:3000/api/admin/schedules", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: 1 }),
+      body: JSON.stringify({ id }),
     });
+  }
 
-    const response = await DELETE(request);
+  it("returns 200 and deletes the schedule when no bookings exist", async () => {
+    mockSelectRows.mockReturnValue([]);
+
+    const response = await DELETE(deleteRequest(1));
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.deleted).toBe(true);
     expect(mockDeleteFrom).toHaveBeenCalledTimes(1);
   });
 
-  it("returns 409 and does not delete when any booking exists", async () => {
-    mockSelectLimit.mockResolvedValue([{ id: 42 }]);
+  // Was "when any booking exists": a booking row that no longer holds a place
+  // made the class undeletable forever, which is not what the refusal is for.
+  it.each([
+    "confirmed",
+    "held",
+    "waitlisted",
+  ])("returns 409 and does not delete when a %s booking still holds a place", async (status) => {
+    mockSelectRows.mockReturnValue([{ status }]);
 
-    const request = new Request("http://localhost:3000/api/admin/schedules", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: 1 }),
-    });
-
-    const response = await DELETE(request);
+    const response = await DELETE(deleteRequest(1));
     expect(response.status).toBe(409);
     const body = await response.json();
     expect(body.error).toMatch(/cancel the class instead/i);
+    expect(mockDeleteFrom).not.toHaveBeenCalled();
+  });
+
+  it("deletes a class set up by mistake whose bookings were all given up", async () => {
+    mockSelectRows.mockReturnValue([
+      { status: "cancelled" },
+      { status: "released" },
+    ]);
+
+    const response = await DELETE(deleteRequest(1));
+    expect(response.status).toBe(200);
+    expect(mockDeleteFrom).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses when one booking is cancelled and another is not", async () => {
+    mockSelectRows.mockReturnValue([
+      { status: "cancelled" },
+      { status: "confirmed" },
+    ]);
+
+    const response = await DELETE(deleteRequest(1));
+    expect(response.status).toBe(409);
     expect(mockDeleteFrom).not.toHaveBeenCalled();
   });
 

@@ -35,6 +35,17 @@ function fail(error: string, httpStatus: 400 | 404): DecisionFailure {
   return { ok: false, error, httpStatus };
 }
 
+/**
+ * Whether this booking still holds a place on its class.
+ *
+ * Stated as an exclusion, so a status nobody has thought about yet counts as
+ * holding a place: the callers are refusals, and refusing wrongly is recoverable
+ * where letting something through is not.
+ */
+export function holdsAPlace(booking: Pick<BookingState, "status">): boolean {
+  return booking.status !== "cancelled" && booking.status !== "released";
+}
+
 /* ------------------------------------------------------------------ cancel */
 
 export type CancelDecision<B extends BookingState> =
