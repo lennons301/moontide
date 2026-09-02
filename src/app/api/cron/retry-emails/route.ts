@@ -41,6 +41,9 @@ export async function POST(request: Request) {
     .from(bookings)
     .innerJoin(schedules, eq(bookings.scheduleId, schedules.id))
     .innerJoin(classes, eq(schedules.classId, classes.id))
+    // The bundle the booking was funded from, when there is one: a retry has to
+    // know a credit was spent, or it sends a cash price nobody paid.
+    .leftJoin(bundles, eq(bookings.bundleId, bundles.id))
     // A held seat has no confirmation owing: nobody has taken the offer up, and
     // retrying would tell them their class is booked when it is not.
     .where(
@@ -53,10 +56,18 @@ export async function POST(request: Request) {
 
   for (const row of pendingBookings) {
     try {
-      const payment = {
-        method: "card",
-        priceInPence: row.classes.priceInPence,
-      } as const;
+      // A booking with a bundle behind it was paid for with a credit, so the
+      // retry says so and states the balance. Only a booking with no bundle
+      // gets a price.
+      const payment = row.bundles
+        ? ({
+            method: "credit",
+            creditsRemaining: row.bundles.creditsRemaining,
+          } as const)
+        : ({
+            method: "card",
+            priceInPence: row.classes.priceInPence,
+          } as const);
 
       await sendBookingConfirmation({
         customerName: row.bookings.customerName,
