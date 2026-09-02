@@ -156,9 +156,10 @@ describe("two redemptions racing for one credit", () => {
       await other.end();
     }
 
+    if (!pending) throw new Error("the redemption never started");
     const response = await pending;
-    expect(response?.status).toBe(409);
-    expect((await response?.json()).error).toBe(
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe(
       "That bundle has no credits left",
     );
 
