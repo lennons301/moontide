@@ -53,6 +53,11 @@ export async function POST(request: Request) {
 
   for (const row of pendingBookings) {
     try {
+      const payment = {
+        method: "card",
+        priceInPence: row.classes.priceInPence,
+      } as const;
+
       await sendBookingConfirmation({
         customerName: row.bookings.customerName,
         customerEmail: row.bookings.customerEmail,
@@ -61,7 +66,7 @@ export async function POST(request: Request) {
         startTime: row.schedules.startTime,
         endTime: row.schedules.endTime,
         location: row.schedules.location,
-        payment: { method: "card", priceInPence: row.classes.priceInPence },
+        payment,
       });
 
       await sendBookingNotification({
@@ -73,6 +78,7 @@ export async function POST(request: Request) {
         startTime: row.schedules.startTime,
         endTime: row.schedules.endTime,
         location: row.schedules.location,
+        payment,
       });
 
       await db

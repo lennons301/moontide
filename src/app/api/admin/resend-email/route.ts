@@ -46,6 +46,11 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       throw new ApiError(400, "This seat is being held, not booked");
     }
 
+    const payment = {
+      method: "card",
+      priceInPence: row.classes.priceInPence,
+    } as const;
+
     await sendBookingConfirmation({
       customerName: row.bookings.customerName,
       customerEmail: row.bookings.customerEmail,
@@ -54,7 +59,7 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       startTime: row.schedules.startTime,
       endTime: row.schedules.endTime,
       location: row.schedules.location,
-      payment: { method: "card", priceInPence: row.classes.priceInPence },
+      payment,
     });
 
     await sendBookingNotification({
@@ -66,6 +71,7 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       startTime: row.schedules.startTime,
       endTime: row.schedules.endTime,
       location: row.schedules.location,
+      payment,
     });
 
     await db

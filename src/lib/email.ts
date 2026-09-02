@@ -453,6 +453,7 @@ type BookingNotificationParams =
       startTime: string;
       endTime: string;
       location: string | null;
+      payment: BookingPayment;
     }
   | {
       type: "bundle";
@@ -540,12 +541,19 @@ export async function sendBookingNotification(
       startTime,
       endTime,
       location,
+      payment,
     } = params;
+    // She needs to know whether money came in for this seat or a credit was
+    // spent on it — and if a credit, what the customer has left.
+    const paid =
+      payment.method === "card"
+        ? `£${(payment.priceInPence / 100).toFixed(2)}`
+        : `bundle credit (${classCount(payment.creditsRemaining)} left)`;
     await resend.emails.send({
       from: "Moontide <noreply@gabriellemoontide.co.uk>",
       to,
       subject: `[Moontide] New booking: ${classTitle}`,
-      text: `New class booking:\n\nCustomer: ${customerName} (${customerEmail})\nClass: ${classTitle}\nDate: ${date}\nTime: ${startTime}–${endTime}${location ? `\nLocation: ${location}` : ""}`,
+      text: `New class booking:\n\nCustomer: ${customerName} (${customerEmail})\nClass: ${classTitle}\nDate: ${date}\nTime: ${startTime}–${endTime}${location ? `\nLocation: ${location}` : ""}\nPaid: ${paid}`,
     });
   } else {
     const { customerEmail, bundleName, credits, expiryDate } = params;

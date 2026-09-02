@@ -127,19 +127,40 @@ describe("sendBundleConfirmation", () => {
 });
 
 describe("sendBookingNotification", () => {
+  const BOOKING = {
+    type: "individual" as const,
+    customerName: "Jane Doe",
+    customerEmail: "jane@example.com",
+    classTitle: "Prenatal Yoga",
+    date: "2026-05-01",
+    startTime: "09:00",
+    endTime: "10:00",
+    location: "Studio 1, Hove",
+  };
+
   it("sends plain text notification for individual booking", async () => {
     const result = await sendBookingNotification({
-      type: "individual",
-      customerName: "Jane Doe",
-      customerEmail: "jane@example.com",
-      classTitle: "Prenatal Yoga",
-      date: "2026-05-01",
-      startTime: "09:00",
-      endTime: "10:00",
-      location: "Studio 1, Hove",
+      ...BOOKING,
+      payment: { method: "card", priceInPence: 1250 },
     });
 
     expect(result).toEqual({ success: true });
+    const sent = lastSend();
+    expect(sent.text).toContain("Jane Doe (jane@example.com)");
+    expect(sent.text).toContain("Paid: £12.50");
+  });
+
+  it("says when the seat was taken with a bundle credit", async () => {
+    // She needs to know no money came in for this one, and what the
+    // customer has left.
+    await sendBookingNotification({
+      ...BOOKING,
+      payment: { method: "credit", creditsRemaining: 3 },
+    });
+
+    const sent = lastSend();
+    expect(sent.text).toContain("Paid: bundle credit (3 classes left)");
+    expect(sent.text).not.toContain("£");
   });
 
   it("sends plain text notification for bundle purchase", async () => {
