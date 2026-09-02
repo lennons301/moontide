@@ -15,13 +15,14 @@ Wellbeing website for women navigating change through yoga, coaching, and embodi
 - **Secrets:** Doppler (project: moontide, configs: dev/stg/prd)
 - **Dev Environment:** mise + just
 - **Deployment:** Vercel Hobby
-- **Testing:** Vitest (node + jsdom projects)
+- **Testing:** Vitest (three projects: mocked node + jsdom unit tests, and integration tests against a real Postgres)
 
 ## Commands
 
 ```bash
 just dev              # Start dev server (Docker + Doppler + pnpm)
-just test             # Run tests
+just test             # Run tests (mocked + integration; starts the local Postgres)
+just test-unit        # Run only the mocked tests (no database, no Docker)
 just lint             # Lint and format (Biome)
 just typecheck        # Type check (tsc --noEmit)
 just build            # Production build
@@ -99,6 +100,8 @@ src/
       index.ts            # Drizzle client (postgres.js driver)
       schema.ts           # Drizzle schema (all tables including bundleConfig + re-exports auth-schema)
       auth-schema.ts      # Better Auth tables (user, session, account, verification)
+    content/
+      homepage.ts         # Homepage CMS fetches + their hardcoded fallbacks
     sanity/
       client.ts           # Sanity client + urlFor() image helper
       queries.ts          # GROQ queries for all document types
@@ -148,6 +151,16 @@ tests/
   lib/london-time.test.ts     # Class starts across the BST boundary
   admin/waitlist.test.ts      # Waiting list API tests
   admin/waitlist-offer.test.ts # Offer/withdraw route wiring
+  lib/homepage-content.test.ts # Homepage CMS fallbacks, section by section
+  app/homepage.test.ts    # Homepage renders with the CMS up and with it down
+  integration/            # Runs against a real Postgres, not mocks
+    support/database-url.ts # Which server, and the throwaway database on it
+    support/global-setup.ts # Drop, create and migrate that database, once per run
+    support/setup.ts        # Empty every table before each test
+    support/factories.ts    # Rows to test against
+    schedule-occupancy.test.ts # Real occupancy numbers, clamps and a seat race
+    booking-constraints.test.ts # The unique indexes, refusing duplicates
+    admin-bookings-cancel.test.ts # A route end to end: request in, rows out
 drizzle/
   migrations/             # Generated Drizzle migrations
   ci/seed.sql             # Production-shaped data the CI migration check runs against
@@ -163,16 +176,18 @@ drizzle/
 - **Nav layout:** Burger menu left, logo (MOONTIDE) right.
 - **Services grouping:** Classes shown as 2x2 photo grid, coaching/private as featured cards, community as light text block.
 - **Sanity images:** Use `urlFor(image).width(x).height(y).url()` from `@/lib/sanity/client`.
-- **Page fallbacks:** All content pages try Sanity first, fall back to hardcoded content if CMS returns null.
+- **Page fallbacks:** All content pages try Sanity first, fall back to hardcoded content if CMS returns null — and a failed fetch degrades the same way, so a Sanity outage never takes a page down. The homepage's three fetches (services, trainer, site settings) live in `src/lib/content/homepage.ts` rather than inline: each is caught separately, so hero, services grid and about preview degrade one at a time instead of all-or-nothing.
 - **Local dev:** Docker Compose for Postgres, mise for tool versions, just for commands, Doppler for secrets.
 - **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
 - **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
 - **Linting:** Biome runs on pre-commit via husky. Run `just lint` to check/fix manually.
-- **Test environments:** `vitest.config.ts` defines two projects, split by file extension — `tests/**/*.test.ts` runs in node, `tests/**/*.test.tsx` runs in jsdom with `@testing-library/react` and `tests/setup-dom.ts`. The split is by extension, not directory, so a folder can hold both. The run is pinned to `TZ=UTC`: the admin date helpers format in the runtime timezone, so their expectations only hold on a machine that happens to be on UTC.
+- **Test environments:** the mocked suite is split by file extension — `tests/**/*.test.ts` runs in the `unit` project (node), `tests/**/*.test.tsx` runs in the `dom` project (jsdom, with `@testing-library/react` and `tests/setup-dom.ts`). The split is by extension, not directory, so a folder can hold both. Both are pinned to `TZ=UTC`: the admin date helpers format in the runtime timezone, so their expectations only hold on a machine that happens to be on UTC.
 - **Admin table chrome:** `src/components/admin/` holds one definition each of the pieces every admin table needs — the toolbar, the header row, the filter pills, the status badge and the date formats. Add to it rather than copying into a page. `SortableHead` carries the sort state from `useTableControls` by context, so a sortable column is declared as `<SortHeader label="Date" sortKey="date" />` and never wires `activeKey`/`direction`/`onClick`. Dates have four deliberate shapes (`formatDate`, `formatDateWithWeekday`, `formatDateTime`, `formatDeadline`); a fifth wants a fifth question, not a fifth option bag.
 - **Logic in `"use client"` pages:** a page component cannot be imported by a node test, so anything with branches goes into a module the page then wires up — `buildAdminTableFilters`, `buildChangeSummary`/`buildPricingPayload` (`src/lib/admin/pricing-changes.ts`), `selectRescheduleTargets` (`src/lib/bookings/transitions.ts`, beside the server rules it mirrors). `deriveTableRows` is the pattern.
-- **Auth:** Better Auth protects `/admin/*` routes via proxy. Login at `/admin/login`.
-- **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on proxy for page access).
+- **Auth:** Better Auth protects `/admin/*` routes via proxy. Login at `/admin/login`. There is one account — Gabrielle's — and no customer auth at all: bookings are keyed by email address. So **sign-up is disabled** (`disableSignUp` on the mounted instance, and `/api/auth/sign-up*` is refused at the proxy, which is why the matcher covers `/api/auth/:path*`). Accounts are created only by `scripts/seed-admin.ts`, which builds its own `createAuth({ allowSignUp: true })` instance in-process.
+- **The admin role:** `user.role` must be `"admin"` to get past the proxy. It is declared to Better Auth as an additional field with `input: false`, so no auth endpoint can set it — the seed script grants it with a direct `UPDATE`. Migration `0012` backfills every user that predates it, because they are all admin logins.
+- **Proxy session check:** `src/proxy.ts` resolves the cookie through `auth.api.getSession` rather than testing that a cookie exists — a cookie is a string a visitor can type. No session, a forged or expired token, a non-admin user, or a session lookup that throws are all refused (401 for `/api/admin/*`, redirect to login for pages). The proxy runs on the Node runtime, so it can reach the database directly. Tests: `tests/proxy.test.ts`.
+- **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on the proxy; handler-level enforcement is a separate piece of work).
 - **Stripe webhook:** At `/api/stripe/webhook` — reads raw body for signature verification, never parse JSON before verifying.
 - **Booking flow:** `/api/book/checkout` (Stripe Checkout) and `/api/book/redeem` (bundle credit). Checkout handles both individual and bundle purchases via `type` field, and an offered held seat via `offerToken`.
 - **Prices in pence:** Class prices stored in `classes.priceInPence`. Bundle config (price, credits, expiry) stored in `bundleConfig` table — editable via admin UI at `/admin/pricing`.
@@ -195,7 +210,17 @@ drizzle/
 - **Confirmation emails:** Sent via Resend after Stripe webhook using `after()` from `next/server`. Customer gets HTML confirmation (branded with logo), Gabrielle gets plain text notification. `emailSent` flag on bookings/bundles tracks delivery; cron retries failures daily at 8am (24-hour cutoff), and the same run does the daily offer work. Vercel Hobby only allows daily cron jobs.
 - **Vercel Cron:** Configured in `vercel.json`. Cron endpoints at `/api/cron/*` are protected by `CRON_SECRET` bearer token.
 - **DB transactions:** Multi-step mutations (e.g., booking insert + count increment) wrapped in `db.transaction()` for atomicity.
-- **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI — all tests use mocks.
+- **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI: the mocked tests need nothing, and the integration project needs only the ephemeral Postgres the runner creates and destroys.
+- **Three test projects:** `vitest.config.ts` defines `unit` (every `.test.ts` in `tests/` except `tests/integration/`, drizzle mocked, no database), `dom` (every `.test.tsx`, jsdom, components rendered) and `integration` (`tests/integration/**`, real Postgres). `just test` runs all three; `just test-unit` runs the two mocked ones, which need no database.
+- **Which kind to write:** default to a **mocked** test — they are the fast ones, and a rule that is a decision belongs in a pure function that needs no database at all (`src/lib/bookings/transitions.ts`, `src/lib/waitlist/offers.ts`, `src/lib/waitlist/digest.ts`). Write an **integration** test when the behaviour under test is Postgres's, not TypeScript's, and so a mock would only be asserting the shape of the statement you just wrote:
+  - **SQL that has to execute** — the `GREATEST`/`LEAST` clamps, `CASE` expressions, anything inside a `sql` template.
+  - **Constraints and indexes** — `bookings_schedule_email_active_idx` is the only real defence against a double booking, and no mock can refuse a write.
+  - **Concurrency** — a guarded claim like `claimSeat` is only interesting when two of them race for one seat.
+  - **Transaction boundaries** — that a failure part way through leaves nothing behind.
+  - **A route end to end**, when the point is what the rows look like afterwards rather than which calls were made. `tests/integration/admin-bookings-cancel.test.ts` is the worked example: it asserts the bundle has 3 credits and the class 3 seats taken, not that `update` was called.
+  Assert values, not call counts — an integration test that checks a mock was called has paid for a database and bought nothing.
+- **How the integration project runs:** `tests/integration/support/global-setup.ts` drops, recreates and migrates `moontide_integration` once per run, so the schema under test is the one the migrations produce and a broken migration fails the tests. `support/setup.ts` truncates every table in `public` before each test (`RESTART IDENTITY CASCADE`), so tests are independent, ids are predictable and a crashed run leaves nothing to clean up. Truncation rather than a rolled-back transaction because the code under test uses the `db` singleton and opens transactions of its own. Files run serially — they share one database.
+- **Which Postgres the tests use:** `TEST_DATABASE_URL`, defaulting to docker-compose's server (`postgresql://postgres:postgres@localhost:5432/postgres`). Deliberately **not** `DATABASE_URL` — that points at whatever Doppler config is loaded, possibly a Neon branch, and the harness drops the database it is given. Only ever point it at a throwaway server. `tests/integration/support/factories.ts` has the row builders; add to those rather than hand-rolling inserts.
 - **Migrations in CI:** Two jobs in `.github/workflows/ci.yml` run the migrations against a Postgres service container the runner creates and destroys, so a migration that cannot apply fails the PR rather than the Vercel deploy (`"build": "drizzle-kit migrate && next build"` used to be the first thing that ever ran one). `migrations-empty` applies them all from scratch. `migrations-existing` applies the migrations as they stood on the base commit, loads `drizzle/ci/seed.sql`, then applies this branch's — so a migration meets rows, not empty tables. No credentials are involved: the container's password protects nothing and no real database is reachable from CI. Every migrate step falls through to `scripts/ci/explain-migration-failure.mjs` on failure, because drizzle-kit exits 1 printing nothing but its spinner — the explainer replays the pending migrations statement by statement in a rolled-back transaction and names the one Postgres rejected.
 - **Migrations must be re-runnable:** `migrations-existing` finishes by forgetting the migrations this branch adds (`scripts/ci/forget-new-migrations.mjs` deletes their rows from `drizzle.__drizzle_migrations`) and applying them again. Drizzle picks migrations by their journal timestamp, not by filename or hash, so one that is renumbered or re-stamped while resolving a merge reads as unapplied on a database a preview deploy already migrated, and its DDL runs a second time. So write new migrations idempotently — `ADD COLUMN IF NOT EXISTS`, `ADD VALUE IF NOT EXISTS`, and for constraints a `DO $$ ... EXCEPTION WHEN duplicate_object OR duplicate_table THEN null; END $$` block (a repeated UNIQUE constraint raises `duplicate_table`, because the clash is with the index it creates). Only migrations absent from the base commit are replayed, so the older non-idempotent ones are left alone.
 - **Renumbering a migration:** When a merge puts two migrations in the same numbered slot, rename the losing file but **keep its `when` in `_journal.json`** — re-stamping it re-runs its DDL on a database that already applied it (a preview deploy of an unmerged branch migrates stg), and stamping it below the entry before it makes drizzle skip it forever. Full rule, both constraints and the PR #40 worked example: `docs/agents/migrations.md`.

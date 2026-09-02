@@ -6,9 +6,20 @@ dev:
     docker compose up -d
     doppler run -- pnpm run dev
 
-# Run test suite
+# Run test suite (unit + integration; integration needs a Postgres)
 test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # The integration project builds its own database on the local Postgres.
+    # CI already has one as a service container, so only dev has to start it.
+    if [ -z "${CI:-}" ]; then
+        docker compose up -d --wait postgres
+    fi
     pnpm run test
+
+# Run only the mocked tests — no database, no Docker
+test-unit:
+    pnpm run test:unit
 
 # Lint and format
 lint:
