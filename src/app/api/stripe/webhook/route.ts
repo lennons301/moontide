@@ -148,7 +148,10 @@ export async function POST(request: Request) {
               startTime: schedule.startTime,
               endTime: schedule.endTime,
               location: schedule.location,
-              priceInPence: classInfo.priceInPence,
+              payment: {
+                method: "card",
+                priceInPence: classInfo.priceInPence,
+              },
             });
 
             await sendBookingNotification({

@@ -180,7 +180,7 @@ describe("POST /api/admin/resend-email — a booking", () => {
       startTime: "10:00:00",
       endTime: "11:00:00",
       location: "Studio 1, Hove",
-      priceInPence: 1500,
+      payment: { method: "card", priceInPence: 1500 },
     });
     expect(mockSendBookingNotification).toHaveBeenCalledWith(
       expect.objectContaining({

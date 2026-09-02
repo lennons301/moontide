@@ -61,7 +61,7 @@ export async function POST(request: Request) {
         startTime: row.schedules.startTime,
         endTime: row.schedules.endTime,
         location: row.schedules.location,
-        priceInPence: row.classes.priceInPence,
+        payment: { method: "card", priceInPence: row.classes.priceInPence },
       });
 
       await sendBookingNotification({

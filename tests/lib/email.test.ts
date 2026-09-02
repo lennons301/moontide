@@ -59,19 +59,57 @@ describe("buildEmailHtml", () => {
 });
 
 describe("sendBookingConfirmation", () => {
-  it("sends HTML email to customer with booking details", async () => {
+  const BOOKING = {
+    customerName: "Jane Doe",
+    customerEmail: "jane@example.com",
+    classTitle: "Prenatal Yoga",
+    date: "2026-05-01",
+    startTime: "09:00",
+    endTime: "10:00",
+    location: "Studio 1, Hove",
+  };
+
+  it("states the price a card booking was charged", async () => {
     const result = await sendBookingConfirmation({
-      customerName: "Jane Doe",
-      customerEmail: "jane@example.com",
-      classTitle: "Prenatal Yoga",
-      date: "2026-05-01",
-      startTime: "09:00",
-      endTime: "10:00",
-      location: "Studio 1, Hove",
-      priceInPence: 1250,
+      ...BOOKING,
+      payment: { method: "card", priceInPence: 1250 },
     });
 
     expect(result).toEqual({ success: true });
+    const sent = lastSend();
+    expect(sent.to).toBe("jane@example.com");
+    expect(sent.html).toContain("Your class is booked!");
+    expect(sent.html).toContain("Prenatal Yoga");
+    expect(sent.html).toContain("Price");
+    expect(sent.html).toContain("£12.50");
+  });
+
+  it("names the credit and the balance left, never a price", async () => {
+    const result = await sendBookingConfirmation({
+      ...BOOKING,
+      payment: { method: "credit", creditsRemaining: 3 },
+    });
+
+    expect(result).toEqual({ success: true });
+    const sent = lastSend();
+    expect(sent.html).toContain("Your class is booked!");
+    // She paid with one of her classes, so that is what the email says.
+    expect(sent.html).toContain("1 class credit from your bundle");
+    expect(sent.html).toContain("Credits left");
+    expect(sent.html).toContain("3 classes");
+    // No money changed hands, so no money is mentioned.
+    expect(sent.html).not.toContain("£");
+    expect(sent.html).not.toContain("Price");
+  });
+
+  it("counts a single remaining credit in the singular", async () => {
+    await sendBookingConfirmation({
+      ...BOOKING,
+      payment: { method: "credit", creditsRemaining: 1 },
+    });
+
+    expect(lastSend().html).toContain("1 class");
+    expect(lastSend().html).not.toContain("1 classes");
   });
 });
 

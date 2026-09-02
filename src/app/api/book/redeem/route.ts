@@ -207,7 +207,7 @@ export async function POST(request: Request) {
           startTime: schedule.startTime,
           endTime: schedule.endTime,
           location: schedule.location,
-          priceInPence: schedule.priceInPence,
+          payment: { method: "card", priceInPence: schedule.priceInPence },
         });
         if (bookingId !== undefined) {
           await db
