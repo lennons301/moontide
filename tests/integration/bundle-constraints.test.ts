@@ -1,3 +1,4 @@
+import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { bundleConfig, bundles } from "@/lib/db/schema";
@@ -75,3 +76,59 @@ describe("bundles.bundle_config_id", () => {
     expect(bundle.bundleConfigId).toBeNull();
   });
 });
+
+describe("bundles_credits_remaining_within_total", () => {
+  const CONSTRAINT = "bundles_credits_remaining_within_total";
+
+  it("refuses a debit that would take a credit the bundle has not got", async () => {
+    const bundle = await createBundle({ creditsTotal: 6, creditsRemaining: 0 });
+
+    expect(
+      await violatedConstraint(
+        db
+          .update(bundles)
+          .set({ creditsRemaining: sql`${bundles.creditsRemaining} - 1` })
+          .where(eq(bundles.id, bundle.id)),
+      ),
+    ).toBe(CONSTRAINT);
+
+    expect((await readBundle(bundle.id)).creditsRemaining).toBe(0);
+  });
+
+  it("refuses a refund past what the bundle was sold with", async () => {
+    const bundle = await createBundle({ creditsTotal: 6, creditsRemaining: 6 });
+
+    expect(
+      await violatedConstraint(
+        db
+          .update(bundles)
+          .set({ creditsRemaining: 7 })
+          .where(eq(bundles.id, bundle.id)),
+      ),
+    ).toBe(CONSTRAINT);
+  });
+
+  it("refuses a bundle that starts outside its own total", async () => {
+    expect(
+      await violatedConstraint(
+        createBundle({ creditsTotal: 6, creditsRemaining: 8 }),
+      ),
+    ).toBe(CONSTRAINT);
+  });
+
+  it("allows a bundle spent exactly to nothing", async () => {
+    const bundle = await createBundle({ creditsTotal: 3, creditsRemaining: 1 });
+
+    await db
+      .update(bundles)
+      .set({ creditsRemaining: 0 })
+      .where(eq(bundles.id, bundle.id));
+
+    expect((await readBundle(bundle.id)).creditsRemaining).toBe(0);
+  });
+});
+
+async function readBundle(id: number) {
+  const [row] = await db.select().from(bundles).where(eq(bundles.id, id));
+  return row;
+}

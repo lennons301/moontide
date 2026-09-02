@@ -98,21 +98,36 @@ export const schedules = pgTable(
   }),
 );
 
-export const bundles = pgTable("bundles", {
-  id: serial("id").primaryKey(),
-  customerEmail: text("customer_email").notNull(),
-  creditsTotal: integer("credits_total").notNull().default(6),
-  creditsRemaining: integer("credits_remaining").notNull().default(6),
-  stripePaymentId: text("stripe_payment_id").notNull().unique(),
-  // Which bundle product was bought. Nullable: bundles purchased before this
-  // column existed can only have it inferred from their credit count, and that
-  // is ambiguous once two configs sell the same number of credits.
-  bundleConfigId: integer("bundle_config_id").references(() => bundleConfig.id),
-  purchasedAt: timestamp("purchased_at").defaultNow().notNull(),
-  expiresAt: timestamp("expires_at").notNull(),
-  status: bundleStatus("status").notNull().default("active"),
-  emailSent: boolean("email_sent").default(false).notNull(),
-});
+export const bundles = pgTable(
+  "bundles",
+  {
+    id: serial("id").primaryKey(),
+    customerEmail: text("customer_email").notNull(),
+    creditsTotal: integer("credits_total").notNull().default(6),
+    creditsRemaining: integer("credits_remaining").notNull().default(6),
+    stripePaymentId: text("stripe_payment_id").notNull().unique(),
+    // Which bundle product was bought. Nullable: bundles purchased before this
+    // column existed can only have it inferred from their credit count, and that
+    // is ambiguous once two configs sell the same number of credits.
+    bundleConfigId: integer("bundle_config_id").references(
+      () => bundleConfig.id,
+    ),
+    purchasedAt: timestamp("purchased_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    status: bundleStatus("status").notNull().default("active"),
+    emailSent: boolean("email_sent").default(false).notNull(),
+  },
+  (table) => ({
+    // A bundle cannot owe more classes than it was sold with, and cannot owe a
+    // negative number of them. Both directions of the same invariant the
+    // debit's guard and the refund's clamp express — this is what refuses the
+    // write when a caller expresses neither.
+    creditsRemainingWithinTotal: check(
+      "bundles_credits_remaining_within_total",
+      sql`${table.creditsRemaining} >= 0 AND ${table.creditsRemaining} <= ${table.creditsTotal}`,
+    ),
+  }),
+);
 
 export const bundleConfig = pgTable("bundle_config", {
   id: serial("id").primaryKey(),
