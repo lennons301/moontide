@@ -1,17 +1,20 @@
-import { and, eq, gt, ne } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
+import { findSpendableBundle, spendCredit } from "@/lib/bundles/credits";
 import { db } from "@/lib/db";
-import {
-  bookings,
-  bundles,
-  classes,
-  schedules,
-  waitlistEntries,
-} from "@/lib/db/schema";
+import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import { sendBookingConfirmation } from "@/lib/email";
 import { claimSeat } from "@/lib/schedule-occupancy";
 import { findOfferByToken } from "@/lib/waitlist/held-seats";
 import { decideRedemptionSeat } from "@/lib/waitlist/offers";
+
+/**
+ * The bundle had a credit on it when it was read, a moment before the
+ * transaction opened. Whether it still has one is settled by the debit's own
+ * guard, inside the transaction — and this throw is both that refusal and the
+ * rollback of the booking that was about to be made against it.
+ */
+class CreditGone extends Error {}
 
 export async function POST(request: Request) {
   const { scheduleId, customerName, customerEmail, offerToken } =
@@ -62,26 +65,17 @@ export async function POST(request: Request) {
     );
   }
 
-  const activeBundles = await db
-    .select()
-    .from(bundles)
-    .where(
-      and(
-        eq(bundles.customerEmail, customerEmail),
-        eq(bundles.status, "active"),
-        gt(bundles.creditsRemaining, 0),
-        gt(bundles.expiresAt, new Date()),
-      ),
-    );
+  const bundle = await findSpendableBundle(db, {
+    customerEmail,
+    now: new Date(),
+  });
 
-  if (activeBundles.length === 0) {
+  if (!bundle) {
     return NextResponse.json(
       { error: "No active bundle found" },
       { status: 404 },
     );
   }
-
-  const bundle = activeBundles[0];
 
   const existingBooking = await db
     .select()
@@ -112,20 +106,15 @@ export async function POST(request: Request) {
     );
   }
 
-  const newCredits = bundle.creditsRemaining - 1;
-
-  const spendCredit = (
+  const spend = async (
     tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  ) =>
-    tx
-      .update(bundles)
-      .set({
-        creditsRemaining: newCredits,
-        status: newCredits === 0 ? "exhausted" : "active",
-      })
-      .where(eq(bundles.id, bundle.id));
+  ) => {
+    const spent = await spendCredit(tx, bundle.id);
+    if (!spent.spent) throw new CreditGone();
+    return spent.creditsRemaining;
+  };
 
-  const outcome = await db.transaction(async (tx) => {
+  const redeemed = db.transaction(async (tx) => {
     if (seat.kind === "held-seat") {
       // The offer already counted this seat, so occupancy must not move: the
       // held booking becomes the confirmed one rather than a second booking
@@ -147,8 +136,11 @@ export async function POST(request: Request) {
         .delete(waitlistEntries)
         .where(eq(waitlistEntries.id, seat.waitlistEntryId));
 
-      await spendCredit(tx);
-      return { ok: true as const, bookingId: seat.bookingId };
+      return {
+        ok: true as const,
+        bookingId: seat.bookingId,
+        creditsRemaining: await spend(tx),
+      };
     }
 
     // Capacity is enforced by the claim, not by a read taken beforehand: the
@@ -170,14 +162,30 @@ export async function POST(request: Request) {
       })
       .returning({ id: bookings.id });
 
-    await spendCredit(tx);
-    return { ok: true as const, bookingId: inserted[0]?.id };
+    return {
+      ok: true as const,
+      bookingId: inserted[0]?.id,
+      creditsRemaining: await spend(tx),
+    };
+  });
+
+  const outcome = await redeemed.catch((e) => {
+    if (e instanceof CreditGone) return { ok: false as const, reason: "spent" };
+    throw e;
   });
 
   if (!outcome.ok) {
     if (outcome.reason === "gone") {
       return NextResponse.json(
         { error: "This offer has already been taken up" },
+        { status: 409 },
+      );
+    }
+    if (outcome.reason === "spent") {
+      // Someone spent the last credit between the read and the debit. Nothing
+      // was kept: the transaction was rolled back with it.
+      return NextResponse.json(
+        { error: "That bundle has no credits left" },
         { status: 409 },
       );
     }
@@ -213,5 +221,8 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ success: true, creditsRemaining: newCredits });
+  return NextResponse.json({
+    success: true,
+    creditsRemaining: outcome.creditsRemaining,
+  });
 }
