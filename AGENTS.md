@@ -105,11 +105,18 @@ src/
       index.ts            # Drizzle client (postgres.js driver)
       schema.ts           # Drizzle schema (all tables including bundleConfig + re-exports auth-schema)
       auth-schema.ts      # Better Auth tables (user, session, account, verification)
-    content/
-      homepage.ts         # Homepage CMS fetches + their hardcoded fallbacks
+    content/             # Every CMS read, and every fallback for one
+      source.ts           # The ContentSource seam: the Sanity adapter, and fetchOrNull
+      in-memory-source.ts # The other adapter: a CMS held in a variable, for tests
+      fallbacks.ts        # One copy of every piece of hardcoded content
+      services.ts         # getService(slug) / getServices()
+      trainer.ts          # getTrainer() — the one trainer fallback, shared by / and /about
+      community.ts        # getCommunityEvents()
+      site-settings.ts    # getSiteSettings() — hero tagline, Instagram link
+      homepage.ts         # The homepage's three sections, composed from the above
     sanity/
       client.ts           # Sanity client + urlFor() image helper
-      queries.ts          # GROQ queries for all document types
+      queries.ts          # GROQ queries — imported only by src/lib/content/
       types.ts            # TypeScript types for Sanity documents
     email.ts              # Resend email helper (sendContactEmail)
     schedule-occupancy.ts # Sole owner of schedules.bookedCount writes
@@ -165,8 +172,14 @@ tests/
   lib/london-time.test.ts     # Class starts across the BST boundary
   admin/waitlist.test.ts      # Waiting list API tests
   admin/waitlist-offer.test.ts # Offer/withdraw route wiring
+  support/content.ts      # What the CMS holds for one test, or that it is unreachable
+  support/sanity-client.ts # The client module stubbed: reading it directly fails
+  lib/content.test.ts     # Every content question, with the CMS up and with it down
+  lib/content-source.test.ts # The seam: fetchOrNull, and the in-memory adapter
+  lib/cms-reads-go-through-content.test.ts # Nothing outside src/lib/content reads Sanity
   lib/homepage-content.test.ts # Homepage CMS fallbacks, section by section
   app/homepage.test.ts    # Homepage renders with the CMS up and with it down
+  app/content-pages.test.ts # /about, /coaching, /private, /community, /classes/[slug]
   app/layout.test.ts      # Root layout renders every page when Sanity throws
   integration/            # Runs against a real Postgres, not mocks
     support/database-url.ts # Which server, and the throwaway database on it
@@ -195,7 +208,10 @@ drizzle/
 - **Nav layout:** Burger menu left, logo (MOONTIDE) right.
 - **Services grouping:** Classes shown as 2x2 photo grid, coaching/private as featured cards, community as light text block.
 - **Sanity images:** Use `urlFor(image).width(x).height(y).url()` from `@/lib/sanity/client`.
-- **Page fallbacks:** The **root layout** reads site settings the same way (`loadSiteSettings` in `src/app/layout.tsx`, caught): it wraps every route, including `/book`, which is pure Postgres, so an uncaught throw there took the whole site down over an optional Instagram link. A CMS outage now costs that link and nothing else (`tests/app/layout.test.ts`). All content pages try Sanity first, fall back to hardcoded content if CMS returns null — and a failed fetch degrades the same way, so a Sanity outage never takes a page down. The homepage's three fetches (services, trainer, site settings) live in `src/lib/content/homepage.ts` rather than inline: each is caught separately, so hero, services grid and about preview degrade one at a time instead of all-or-nothing.
+- **Page fallbacks:** No page reads the CMS. `src/lib/content/` answers **content questions** — `getService(slug)`, `getServices()`, `getTrainer()`, `getCommunityEvents()`, `getSiteSettings()` — and the fallback is part of the answer, so a page renders one thing rather than choosing between a document and a local backup it remembered to write. Every read goes through `fetchOrNull` (`src/lib/content/source.ts`), where a throw becomes "the CMS has nothing to say", which is the state every question already has content for: a Sanity outage costs the CMS's version of a page, never the page. Questions are asked one at a time, so one failing query degrades one section (the homepage's hero, services grid and about preview go independently). The **root layout** is the reason this matters beyond the CMS pages: it wraps every route, including `/book`, which is pure Postgres, so an uncaught throw there once took the whole site down over an optional Instagram link. Consequences:
+  - **The trainer has one fallback.** `/` reads the name, short bio and photo, `/about` the bio and qualifications; they used to fetch the same document with two unrelated sets of hardcoded content and no way to notice they disagreed. Likewise each service's fallback copy is in `src/lib/content/fallbacks.ts`, not in the page that renders it. (The hardcoded *class catalogue* — which classes exist — is a separate concern and still spread across `src/` and `scripts/`; see #38.)
+  - **`src/lib/sanity/queries.ts` is imported only by `src/lib/content/`**, and `sanityClient.fetch` is called only from the Sanity adapter. `tests/lib/cms-reads-go-through-content.test.ts` sweeps `src/**` for both, discovering the files rather than listing them, so a new page is held to it the moment it exists.
+  - **Tests answer with documents, not query strings.** `ContentSource` has two implementations: Sanity, and the in-memory one in `src/lib/content/in-memory-source.ts` that a test hands documents to (`givenCmsHolds`/`givenCmsUnreachable` in `tests/support/content.ts`, with `afterEach(resetContentSource)`). An `Error` in place of a document is that one read failing. Page tests also stub `@/lib/sanity/client` (`tests/support/sanity-client.ts`) — it builds a real client on import, and its `fetch` throws so a test that skipped installing a source fails loudly instead of reaching for the network.
 - **Local dev:** Docker Compose for Postgres, mise for tool versions, just for commands, Doppler for secrets.
 - **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
 - **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
