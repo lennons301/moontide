@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   boolean,
+  check,
   date,
   integer,
   pgEnum,
@@ -71,36 +71,47 @@ export const classes = pgTable("classes", {
   bundleEligible: boolean("bundle_eligible").default(true).notNull(),
 });
 
-export const schedules = pgTable("schedules", {
-  id: serial("id").primaryKey(),
-  classId: integer("class_id")
-    .references(() => classes.id)
-    .notNull(),
-  date: date("date").notNull(),
-  startTime: time("start_time").notNull(),
-  endTime: time("end_time").notNull(),
-  capacity: integer("capacity").notNull().default(8),
-  bookedCount: integer("booked_count").notNull().default(0),
-  location: text("location"),
-  recurringRule: text("recurring_rule"),
-  status: scheduleStatus("status").notNull().default("open"),
-});
+export const schedules = pgTable(
+  "schedules",
+  {
+    id: serial("id").primaryKey(),
+    classId: integer("class_id")
+      .references(() => classes.id)
+      .notNull(),
+    date: date("date").notNull(),
+    startTime: time("start_time").notNull(),
+    endTime: time("end_time").notNull(),
+    capacity: integer("capacity").notNull().default(8),
+    bookedCount: integer("booked_count").notNull().default(0),
+    location: text("location"),
+    recurringRule: text("recurring_rule"),
+    status: scheduleStatus("status").notNull().default("open"),
+  },
+  (table) => ({
+    // Occupancy cannot record seats the class does not admit, and cannot go
+    // negative. Every capacity gate in the application is a read, and a read
+    // cannot refuse a write that a concurrent one has already made.
+    bookedCountWithinCapacity: check(
+      "schedules_booked_count_within_capacity",
+      sql`${table.bookedCount} >= 0 AND ${table.bookedCount} <= ${table.capacity}`,
+    ),
+  }),
+);
 
 export const bundles = pgTable("bundles", {
   id: serial("id").primaryKey(),
   customerEmail: text("customer_email").notNull(),
   creditsTotal: integer("credits_total").notNull().default(6),
   creditsRemaining: integer("credits_remaining").notNull().default(6),
-  stripePaymentId: text("stripe_payment_id").notNull(),
+  stripePaymentId: text("stripe_payment_id").notNull().unique(),
+  // Which bundle product was bought. Nullable: bundles purchased before this
+  // column existed can only have it inferred from their credit count, and that
+  // is ambiguous once two configs sell the same number of credits.
+  bundleConfigId: integer("bundle_config_id").references(() => bundleConfig.id),
   purchasedAt: timestamp("purchased_at").defaultNow().notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   status: bundleStatus("status").notNull().default("active"),
   emailSent: boolean("email_sent").default(false).notNull(),
-  // Which product was bought. Nullable because bundles predating the column
-  // have no record of it beyond the credit count the backfill guessed from.
-  bundleConfigId: integer("bundle_config_id").references(
-    (): AnyPgColumn => bundleConfig.id,
-  ),
 });
 
 export const bundleConfig = pgTable("bundle_config", {

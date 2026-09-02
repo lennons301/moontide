@@ -24,6 +24,14 @@ The preserved timestamp has to satisfy both ends at once:
 
 If the original value cannot satisfy both, stop and ask a human — the two constraints pull against each other and the wrong pick is silent.
 
+### When the branch loses the race (PR #62)
+
+One case does not need asking, because only one answer is survivable. A branch's migration was stamped `1788326170946`; master then merged one stamped `1788332569973` — **later** than the branch's, and already applied wherever master has deployed. Preserving the branch's stamp cannot work: drizzle compares only against the last applied migration, so on every database holding master's it is skipped **forever** and the constraint it adds silently never exists.
+
+So re-stamp it above the migration that now precedes it, and accept the other failure mode: on a database that already ran it under the old stamp — a preview deploy of the same branch — it runs a second time. That is the loud one, and idempotent DDL turns it into a no-op. `migrations-existing` replays this branch's migrations for exactly that reason; if the replay is green, the re-stamp is safe.
+
+The rule stands wherever the original stamp *can* satisfy both ends. This is only the case where it provably cannot.
+
 ## The quiet failure
 
 Stamping a migration *earlier* than the entry before it does not error. Drizzle compares against the **last** applied migration only, so on any database already past that point the migration is skipped **forever**: no exception, no missing-column error until some later read fails in production. It is worse than the loud re-run, and nothing in CI or the deploy log will say so.

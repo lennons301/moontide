@@ -19,11 +19,20 @@ import { createSchedule } from "./support/factories";
  */
 
 async function bookedCount(scheduleId: number): Promise<number> {
+  return (await occupancy(scheduleId)).bookedCount;
+}
+
+async function occupancy(
+  scheduleId: number,
+): Promise<{ bookedCount: number; capacity: number }> {
   const [row] = await db
-    .select({ bookedCount: schedules.bookedCount })
+    .select({
+      bookedCount: schedules.bookedCount,
+      capacity: schedules.capacity,
+    })
     .from(schedules)
     .where(eq(schedules.id, scheduleId));
-  return row.bookedCount;
+  return row;
 }
 
 describe("claimSeat", () => {
@@ -62,14 +71,51 @@ describe("claimSeat", () => {
 });
 
 describe("forceClaimSeat", () => {
-  it("takes the seat and reports the breach when the class is already full", async () => {
+  it("raises capacity with the seat when the class is already full", async () => {
     const schedule = await createSchedule({ capacity: 3, bookedCount: 3 });
 
     await expect(forceClaimSeat(db, schedule.id)).resolves.toEqual({
-      overCapacity: true,
+      capacityRaised: true,
     });
 
-    expect(await bookedCount(schedule.id)).toBe(4);
+    // The customer is charged, so the seat is theirs; the class admits it
+    // rather than recording occupancy the CHECK constraint forbids.
+    expect(await occupancy(schedule.id)).toEqual({
+      bookedCount: 4,
+      capacity: 4,
+    });
+  });
+
+  it("leaves the capacity Gabrielle set alone while there is room", async () => {
+    const schedule = await createSchedule({ capacity: 8, bookedCount: 2 });
+
+    await expect(forceClaimSeat(db, schedule.id)).resolves.toEqual({
+      capacityRaised: false,
+    });
+
+    expect(await occupancy(schedule.id)).toEqual({
+      bookedCount: 3,
+      capacity: 8,
+    });
+  });
+
+  it("takes the last seat without raising capacity", async () => {
+    const schedule = await createSchedule({ capacity: 4, bookedCount: 3 });
+
+    await expect(forceClaimSeat(db, schedule.id)).resolves.toEqual({
+      capacityRaised: false,
+    });
+
+    expect(await occupancy(schedule.id)).toEqual({
+      bookedCount: 4,
+      capacity: 4,
+    });
+  });
+
+  it("writes nothing for a schedule that no longer exists", async () => {
+    await expect(forceClaimSeat(db, 424242)).resolves.toEqual({
+      capacityRaised: false,
+    });
   });
 });
 

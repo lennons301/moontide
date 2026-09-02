@@ -228,6 +228,11 @@ export default function SchedulePage() {
       setEditingId(null);
       setShowForm(false);
       await fetchSchedules();
+    } else {
+      // A refusal has a reason — lowering the capacity below the seats already
+      // taken, say. Saying nothing leaves the form looking like it did nothing.
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      window.alert(data.error || "Failed to save schedule.");
     }
 
     setSubmitting(false);
@@ -490,15 +495,10 @@ export default function SchedulePage() {
                     {item.schedules.location || "-"}
                   </td>
                   <td className="px-4 py-3">
+                    {/* Occupancy can no longer exceed capacity: a paid booking
+                        on a full class raises the capacity with it, so there is
+                        no over-capacity state left to badge here. */}
                     {item.schedules.bookedCount}/{item.schedules.capacity}
-                    {item.schedules.bookedCount > item.schedules.capacity && (
-                      <span
-                        className="ml-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"
-                        title="More bookings than seats. A card payment is never refused once it has gone through, so a class can end up oversold — check who is coming before the class."
-                      >
-                        over capacity
-                      </span>
-                    )}
                     {item.heldCount > 0 && (
                       <span
                         className="ml-1 text-xs text-bright-orange"

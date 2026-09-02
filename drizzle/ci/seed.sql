@@ -51,8 +51,11 @@ INSERT INTO schedules (id, class_id, date, start_time, end_time, capacity, booke
   (4, 3, CURRENT_DATE + 5, '13:00', '14:00', 10, 9, 'The Studio, Hove', 'weekly', 'open'),
   (5, 4, CURRENT_DATE + 10, '18:30', '19:45', 12, 12, 'Church Hall, Portslade', 'weekly', 'open'),
   (6, 2, CURRENT_DATE + 12, '11:00', '12:00', 8, 0, 'The Studio, Hove', 'weekly', 'cancelled'),
-  -- Oversold: a paid path took a seat that was not there.
-  (7, 4, CURRENT_DATE + 21, '18:30', '19:45', 12, 13, 'Church Hall, Portslade', NULL, 'open');
+  -- A class whose capacity a sale raised: it was full at 12 when a paid
+  -- booking arrived, and `forceClaimSeat` took the seat and the capacity with
+  -- it. It used to be seeded oversold (13 of 12), which the CHECK added in
+  -- `0014_capacity_backstop` no longer allows to exist.
+  (7, 4, CURRENT_DATE + 21, '18:30', '19:45', 13, 13, 'Church Hall, Portslade', NULL, 'open');
 
 -- Bundles: one of each status, including one whose credits ran out.
 INSERT INTO bundles (id, customer_email, credits_total, credits_remaining, stripe_payment_id, purchased_at, expires_at, status, email_sent) VALUES
