@@ -18,11 +18,14 @@ const {
   const selectRows: unknown[] = [];
   const selectWhere = vi.fn(async () => selectRows);
   const mockInnerJoin = vi.fn();
+  const mockLeftJoin = vi.fn();
   const mockSelectFrom = vi.fn().mockReturnValue({ innerJoin: mockInnerJoin });
   mockInnerJoin.mockReturnValue({
     innerJoin: mockInnerJoin,
+    leftJoin: mockLeftJoin,
     where: selectWhere,
   });
+  mockLeftJoin.mockReturnValue({ where: selectWhere });
 
   const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
   const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
@@ -98,6 +101,9 @@ const BOOKING_ROW = {
     location: "Studio 1, Hove",
   },
   classes: { id: 3, title: "Prenatal Yoga", priceInPence: 1500 },
+  // The bundle the booking was funded from: a left join, so null when the
+  // customer paid by card.
+  bundles: null,
 };
 
 const BUNDLE_ROW = {
@@ -189,6 +195,29 @@ describe("POST /api/admin/resend-email — a booking", () => {
       }),
     );
     expect(mockUpdateSet).toHaveBeenCalledWith({ emailSent: true });
+  });
+
+  it("resends a credit booking as a credit, not as a price", async () => {
+    queue({ ...BOOKING_ROW, bundles: { id: 5, creditsRemaining: 2 } });
+
+    const response = await POST(request({ type: "booking", id: 12 }));
+
+    expect(response.status).toBe(200);
+    expect(mockSendBookingConfirmation).toHaveBeenCalledWith({
+      customerName: "Jane Doe",
+      customerEmail: "jane@example.com",
+      classTitle: "Prenatal Yoga",
+      date: "2026-06-09",
+      startTime: "10:00:00",
+      endTime: "11:00:00",
+      location: "Studio 1, Hove",
+      payment: { method: "credit", creditsRemaining: 2 },
+    });
+    expect(mockSendBookingNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payment: { method: "credit", creditsRemaining: 2 },
+      }),
+    );
   });
 
   it("returns 404 when the booking is gone", async () => {
