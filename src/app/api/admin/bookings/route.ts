@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -7,8 +7,9 @@ import {
   decideRelease,
   decideReschedule,
 } from "@/lib/bookings/transitions";
+import { refundCredit } from "@/lib/bundles/credits";
 import { db } from "@/lib/db";
-import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
+import { bookings, classes, schedules } from "@/lib/db/schema";
 import { sendRescheduleNotification } from "@/lib/email";
 import { claimSeat, releaseSeat } from "@/lib/schedule-occupancy";
 import { ApiError, refuse, withAdmin } from "../_lib";
@@ -31,20 +32,6 @@ async function findBooking(id: number) {
 async function findSchedule(id: number) {
   const rows = await db.select().from(schedules).where(eq(schedules.id, id));
   return rows[0] ?? null;
-}
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-// Give the credit back (capped at the bundle total) and re-activate a bundle
-// that had been fully spent.
-function restoreBundleCredit(tx: Tx, bundleId: number) {
-  return tx
-    .update(bundles)
-    .set({
-      creditsRemaining: sql`LEAST(${bundles.creditsRemaining} + 1, ${bundles.creditsTotal})`,
-      status: sql`CASE WHEN ${bundles.status} = 'exhausted' THEN 'active'::bundle_status ELSE ${bundles.status} END`,
-    })
-    .where(eq(bundles.id, bundleId));
 }
 
 const missing = { error: "Missing required fields" };
@@ -87,7 +74,7 @@ export const PUT = withAdmin({ body: transitionBody }, async ({ body }) => {
         await releaseSeat(tx, decision.booking.scheduleId);
       }
       if (decision.restoreCreditToBundleId) {
-        await restoreBundleCredit(tx, decision.restoreCreditToBundleId);
+        await refundCredit(tx, decision.restoreCreditToBundleId);
       }
     });
 
@@ -109,7 +96,7 @@ export const PUT = withAdmin({ body: transitionBody }, async ({ body }) => {
         .where(eq(bookings.id, id));
       await releaseSeat(tx, decision.booking.scheduleId);
       if (decision.restoreCreditToBundleId) {
-        await restoreBundleCredit(tx, decision.restoreCreditToBundleId);
+        await refundCredit(tx, decision.restoreCreditToBundleId);
       }
     });
 

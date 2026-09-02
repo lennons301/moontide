@@ -42,3 +42,25 @@ export async function spendCredit(
 
   return spent ? { spent: true, ...spent } : { spent: false };
 }
+
+/**
+ * Give one credit back, and re-activate a bundle that had been fully spent.
+ *
+ * The other half of the same invariant, in the same place: `LEAST` caps the
+ * balance at what the bundle was sold with, so a credit cannot be returned
+ * twice into a bundle that is already whole. Only exhaustion is undone — an
+ * expired bundle stays expired, because a returned credit does not move the
+ * expiry date.
+ */
+export async function refundCredit(
+  writer: CreditWriter,
+  bundleId: number,
+): Promise<void> {
+  await writer
+    .update(bundles)
+    .set({
+      creditsRemaining: sql`LEAST(${bundles.creditsRemaining} + 1, ${bundles.creditsTotal})`,
+      status: sql`CASE WHEN ${bundles.status} = 'exhausted' THEN 'active'::bundle_status ELSE ${bundles.status} END`,
+    })
+    .where(eq(bundles.id, bundleId));
+}
