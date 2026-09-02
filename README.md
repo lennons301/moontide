@@ -36,7 +36,8 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 |---------|-------------|
 | `just dev` | Start dev server (Docker + Doppler + pnpm) |
 | `just build` | Production build |
-| `just test` | Run tests (Vitest) |
+| `just test` | Run tests (Vitest; starts the local Postgres for the integration tests) |
+| `just test-unit` | Run only the mocked tests (no database) |
 | `just lint` | Lint and format (Biome) |
 | `just typecheck` | Type check (tsc --noEmit) |
 | `just setup` | First-time setup |
@@ -55,7 +56,7 @@ src/
   lib/          # Shared utilities (db, sanity, auth, stripe, email)
   sanity/       # Sanity Studio schema and structure
 scripts/        # Seed scripts
-tests/          # Vitest tests
+tests/          # Vitest tests (mocked; tests/integration/ runs against a real Postgres)
 drizzle/        # Generated migrations
 ```
 
@@ -78,7 +79,7 @@ Editorial content is managed in Sanity. The embedded Studio is available at `/st
 
 ## CI/CD
 
-GitHub Actions runs lint, typecheck, and tests on all PRs and pushes to `master`. No secrets are needed in CI — all tests use mocks.
+GitHub Actions runs lint, typecheck, and tests on all PRs and pushes to `master`. No secrets are needed in CI: the mocked tests need nothing, and the integration tests and migration checks run against a Postgres container the runner creates and destroys.
 
 Vercel deploys automatically: pushes to `master` deploy to production, all other branches create preview deployments.
 

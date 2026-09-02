@@ -16,6 +16,8 @@
     "db:seed-bundle-config": "tsx scripts/seed-bundle-config.ts",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
     "test:watch": "vitest",
     "prepare": "husky"
   },
