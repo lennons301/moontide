@@ -89,6 +89,8 @@ src/
       index.ts            # Drizzle client (postgres.js driver)
       schema.ts           # Drizzle schema (all tables including bundleConfig + re-exports auth-schema)
       auth-schema.ts      # Better Auth tables (user, session, account, verification)
+    content/
+      homepage.ts         # Homepage CMS fetches + their hardcoded fallbacks
     sanity/
       client.ts           # Sanity client + urlFor() image helper
       queries.ts          # GROQ queries for all document types
@@ -132,6 +134,8 @@ tests/
   lib/london-time.test.ts     # Class starts across the BST boundary
   admin/waitlist.test.ts      # Waiting list API tests
   admin/waitlist-offer.test.ts # Offer/withdraw route wiring
+  lib/homepage-content.test.ts # Homepage CMS fallbacks, section by section
+  app/homepage.test.ts    # Homepage renders with the CMS up and with it down
 drizzle/
   migrations/             # Generated Drizzle migrations
   ci/seed.sql             # Production-shaped data the CI migration check runs against
@@ -147,7 +151,7 @@ drizzle/
 - **Nav layout:** Burger menu left, logo (MOONTIDE) right.
 - **Services grouping:** Classes shown as 2x2 photo grid, coaching/private as featured cards, community as light text block.
 - **Sanity images:** Use `urlFor(image).width(x).height(y).url()` from `@/lib/sanity/client`.
-- **Page fallbacks:** All content pages try Sanity first, fall back to hardcoded content if CMS returns null.
+- **Page fallbacks:** All content pages try Sanity first, fall back to hardcoded content if CMS returns null — and a failed fetch degrades the same way, so a Sanity outage never takes a page down. The homepage's three fetches (services, trainer, site settings) live in `src/lib/content/homepage.ts` rather than inline: each is caught separately, so hero, services grid and about preview degrade one at a time instead of all-or-nothing.
 - **Local dev:** Docker Compose for Postgres, mise for tool versions, just for commands, Doppler for secrets.
 - **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
 - **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
@@ -181,6 +185,7 @@ drizzle/
 - **CI/CD:** GitHub Actions runs lint, typecheck, and test on PRs and pushes to master. No secrets needed in CI — all tests use mocks.
 - **Migrations in CI:** Two jobs in `.github/workflows/ci.yml` run the migrations against a Postgres service container the runner creates and destroys, so a migration that cannot apply fails the PR rather than the Vercel deploy (`"build": "drizzle-kit migrate && next build"` used to be the first thing that ever ran one). `migrations-empty` applies them all from scratch. `migrations-existing` applies the migrations as they stood on the base commit, loads `drizzle/ci/seed.sql`, then applies this branch's — so a migration meets rows, not empty tables. No credentials are involved: the container's password protects nothing and no real database is reachable from CI. Every migrate step falls through to `scripts/ci/explain-migration-failure.mjs` on failure, because drizzle-kit exits 1 printing nothing but its spinner — the explainer replays the pending migrations statement by statement in a rolled-back transaction and names the one Postgres rejected.
 - **Migrations must be re-runnable:** `migrations-existing` finishes by forgetting the migrations this branch adds (`scripts/ci/forget-new-migrations.mjs` deletes their rows from `drizzle.__drizzle_migrations`) and applying them again. Drizzle picks migrations by their journal timestamp, not by filename or hash, so one that is renumbered or re-stamped while resolving a merge reads as unapplied on a database a preview deploy already migrated, and its DDL runs a second time. So write new migrations idempotently — `ADD COLUMN IF NOT EXISTS`, `ADD VALUE IF NOT EXISTS`, and for constraints a `DO $$ ... EXCEPTION WHEN duplicate_object OR duplicate_table THEN null; END $$` block (a repeated UNIQUE constraint raises `duplicate_table`, because the clash is with the index it creates). Only migrations absent from the base commit are replayed, so the older non-idempotent ones are left alone.
+- **Renumbering a migration:** When a merge puts two migrations in the same numbered slot, rename the losing file but **keep its `when` in `_journal.json`** — re-stamping it re-runs its DDL on a database that already applied it (a preview deploy of an unmerged branch migrates stg), and stamping it below the entry before it makes drizzle skip it forever. Full rule, both constraints and the PR #40 worked example: `docs/agents/migrations.md`.
 - **The CI seed:** `drizzle/ci/seed.sql` is not a test fixture (the suite is entirely mocked) and not the dev seed — it exists to make migrations meet data, so it wants breadth over volume: every status of every table and the awkward rows. CI reads it **as it stood on the base commit**, because it stands for data that already exists and so must match the schema that exists before the branch's migrations run. Write it against the schema on master; a PR that adds a column should not add it here in the same breath.
 - **Secrets sync:** Doppler-Vercel integration auto-syncs secrets. Doppler `prd` → Vercel Production, Doppler `stg` → Vercel Preview. Never manually set env vars in Vercel that Doppler manages.
 - **CMS revalidation:** Sanity webhook POSTs to `/api/revalidate` on publish. Handler verifies `SANITY_WEBHOOK_SECRET` header, maps document types to paths, calls `revalidatePath()`. All CMS pages also have `revalidate = 3600` as a fallback.
