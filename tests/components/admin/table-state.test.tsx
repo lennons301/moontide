@@ -34,6 +34,11 @@ describe("adminStateMessage", () => {
     ).toBe("Your session has expired. Taking you to sign in...");
   });
 
+  it("leaves the rows alone while they are being loaded again", () => {
+    // A refetch after a cancellation: the table already has rows to show.
+    expect(adminStateMessage({ ...HAS_ROWS, loading: true })).toBeNull();
+  });
+
   it("prefers loading to both", () => {
     expect(
       adminStateMessage({

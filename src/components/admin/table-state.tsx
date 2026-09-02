@@ -13,15 +13,17 @@ export interface TableState {
 /**
  * What a table says instead of rows, or null when it has rows to show.
  *
- * One decision, in the order that matters: a failed load is not an empty table,
- * and saying "No bookings yet" when the request was refused is how an expired
- * session used to look like a quiet morning.
+ * Rows win: a refetch after a cancellation puts the resource back into
+ * `loading`, and replacing the table with "Loading..." for that moment would be
+ * a flicker rather than news. After that, the order that matters — a failed
+ * load is not an empty table, and saying "No bookings yet" when the request was
+ * refused is how an expired session used to look like a quiet morning.
  */
 export function adminStateMessage(state: TableState): string | null {
+  if (!state.isEmpty) return null;
   if (state.loading) return "Loading...";
   if (state.error) return state.error;
-  if (state.isEmpty) return state.emptyMessage;
-  return null;
+  return state.emptyMessage;
 }
 
 interface TableStateRowProps extends TableState {
