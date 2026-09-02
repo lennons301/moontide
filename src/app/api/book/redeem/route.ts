@@ -3,7 +3,7 @@ import { after, NextResponse } from "next/server";
 import { findSpendableBundle, spendCredit } from "@/lib/bundles/credits";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
-import { sendBookingConfirmation } from "@/lib/email";
+import { sendBookingConfirmation, sendBookingNotification } from "@/lib/email";
 import { claimSeat } from "@/lib/schedule-occupancy";
 import { findOfferByToken } from "@/lib/waitlist/held-seats";
 import { decideRedemptionSeat } from "@/lib/waitlist/offers";
@@ -193,10 +193,15 @@ export async function POST(request: Request) {
   }
 
   if (seat.kind === "held-seat") {
-    // Taking up an offer is a booking like any other, so it gets the existing
-    // confirmation unchanged. (Ordinary redemptions send nothing today; that is
-    // left as it was.)
     const bookingId = outcome.bookingId;
+    // A credit was spent, so that is what both emails say — the class list
+    // price is money this customer never paid. `creditsRemaining` is the
+    // balance the guarded debit actually wrote, not one computed here.
+    const payment = {
+      method: "credit",
+      creditsRemaining: outcome.creditsRemaining,
+    } as const;
+
     after(async () => {
       try {
         await sendBookingConfirmation({
@@ -207,8 +212,21 @@ export async function POST(request: Request) {
           startTime: schedule.startTime,
           endTime: schedule.endTime,
           location: schedule.location,
-          payment: { method: "card", priceInPence: schedule.priceInPence },
+          payment,
         });
+
+        await sendBookingNotification({
+          type: "individual",
+          customerName,
+          customerEmail,
+          classTitle: schedule.classTitle,
+          date: schedule.date,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          location: schedule.location,
+          payment,
+        });
+
         if (bookingId !== undefined) {
           await db
             .update(bookings)
@@ -216,7 +234,7 @@ export async function POST(request: Request) {
             .where(eq(bookings.id, bookingId));
         }
       } catch (e) {
-        console.error("Offer acceptance email send failed", e);
+        console.error("Redemption email send failed", e);
       }
     });
   }

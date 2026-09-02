@@ -18,6 +18,7 @@ const {
   mockDelete,
   mockTransaction,
   mockSendBookingConfirmation,
+  mockSendBookingNotification,
   mockAfter,
   mockFindSpendableBundle,
   mockSpendCredit,
@@ -38,6 +39,9 @@ const {
   const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
   const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
   const mockSendBookingConfirmation = vi
+    .fn()
+    .mockResolvedValue({ success: true });
+  const mockSendBookingNotification = vi
     .fn()
     .mockResolvedValue({ success: true });
   const mockAfter = vi.fn((fn: () => Promise<void> | void) => fn());
@@ -85,6 +89,7 @@ const {
     mockDelete,
     mockTransaction,
     mockSendBookingConfirmation,
+    mockSendBookingNotification,
     mockAfter,
     mockFindSpendableBundle,
     mockSpendCredit,
@@ -142,6 +147,7 @@ vi.mock("@/lib/db/schema", () => ({
 
 vi.mock("@/lib/email", () => ({
   sendBookingConfirmation: mockSendBookingConfirmation,
+  sendBookingNotification: mockSendBookingNotification,
 }));
 
 vi.mock("next/server", async () => {
@@ -641,13 +647,31 @@ describe("POST /api/book/redeem with an offer token", () => {
     expect(mockSpendCredit).toHaveBeenCalledWith(expect.anything(), 10);
 
     // Acceptance takes the waiting-list entry with it, and the customer gets
-    // the existing booking confirmation.
+    // the booking confirmation — for the credit she spent, not the list price
+    // she did not pay. Asserted in full: an `objectContaining` that omits the
+    // payment is how a cash price went out on a credit booking unnoticed.
     expect(mockDelete).toHaveBeenCalled();
-    expect(mockSendBookingConfirmation).toHaveBeenCalledWith(
+    expect(mockSendBookingConfirmation).toHaveBeenCalledWith({
+      customerName: "Jane Doe",
+      customerEmail: "jane@example.com",
+      classTitle: "Prenatal Yoga",
+      date: "2099-06-20",
+      startTime: "10:00:00",
+      endTime: "11:00:00",
+      location: "Studio 1, Hove",
+      payment: { method: "credit", creditsRemaining: 3 },
+    });
+  });
+
+  it("tells Gabrielle the seat went to a credit, not to a payment", async () => {
+    await POST(redeemWithToken());
+
+    expect(mockSendBookingNotification).toHaveBeenCalledWith(
       expect.objectContaining({
+        type: "individual",
         customerEmail: "jane@example.com",
         classTitle: "Prenatal Yoga",
-        date: "2099-06-20",
+        payment: { method: "credit", creditsRemaining: 3 },
       }),
     );
   });
