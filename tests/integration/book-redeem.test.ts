@@ -14,6 +14,16 @@ vi.mock("@/lib/email", () => ({
   sendBookingNotification: vi.fn(),
 }));
 
+// The confirmation is registered with `after()`, which throws when the handler
+// is called directly rather than through a Next request. This test is about the
+// rows the transaction leaves behind, so the send is dropped: that it happens,
+// and with what, is tests/api/book-redeem.test.ts.
+vi.mock("next/server", async () => {
+  const actual =
+    await vi.importActual<typeof import("next/server")>("next/server");
+  return { ...actual, after: () => {} };
+});
+
 /**
  * Spending a bundle credit against a real database: request in, rows out. The
  * mocked equivalent in `tests/api/book-redeem.test.ts` asserts which statements
