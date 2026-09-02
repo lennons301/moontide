@@ -36,14 +36,27 @@ export const metadata: Metadata = {
     "Wellbeing for women navigating change through yoga, coaching and embodied connection.",
 };
 
+/**
+ * The root layout wraps every route, including `/book`, which has no Sanity
+ * dependency of its own. The only thing this read is used for is the footer's
+ * Instagram link, so a CMS outage must cost that link and nothing else — an
+ * uncaught throw here would throw inside every page's render.
+ */
+async function loadSiteSettings(): Promise<SiteSettings | null> {
+  try {
+    return await sanityClient.fetch<SiteSettings | null>(siteSettingsQuery);
+  } catch {
+    // Sanity unreachable — the footer renders without its Instagram link
+    return null;
+  }
+}
+
 export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const siteSettings = await sanityClient.fetch<SiteSettings | null>(
-    siteSettingsQuery,
-  );
+  const siteSettings = await loadSiteSettings();
 
   return (
     <html
