@@ -8,6 +8,7 @@ Wellbeing website for women navigating change through yoga, coaching, and embodi
 - **Database:** Neon (Postgres) with Drizzle ORM
 - **CMS:** Sanity (project ID: 77icfczp, dataset: production)
 - **Auth:** Better Auth (admin-only, email/password)
+- **Validation:** Zod 4 (request schemas for `/api/admin/*`)
 - **Payments:** Stripe Checkout + webhooks
 - **UI:** shadcn/ui + Tailwind CSS v4
 - **Email:** Resend
@@ -47,6 +48,8 @@ src/
         checkout/         # Create Stripe Checkout session (individual + bundle, or an offered held seat)
         redeem/           # Redeem bundle credit (new seat or an offered held seat)
       admin/
+        _lib/             # withAdmin: session + role, body/query parsing, one error shape
+        resend-email/     # POST resend a booking or bundle confirmation
         schedules/        # CRUD API for class schedules
         waitlist/         # GET waiting list + occupancy, DELETE an entry
         waitlist/offer/   # POST offer a held seat, DELETE withdraw it
@@ -130,6 +133,14 @@ scripts/
     explain-migration-failure.mjs # Name the statement drizzle-kit died on (it says nothing)
 tests/
   setup-dom.ts            # jsdom setup: jest-dom matchers, cleanup between tests
+  support/admin-session.ts # The fake admin session the admin route tests run behind
+  admin/with-admin.test.ts # The request module: auth, parsing, error shape
+  admin/routes-are-protected.test.ts # Every /api/admin handler, signed out and demoted
+  admin/bookings.test.ts      # Booking list + cancel/release/reschedule wiring
+  admin/bundles.test.ts       # Bundle list
+  admin/classes.test.ts       # Active class list
+  admin/messages.test.ts      # Contact message read flag
+  admin/resend-email.test.ts  # Resending a booking or bundle confirmation
   components/admin/*.test.tsx # Rendered admin chrome (PillGroup, headers, badge)
   components/admin/use-table-controls.test.ts # deriveTableRows / toggleSortState
   components/admin/format-date.test.ts # The four date shapes, and todayString
@@ -187,11 +198,11 @@ drizzle/
 - **Auth:** Better Auth protects `/admin/*` routes via proxy. Login at `/admin/login`. There is one account — Gabrielle's — and no customer auth at all: bookings are keyed by email address. So **sign-up is disabled** (`disableSignUp` on the mounted instance, and `/api/auth/sign-up*` is refused at the proxy, which is why the matcher covers `/api/auth/:path*`). Accounts are created only by `scripts/seed-admin.ts`, which builds its own `createAuth({ allowSignUp: true })` instance in-process.
 - **The admin role:** `user.role` must be `"admin"` to get past the proxy. It is declared to Better Auth as an additional field with `input: false`, so no auth endpoint can set it — the seed script grants it with a direct `UPDATE`. Migration `0012` backfills every user that predates it, because they are all admin logins.
 - **Proxy session check:** `src/proxy.ts` resolves the cookie through `auth.api.getSession` rather than testing that a cookie exists — a cookie is a string a visitor can type. No session, a forged or expired token, a non-admin user, or a session lookup that throws are all refused (401 for `/api/admin/*`, redirect to login for pages). The proxy runs on the Node runtime, so it can reach the database directly. Tests: `tests/proxy.test.ts`.
-- **Admin APIs:** Routes at `/api/admin/*` — not separately auth-protected (rely on the proxy; handler-level enforcement is a separate piece of work).
+- **Admin APIs:** Every handler under `/api/admin/*` is `withAdmin(schema, handler)` from `src/app/api/admin/_lib`, and nothing else. It resolves the session through `auth.api.getSession` and insists on the admin role (401 with no session, a forged one or a lookup that throws; 403 for a real session on a non-admin), parses `schema.body` and `schema.query` with zod, and renders every failure as `{ error }` through the one `jsonError`. So a handler receives `{ body, query, user, request }` — parsed values, never a `Request` to pick apart — and never validates, never reads `request.json()`, never constructs an error response. **Every validation message is written into the schema** (`z.number({ error: "Missing schedule ID" })`), because the response says exactly what the schema said; repeated messages are collapsed, so three fields sharing "Missing required fields" answer with it once. A refusal is **thrown** as `ApiError(status, message)` — including from inside `db.transaction`, where the throw is also the rollback — and `refuse(decision)` is the shorthand for the `{ ok: false, error, httpStatus }` the pure decision functions return. Anything else thrown is a fault: logged, and answered `500 { error: "Something went wrong" }`. Checking auth here as well as at the proxy is deliberate: the proxy is a matcher, and a handler that refuses on its own does not depend on being routed through anything. Tests: `tests/admin/with-admin.test.ts` for the module, `tests/admin/routes-are-protected.test.ts` for the sweep over every handler (its handler count is asserted, so a new route that forgets the module fails).
 - **Stripe webhook:** At `/api/stripe/webhook` — reads raw body for signature verification, never parse JSON before verifying.
 - **Booking flow:** `/api/book/checkout` (Stripe Checkout) and `/api/book/redeem` (bundle credit). Checkout handles both individual and bundle purchases via `type` field, and an offered held seat via `offerToken`.
 - **Prices in pence:** Class prices stored in `classes.priceInPence`. Bundle config (price, credits, expiry) stored in `bundleConfig` table — editable via admin UI at `/admin/pricing`.
-- **Bundle config:** The `bundleConfig` table holds bundle products (price, credits, expiry days). Checkout attaches `bundleConfigId` to Stripe session metadata; webhook reads it back to set credits and expiry on the purchased bundle. Changes only affect new purchases.
+- **Bundle config:** The `bundleConfig` table holds bundle products (price, credits, expiry days). Checkout attaches `bundleConfigId` to Stripe session metadata; webhook reads it back to set credits and expiry on the purchased bundle. Changes only affect new purchases. The webhook also **records which config was bought** on `bundles.bundleConfigId`, so a later read names the right product: the resend route used to join on `creditsTotal = credits`, which picks the wrong config the moment two of them sell the same number of classes. Migration `0013` adds the column and backfills the old rows with exactly that credit-count guess, once. `/api/cron/retry-emails` still joins on credits and should be moved onto the column too.
 - **Bundle redemption:** Email-based lookup, no customer auth required. Expiry set per-bundle from config at purchase time. Refuses cancelled classes (read of `schedules.status`) and full classes (via `claimSeat`, so the capacity check is never a read taken beforehand). Capacity is enforced in application code — deliberately no DB constraint on `bookedCount <= capacity`, since it would fail to apply against oversold rows and would turn the post-payment webhook write into a server error with the customer already charged.
 - **Schedule occupancy:** `src/lib/schedule-occupancy.ts` owns every write to `schedules.bookedCount` — routes never adjust it directly. `claimSeat` is a guarded, atomic claim (the capacity check is the UPDATE's WHERE clause) that returns `{ claimed: false }` rather than throwing; `forceClaimSeat` always takes the seat and reports `{ overCapacity }` for already-paid paths; `releaseSeat` frees a seat clamped at zero, and `releaseSeats` frees several in one clamped statement so a batch release cannot be half applied.
 - **Bundle eligibility:** `classes.bundleEligible` (default true) controls whether bundle credits may be spent on a class. Toggled at `/admin/pricing`; enforced server-side in `/api/book/redeem`, with `/book` hiding the bundle option for ineligible classes.
