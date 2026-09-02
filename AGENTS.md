@@ -165,6 +165,7 @@ tests/
   admin/waitlist-offer.test.ts # Offer/withdraw route wiring
   lib/homepage-content.test.ts # Homepage CMS fallbacks, section by section
   app/homepage.test.ts    # Homepage renders with the CMS up and with it down
+  app/layout.test.ts      # Root layout renders every page when Sanity throws
   integration/            # Runs against a real Postgres, not mocks
     support/database-url.ts # Which server, and the throwaway database on it
     support/global-setup.ts # Drop, create and migrate that database, once per run
@@ -190,7 +191,7 @@ drizzle/
 - **Nav layout:** Burger menu left, logo (MOONTIDE) right.
 - **Services grouping:** Classes shown as 2x2 photo grid, coaching/private as featured cards, community as light text block.
 - **Sanity images:** Use `urlFor(image).width(x).height(y).url()` from `@/lib/sanity/client`.
-- **Page fallbacks:** All content pages try Sanity first, fall back to hardcoded content if CMS returns null — and a failed fetch degrades the same way, so a Sanity outage never takes a page down. The homepage's three fetches (services, trainer, site settings) live in `src/lib/content/homepage.ts` rather than inline: each is caught separately, so hero, services grid and about preview degrade one at a time instead of all-or-nothing.
+- **Page fallbacks:** The **root layout** reads site settings the same way (`loadSiteSettings` in `src/app/layout.tsx`, caught): it wraps every route, including `/book`, which is pure Postgres, so an uncaught throw there took the whole site down over an optional Instagram link. A CMS outage now costs that link and nothing else (`tests/app/layout.test.ts`). All content pages try Sanity first, fall back to hardcoded content if CMS returns null — and a failed fetch degrades the same way, so a Sanity outage never takes a page down. The homepage's three fetches (services, trainer, site settings) live in `src/lib/content/homepage.ts` rather than inline: each is caught separately, so hero, services grid and about preview degrade one at a time instead of all-or-nothing.
 - **Local dev:** Docker Compose for Postgres, mise for tool versions, just for commands, Doppler for secrets.
 - **Postgres driver:** Use `postgres` (postgres.js), not `@neondatabase/serverless` — must work with local Docker.
 - **Revalidation:** Homepage uses `revalidate = 60` for ISR. Content pages are static with Sanity fallbacks.
