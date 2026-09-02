@@ -19,6 +19,8 @@ const {
   mockTransaction,
   mockSendBookingConfirmation,
   mockAfter,
+  mockFindSpendableBundle,
+  mockSpendCredit,
 } = vi.hoisted(() => {
   const mockSelectWhere = vi.fn().mockResolvedValue([]);
   const mockInnerJoin = vi.fn().mockReturnValue({ where: mockSelectWhere });
@@ -60,6 +62,12 @@ const {
     },
   );
   const mockSelect = vi.fn().mockReturnValue({ from: mockSelectFrom });
+  // Which bundle is chosen, and whether the credit is still there to spend,
+  // belong to the credit module — and are covered against a real database in
+  // tests/integration/bundle-credits.test.ts. Here they are the answers the
+  // route is wired to.
+  const mockFindSpendableBundle = vi.fn();
+  const mockSpendCredit = vi.fn();
   return {
     mockSelect,
     mockSelectFrom,
@@ -78,8 +86,15 @@ const {
     mockTransaction,
     mockSendBookingConfirmation,
     mockAfter,
+    mockFindSpendableBundle,
+    mockSpendCredit,
   };
 });
+
+vi.mock("@/lib/bundles/credits", () => ({
+  findSpendableBundle: mockFindSpendableBundle,
+  spendCredit: mockSpendCredit,
+}));
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -149,6 +164,15 @@ vi.mock("drizzle-orm", () => ({
 
 import { POST } from "@/app/api/book/redeem/route";
 
+const SPENDABLE = {
+  id: 10,
+  customerEmail: "jane@example.com",
+  creditsTotal: 6,
+  creditsRemaining: 4,
+  status: "active",
+  expiresAt: new Date("2099-12-31"),
+};
+
 describe("POST /api/book/redeem", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -181,6 +205,8 @@ describe("POST /api/book/redeem", () => {
         return await fn(tx);
       },
     );
+    mockFindSpendableBundle.mockResolvedValue(SPENDABLE);
+    mockSpendCredit.mockResolvedValue({ spent: true, creditsRemaining: 3 });
   });
 
   it("returns 400 when required fields are missing", async () => {
@@ -244,10 +270,11 @@ describe("POST /api/book/redeem", () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it("returns 404 when no active bundle found", async () => {
-    mockSelectWhere
-      .mockResolvedValueOnce([{ bundleEligible: true, status: "open" }])
-      .mockResolvedValueOnce([]);
+  it("returns 404 when the customer has no bundle to spend from", async () => {
+    mockSelectWhere.mockResolvedValueOnce([
+      { bundleEligible: true, status: "open" },
+    ]);
+    mockFindSpendableBundle.mockResolvedValue(null);
 
     const request = new Request("http://localhost:3000/api/book/redeem", {
       method: "POST",
@@ -268,16 +295,6 @@ describe("POST /api/book/redeem", () => {
   it("returns 200 for valid bundle redemption", async () => {
     mockSelectWhere
       .mockResolvedValueOnce([{ bundleEligible: true, status: "open" }])
-      .mockResolvedValueOnce([
-        {
-          id: 10,
-          customerEmail: "jane@example.com",
-          creditsTotal: 6,
-          creditsRemaining: 4,
-          status: "active",
-          expiresAt: new Date("2026-12-31"),
-        },
-      ])
       .mockResolvedValueOnce([]);
 
     const request = new Request("http://localhost:3000/api/book/redeem", {
@@ -310,14 +327,10 @@ describe("POST /api/book/redeem", () => {
       }),
     );
 
-    // Verify bundle credits were decremented
-    expect(mockUpdate).toHaveBeenCalled();
-    expect(mockUpdateSet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        creditsRemaining: 3,
-        status: "active",
-      }),
-    );
+    // One credit spent, from the bundle the read chose, inside the
+    // transaction the booking was made in.
+    expect(mockSpendCredit).toHaveBeenCalledTimes(1);
+    expect(mockSpendCredit).toHaveBeenCalledWith(expect.anything(), 10);
 
     // Verify the seat was taken through the guarded claim
     expect(mockUpdateSet).toHaveBeenCalledWith(
@@ -329,16 +342,6 @@ describe("POST /api/book/redeem", () => {
   it("returns 409 when customer already has a booking for this schedule", async () => {
     mockSelectWhere
       .mockResolvedValueOnce([{ bundleEligible: true, status: "open" }])
-      .mockResolvedValueOnce([
-        {
-          id: 10,
-          customerEmail: "jane@example.com",
-          creditsTotal: 6,
-          creditsRemaining: 4,
-          status: "active",
-          expiresAt: new Date("2026-12-31"),
-        },
-      ])
       .mockResolvedValueOnce([{ id: 99, status: "confirmed" }]);
 
     const request = new Request("http://localhost:3000/api/book/redeem", {
@@ -417,16 +420,6 @@ describe("POST /api/book/redeem", () => {
   it("refuses to spend a credit when the class has no places left", async () => {
     mockSelectWhere
       .mockResolvedValueOnce([{ bundleEligible: true, status: "open" }])
-      .mockResolvedValueOnce([
-        {
-          id: 10,
-          customerEmail: "jane@example.com",
-          creditsTotal: 6,
-          creditsRemaining: 4,
-          status: "active",
-          expiresAt: new Date("2026-12-31"),
-        },
-      ])
       .mockResolvedValueOnce([]);
     // The guarded claim matches no row when occupancy is already at capacity.
     mockUpdateReturning.mockResolvedValue([]);
@@ -453,24 +446,12 @@ describe("POST /api/book/redeem", () => {
     // guarded claim, which matched nothing.
     expect(mockInsert).not.toHaveBeenCalled();
     expect(mockUpdateSet).toHaveBeenCalledTimes(1);
-    expect(mockUpdateSet).not.toHaveBeenCalledWith(
-      expect.objectContaining({ creditsRemaining: expect.anything() }),
-    );
+    expect(mockSpendCredit).not.toHaveBeenCalled();
   });
 
   it("does not read occupancy ahead of the claim", async () => {
     mockSelectWhere
       .mockResolvedValueOnce([{ bundleEligible: true, status: "open" }])
-      .mockResolvedValueOnce([
-        {
-          id: 10,
-          customerEmail: "jane@example.com",
-          creditsTotal: 6,
-          creditsRemaining: 4,
-          status: "active",
-          expiresAt: new Date("2026-12-31"),
-        },
-      ])
       .mockResolvedValueOnce([]);
 
     const request = new Request("http://localhost:3000/api/book/redeem", {
@@ -502,20 +483,13 @@ describe("POST /api/book/redeem", () => {
     );
   });
 
-  it("sets bundle status to exhausted when credits reach 0", async () => {
+  it("reports the balance the debit left, not one of its own arithmetic", async () => {
     mockSelectWhere
       .mockResolvedValueOnce([{ bundleEligible: true, status: "open" }])
-      .mockResolvedValueOnce([
-        {
-          id: 10,
-          customerEmail: "jane@example.com",
-          creditsTotal: 6,
-          creditsRemaining: 1,
-          status: "active",
-          expiresAt: new Date("2026-12-31"),
-        },
-      ])
       .mockResolvedValueOnce([]);
+    // Whatever the row said when it was read, the answer is the number the
+    // guarded debit actually wrote.
+    mockSpendCredit.mockResolvedValue({ spent: true, creditsRemaining: 0 });
 
     const request = new Request("http://localhost:3000/api/book/redeem", {
       method: "POST",
@@ -532,14 +506,35 @@ describe("POST /api/book/redeem", () => {
     const body = await response.json();
     expect(body.success).toBe(true);
     expect(body.creditsRemaining).toBe(0);
+  });
 
-    // Verify bundle status set to exhausted
-    expect(mockUpdateSet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        creditsRemaining: 0,
-        status: "exhausted",
+  it("refuses the booking when the credit is gone by the time it is spent", async () => {
+    mockSelectWhere
+      .mockResolvedValueOnce([{ bundleEligible: true, status: "open" }])
+      .mockResolvedValueOnce([]);
+    // Someone else spent the last credit between the read and the debit.
+    mockSpendCredit.mockResolvedValue({ spent: false });
+
+    const request = new Request("http://localhost:3000/api/book/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 1,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
       }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe(
+      "That bundle has no credits left",
     );
+
+    // The refusal is thrown out of the transaction, which is what rolls the
+    // seat and the booking back. What the rows look like afterwards is
+    // tests/integration/book-redeem.test.ts.
+    expect(mockTransaction).toHaveBeenCalledOnce();
   });
 });
 
@@ -553,15 +548,6 @@ describe("POST /api/book/redeem with an offer token", () => {
     location: "Studio 1, Hove",
     classTitle: "Prenatal Yoga",
     priceInPence: 1800,
-  };
-
-  const BUNDLE = {
-    id: 10,
-    customerEmail: "jane@example.com",
-    creditsTotal: 6,
-    creditsRemaining: 4,
-    status: "active",
-    expiresAt: new Date("2099-12-31"),
   };
 
   const HELD_BOOKING = { id: 77, status: "held" };
@@ -623,10 +609,11 @@ describe("POST /api/book/redeem with an offer token", () => {
           select: vi.fn().mockReturnValue({ from: mockSelectFrom }),
         }),
     );
-    // schedule, bundles, existing bookings (the held seat), offer by token
+    mockFindSpendableBundle.mockResolvedValue(SPENDABLE);
+    mockSpendCredit.mockResolvedValue({ spent: true, creditsRemaining: 3 });
+    // schedule, existing bookings (the held seat), offer by token
     mockSelectWhere
       .mockResolvedValueOnce([SCHEDULE])
-      .mockResolvedValueOnce([BUNDLE])
       .mockResolvedValueOnce([HELD_BOOKING])
       .mockResolvedValueOnce([offerRow()]);
   });
@@ -649,10 +636,9 @@ describe("POST /api/book/redeem with an offer token", () => {
       expect.objectContaining({ bookedCount: expect.anything() }),
     );
 
-    // Exactly one credit spent.
-    expect(mockUpdateSet).toHaveBeenCalledWith(
-      expect.objectContaining({ creditsRemaining: 3, status: "active" }),
-    );
+    // Exactly one credit spent, from the bundle the read chose.
+    expect(mockSpendCredit).toHaveBeenCalledTimes(1);
+    expect(mockSpendCredit).toHaveBeenCalledWith(expect.anything(), 10);
 
     // Acceptance takes the waiting-list entry with it, and the customer gets
     // the existing booking confirmation.
@@ -675,7 +661,6 @@ describe("POST /api/book/redeem with an offer token", () => {
     mockSelectWhere.mockReset();
     mockSelectWhere
       .mockResolvedValueOnce([SCHEDULE])
-      .mockResolvedValueOnce([BUNDLE])
       .mockResolvedValueOnce([HELD_BOOKING])
       .mockResolvedValueOnce([
         {
@@ -698,7 +683,6 @@ describe("POST /api/book/redeem with an offer token", () => {
     mockSelectWhere.mockReset();
     mockSelectWhere
       .mockResolvedValueOnce([SCHEDULE])
-      .mockResolvedValueOnce([BUNDLE])
       .mockResolvedValueOnce([HELD_BOOKING])
       .mockResolvedValueOnce([]);
 
@@ -717,9 +701,7 @@ describe("POST /api/book/redeem with an offer token", () => {
     expect(body.error).toBe("This offer has already been taken up");
 
     // No credit spent and the waiting-list entry left alone.
-    expect(mockUpdateSet).not.toHaveBeenCalledWith(
-      expect.objectContaining({ creditsRemaining: expect.anything() }),
-    );
+    expect(mockSpendCredit).not.toHaveBeenCalled();
     expect(mockDelete).not.toHaveBeenCalled();
   });
 });

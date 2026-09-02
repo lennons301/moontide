@@ -1,8 +1,9 @@
-import { and, eq, gt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { findSpendableBundle } from "@/lib/bundles/credits";
 import { db } from "@/lib/db";
-import { bundles, classes, schedules } from "@/lib/db/schema";
+import { classes, schedules } from "@/lib/db/schema";
 import { findOfferByToken } from "@/lib/waitlist/held-seats";
 import { hasOfferLapsed } from "@/lib/waitlist/offers";
 import { OfferClient } from "./offer-client";
@@ -120,18 +121,13 @@ export default async function OfferPage({
   }
 
   // Whether they hold credits is decided from their email address alone — the
-  // same posture bundle redemption already takes, with no customer login.
-  const usableBundles = await db
-    .select({ creditsRemaining: bundles.creditsRemaining })
-    .from(bundles)
-    .where(
-      and(
-        eq(bundles.customerEmail, offer.customerEmail),
-        eq(bundles.status, "active"),
-        gt(bundles.creditsRemaining, 0),
-        gt(bundles.expiresAt, new Date()),
-      ),
-    );
+  // same posture bundle redemption already takes, with no customer login. The
+  // same read as the redemption's, so the balance shown is the one that will
+  // be spent rather than some other bundle's.
+  const spendable = await findSpendableBundle(db, {
+    customerEmail: offer.customerEmail,
+    now: new Date(),
+  });
 
   return (
     <Shell>
@@ -145,7 +141,7 @@ export default async function OfferPage({
         time={`${schedule.startTime.slice(0, 5)}–${schedule.endTime.slice(0, 5)}`}
         location={schedule.location}
         deadline={formatDeadline(offer.offerExpiresAt)}
-        creditsAvailable={usableBundles[0]?.creditsRemaining ?? 0}
+        creditsAvailable={spendable?.creditsRemaining ?? 0}
         bundleEligible={classInfo.bundleEligible}
         priceInPence={classInfo.priceInPence}
       />
