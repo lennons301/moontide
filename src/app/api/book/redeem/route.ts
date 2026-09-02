@@ -36,7 +36,6 @@ export async function POST(request: Request) {
       location: schedules.location,
       bundleEligible: classes.bundleEligible,
       classTitle: classes.title,
-      priceInPence: classes.priceInPence,
     })
     .from(schedules)
     .innerJoin(classes, eq(schedules.classId, classes.id))
@@ -192,52 +191,53 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Class is full" }, { status: 400 });
   }
 
-  if (seat.kind === "held-seat") {
-    const bookingId = outcome.bookingId;
-    // A credit was spent, so that is what both emails say — the class list
-    // price is money this customer never paid. `creditsRemaining` is the
-    // balance the guarded debit actually wrote, not one computed here.
-    const payment = {
-      method: "credit",
-      creditsRemaining: outcome.creditsRemaining,
-    } as const;
+  const bookingId = outcome.bookingId;
+  // A credit was spent, so that is what both emails say — the class list price
+  // is money this customer never paid. `creditsRemaining` is the balance the
+  // guarded debit actually wrote, not one computed here.
+  const payment = {
+    method: "credit",
+    creditsRemaining: outcome.creditsRemaining,
+  } as const;
 
-    after(async () => {
-      try {
-        await sendBookingConfirmation({
-          customerName,
-          customerEmail,
-          classTitle: schedule.classTitle,
-          date: schedule.date,
-          startTime: schedule.startTime,
-          endTime: schedule.endTime,
-          location: schedule.location,
-          payment,
-        });
+  // Every redemption is confirmed here, whether it came from an offer or
+  // straight off the booking page: an ordinary redemption used to send nothing
+  // and leave the customer to hope the overnight retry swept her booking up.
+  after(async () => {
+    try {
+      await sendBookingConfirmation({
+        customerName,
+        customerEmail,
+        classTitle: schedule.classTitle,
+        date: schedule.date,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        location: schedule.location,
+        payment,
+      });
 
-        await sendBookingNotification({
-          type: "individual",
-          customerName,
-          customerEmail,
-          classTitle: schedule.classTitle,
-          date: schedule.date,
-          startTime: schedule.startTime,
-          endTime: schedule.endTime,
-          location: schedule.location,
-          payment,
-        });
+      await sendBookingNotification({
+        type: "individual",
+        customerName,
+        customerEmail,
+        classTitle: schedule.classTitle,
+        date: schedule.date,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        location: schedule.location,
+        payment,
+      });
 
-        if (bookingId !== undefined) {
-          await db
-            .update(bookings)
-            .set({ emailSent: true })
-            .where(eq(bookings.id, bookingId));
-        }
-      } catch (e) {
-        console.error("Redemption email send failed", e);
+      if (bookingId !== undefined) {
+        await db
+          .update(bookings)
+          .set({ emailSent: true })
+          .where(eq(bookings.id, bookingId));
       }
-    });
-  }
+    } catch (e) {
+      console.error("Redemption email send failed", e);
+    }
+  });
 
   return NextResponse.json({
     success: true,

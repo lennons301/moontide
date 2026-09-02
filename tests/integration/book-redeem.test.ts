@@ -6,9 +6,13 @@ import { db } from "@/lib/db";
 import { bookings, bundles, schedules } from "@/lib/db/schema";
 import { createBundle, createSchedule } from "./support/factories";
 
-// An ordinary redemption sends nothing, but the route imports the helper, so
-// the module is replaced rather than reaching for a Resend key.
-vi.mock("@/lib/email", () => ({ sendBookingConfirmation: vi.fn() }));
+// A redemption confirms itself; what that email says is asserted in
+// tests/lib/email.test.ts. Here the module is replaced so nothing reaches for a
+// Resend key.
+vi.mock("@/lib/email", () => ({
+  sendBookingConfirmation: vi.fn(),
+  sendBookingNotification: vi.fn(),
+}));
 
 /**
  * Spending a bundle credit against a real database: request in, rows out. The
