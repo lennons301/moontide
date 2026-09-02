@@ -15,6 +15,14 @@ vi.mock("@/lib/email", () => ({
   sendRescheduleNotification: vi.fn(),
 }));
 
+// The route checks the session on every request. Who is asking is settled in
+// tests/admin/routes-are-protected.test.ts; here it is Gabrielle, so that the
+// rows are what the test is about.
+vi.mock(
+  "@/lib/auth",
+  async () => (await import("../support/admin-session")).authModuleMock,
+);
+
 /**
  * A whole route against a real database: request in, rows out. The mocked
  * equivalent in `tests/admin/bookings.test.ts` asserts which statements were

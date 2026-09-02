@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock(
+  "@/lib/auth",
+  async () => (await import("../support/admin-session")).authModuleMock,
+);
+
 /**
  * Thin wiring cover for the offer routes. The rules themselves — deadlines,
  * the offers-cannot-exceed-free-seats invariant, the duplicate-check bypass —
