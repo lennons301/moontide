@@ -2,6 +2,7 @@
   "name": "moontide",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
     "dev": "next dev",
     "build": "drizzle-kit migrate && next build",
