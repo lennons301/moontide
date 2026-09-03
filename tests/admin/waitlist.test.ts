@@ -101,7 +101,7 @@ const JOHN = {
   heldBookingId: null,
 };
 
-const SCHEDULE = { capacity: 8, bookedCount: 8, status: "full" };
+const SCHEDULE = { capacity: 8, bookedCount: 8, status: "open" };
 
 function getRequest(query = "?scheduleId=42") {
   return new Request(`http://localhost:3000/api/admin/waitlist${query}`);
@@ -194,7 +194,7 @@ describe("GET /api/admin/waitlist", () => {
   it("reports free seats, offers outstanding, and seats nobody is on", async () => {
     queueResults(
       [{ waitlist_entries: JANE, bookings: null }],
-      [{ capacity: 8, bookedCount: 8, status: "full" }],
+      [{ capacity: 8, bookedCount: 8, status: "open" }],
       [{ id: 900 }],
     );
 

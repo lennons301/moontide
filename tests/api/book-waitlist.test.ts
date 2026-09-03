@@ -92,7 +92,7 @@ function makeRequest(body: unknown) {
 const SCHEDULE_ROW = {
   schedules: {
     id: 1,
-    status: "full",
+    status: "open",
     bookedCount: 8,
     capacity: 8,
     date: "2026-05-01",
@@ -183,7 +183,7 @@ describe("POST /api/book/waitlist", () => {
     expect(body.error).toBe("Class still has spots — please book normally");
   });
 
-  it("inserts and fires emails when schedule status is 'full'", async () => {
+  it("inserts and fires emails when every seat is taken", async () => {
     // 1st db.select() → schedule lookup (via .from().innerJoin().where()).
     // 2nd db.select() → count query (via .from().where()).
     mockSelectFrom
@@ -226,14 +226,16 @@ describe("POST /api/book/waitlist", () => {
     expect(mockUpdateSet).toHaveBeenCalledWith({ emailSent: true });
   });
 
-  it("inserts when status='open' but bookedCount >= capacity", async () => {
+  it("inserts for a class closed to bookings though seats remain", async () => {
+    // The waiting list opens exactly when booking is refused, so a class
+    // Gabrielle has closed takes names for the same reason a full one does.
     mockSelectWhere.mockResolvedValue([
       {
         ...SCHEDULE_ROW,
         schedules: {
           ...SCHEDULE_ROW.schedules,
-          status: "open",
-          bookedCount: 8,
+          status: "closed",
+          bookedCount: 3,
           capacity: 8,
         },
       },

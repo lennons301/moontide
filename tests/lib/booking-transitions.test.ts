@@ -237,6 +237,21 @@ describe("decideReschedule", () => {
     ).toMatchObject({ error: "Target class is full" });
   });
 
+  it("rejects a target closed to bookings, whatever its seats say", () => {
+    // A direct PUT naming a closed class used to move the seat and email the
+    // customer a date she had stopped taking bookings for.
+    expect(
+      decideReschedule({
+        ...base,
+        booking: CARD_BOOKING,
+        target: { ...TARGET, status: "closed", bookedCount: 0 },
+      }),
+    ).toMatchObject({
+      error: "Target class is closed to bookings",
+      httpStatus: 400,
+    });
+  });
+
   it("rejects a target whose class has already happened", () => {
     expect(
       decideReschedule({
@@ -323,6 +338,9 @@ describe("selectRescheduleTargets", () => {
     const refused = [
       schedule({ id: 21, classId: 4 }),
       schedule({ id: 22, status: "cancelled" }),
+      // Closed to bookings, and moving a booking onto it is a booking. It has
+      // six seats going spare, which is exactly why the old filter offered it.
+      schedule({ id: 27, status: "closed" }),
       schedule({ id: 10 }),
       schedule({ id: 23, bookedCount: 8 }),
       schedule({ id: 24, bookedCount: 9 }),
