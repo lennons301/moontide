@@ -16,6 +16,7 @@ const {
   mockSendBookingConfirmation,
   mockSendBundleConfirmation,
   mockSendBookingNotification,
+  mockSendBundleConfigMissingAlert,
   mockDelete,
   mockDeleteWhere,
   mockFindOfferByToken,
@@ -65,7 +66,11 @@ const {
   const mockSendBookingNotification = vi
     .fn()
     .mockResolvedValue({ success: true });
+  const mockSendBundleConfigMissingAlert = vi
+    .fn()
+    .mockResolvedValue({ success: true });
   return {
+    mockSendBundleConfigMissingAlert,
     mockInsertValues,
     mockInsertReturning,
     mockInsert,
@@ -90,6 +95,7 @@ vi.mock("@/lib/email", () => ({
   sendBookingConfirmation: mockSendBookingConfirmation,
   sendBundleConfirmation: mockSendBundleConfirmation,
   sendBookingNotification: mockSendBookingNotification,
+  sendBundleConfigMissingAlert: mockSendBundleConfigMissingAlert,
 }));
 
 vi.mock("next/server", async () => {
@@ -183,6 +189,7 @@ describe("POST /api/stripe/webhook", () => {
     mockSendBookingConfirmation.mockResolvedValue({ success: true });
     mockSendBundleConfirmation.mockResolvedValue({ success: true });
     mockSendBookingNotification.mockResolvedValue({ success: true });
+    mockSendBundleConfigMissingAlert.mockResolvedValue({ success: true });
   });
 
   it("returns 400 when stripe-signature header is missing", async () => {
@@ -548,138 +555,219 @@ describe("POST /api/stripe/webhook", () => {
     });
   });
 
-  it("creates bundle record for bundle purchase", async () => {
-    mockBundleConfigWhere.mockResolvedValue([
-      { id: 1, name: "6-Class Bundle", credits: 6, expiryDays: 90 },
-    ]);
+  describe("bundle purchases", () => {
+    /** When the customer paid — 10 January 2026, midday. */
+    const PAID_AT = Math.floor(Date.UTC(2026, 0, 10, 12, 0, 0) / 1000);
 
-    mockConstructEvent.mockReturnValue({
-      type: "checkout.session.completed",
-      data: {
-        object: {
-          id: "cs_test_bundle_456",
-          metadata: {
-            type: "bundle",
-            bundleConfigId: "1",
-            customerEmail: "jane@example.com",
+    /** The terms checkout wrote into the session, beside the price charged. */
+    const SOLD_TERMS = {
+      bundleConfigId: "1",
+      bundleName: "6-Class Bundle",
+      bundleCredits: "6",
+      bundleExpiryDays: "90",
+    };
+
+    function bundleEvent(metadata: Record<string, string>, id = "cs_bundle") {
+      mockConstructEvent.mockReturnValue({
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            id,
+            created: PAID_AT,
+            metadata: {
+              type: "bundle",
+              customerEmail: "jane@example.com",
+              ...metadata,
+            },
           },
         },
-      },
-    } as unknown as Stripe.Event);
+      } as unknown as Stripe.Event);
 
-    const request = new Request("http://localhost:3000/api/stripe/webhook", {
-      method: "POST",
-      headers: { "stripe-signature": "valid" },
-      body: "{}",
+      return new Request("http://localhost:3000/api/stripe/webhook", {
+        method: "POST",
+        headers: { "stripe-signature": "valid" },
+        body: "{}",
+      });
+    }
+
+    /** The expiry the insert was given. */
+    function insertedExpiry() {
+      return mockInsertValues.mock.calls[0][0].expiresAt as Date;
+    }
+
+    it("creates bundle record for bundle purchase", async () => {
+      mockBundleConfigWhere.mockResolvedValue([
+        { id: 1, name: "6-Class Bundle", credits: 6, expiryDays: 90 },
+      ]);
+
+      const response = await POST(
+        bundleEvent(SOLD_TERMS, "cs_test_bundle_456"),
+      );
+      // Flush microtasks so the after() callback completes
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(response.status).toBe(200);
+
+      expect(mockInsert).toHaveBeenCalled();
+      expect(mockInsertValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerEmail: "jane@example.com",
+          stripePaymentId: "cs_test_bundle_456",
+          creditsTotal: 6,
+          creditsRemaining: 6,
+          // Recorded outright, so nothing downstream has to infer the product
+          // from the credit count.
+          bundleConfigId: 1,
+        }),
+      );
+
+      // 90 days from when she paid, not from whenever this ran.
+      expect(insertedExpiry().toISOString()).toBe("2026-04-10T12:00:00.000Z");
+
+      expect(mockSendBundleConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerEmail: "jane@example.com",
+          bundleName: "6-Class Bundle",
+          credits: 6,
+        }),
+      );
+      expect(mockSendBookingNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "bundle",
+          customerEmail: "jane@example.com",
+        }),
+      );
+      expect(mockSendBundleConfigMissingAlert).not.toHaveBeenCalled();
     });
 
-    const response = await POST(request);
-    // Flush microtasks so the after() callback completes
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(response.status).toBe(200);
+    it("grants the terms she was sold, not the config as edited since", async () => {
+      // The bundle was cut to 4 classes and 30 days while her session was open.
+      mockBundleConfigWhere.mockResolvedValue([
+        { id: 1, name: "4-Class Bundle", credits: 4, expiryDays: 30 },
+      ]);
 
-    expect(mockInsert).toHaveBeenCalled();
-    expect(mockInsertValues).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customerEmail: "jane@example.com",
-        stripePaymentId: "cs_test_bundle_456",
-        creditsTotal: 6,
-        creditsRemaining: 6,
-        // Recorded outright, so nothing downstream has to infer the product
-        // from the credit count.
-        bundleConfigId: 1,
-      }),
-    );
+      const response = await POST(bundleEvent(SOLD_TERMS));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(response.status).toBe(200);
 
-    // Verify expiresAt is roughly 90 days from now
-    const callArgs = mockInsertValues.mock.calls[0][0];
-    const expiresAt = callArgs.expiresAt as Date;
-    const expectedExpiry = new Date();
-    expectedExpiry.setDate(expectedExpiry.getDate() + 90);
-    expect(
-      Math.abs(expiresAt.getTime() - expectedExpiry.getTime()),
-    ).toBeLessThan(5000);
-
-    expect(mockSendBundleConfirmation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customerEmail: "jane@example.com",
-        bundleName: "6-Class Bundle",
-        credits: 6,
-      }),
-    );
-    expect(mockSendBookingNotification).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "bundle",
-        customerEmail: "jane@example.com",
-      }),
-    );
-  });
-
-  it("grants nothing twice when a bundle purchase is redelivered", async () => {
-    mockBundleConfigWhere.mockResolvedValue([
-      { id: 1, name: "6-Class Bundle", credits: 6, expiryDays: 90 },
-    ]);
-    // The unique payment id caught it: this bundle is already on the table.
-    mockInsertReturning.mockResolvedValue([]);
-
-    mockConstructEvent.mockReturnValue({
-      type: "checkout.session.completed",
-      data: {
-        object: {
-          id: "cs_test_bundle_456",
-          metadata: {
-            type: "bundle",
-            bundleConfigId: "1",
-            customerEmail: "jane@example.com",
-          },
-        },
-      },
-    } as unknown as Stripe.Event);
-
-    const request = new Request("http://localhost:3000/api/stripe/webhook", {
-      method: "POST",
-      headers: { "stripe-signature": "valid" },
-      body: "{}",
+      expect(mockInsertValues).toHaveBeenCalledWith(
+        expect.objectContaining({ creditsTotal: 6, creditsRemaining: 6 }),
+      );
+      expect(insertedExpiry().toISOString()).toBe("2026-04-10T12:00:00.000Z");
+      expect(mockSendBundleConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({ bundleName: "6-Class Bundle", credits: 6 }),
+      );
     });
 
-    const response = await POST(request);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    it("falls back to the config for a session that carries no terms", async () => {
+      // Bought before the terms travelled with the session.
+      mockBundleConfigWhere.mockResolvedValue([
+        { id: 1, name: "6-Class Bundle", credits: 6, expiryDays: 90 },
+      ]);
 
-    // 200, not an error: the first delivery did the work, so there is nothing
-    // for Stripe to retry.
-    expect(response.status).toBe(200);
-    expect(mockSendBundleConfirmation).not.toHaveBeenCalled();
-    expect(mockSendBookingNotification).not.toHaveBeenCalled();
-  });
+      const response = await POST(bundleEvent({ bundleConfigId: "1" }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(response.status).toBe(200);
 
-  it("returns 500 when bundle config not found", async () => {
-    mockBundleConfigWhere.mockResolvedValue([]);
-
-    mockConstructEvent.mockReturnValue({
-      type: "checkout.session.completed",
-      data: {
-        object: {
-          id: "cs_test_bundle_missing",
-          metadata: {
-            type: "bundle",
-            bundleConfigId: "999",
-            customerEmail: "jane@example.com",
-          },
-        },
-      },
-    } as unknown as Stripe.Event);
-
-    const request = new Request("http://localhost:3000/api/stripe/webhook", {
-      method: "POST",
-      headers: { "stripe-signature": "valid" },
-      body: "{}",
+      expect(mockInsertValues).toHaveBeenCalledWith(
+        expect.objectContaining({ creditsTotal: 6, bundleConfigId: 1 }),
+      );
+      // Still counted from the payment, not from this run.
+      expect(insertedExpiry().toISOString()).toBe("2026-04-10T12:00:00.000Z");
     });
 
-    const response = await POST(request);
-    expect(response.status).toBe(500);
-    const body = await response.json();
-    expect(body.error).toBe("Bundle config not found");
-    expect(mockInsert).not.toHaveBeenCalled();
+    it("grants nothing twice when a bundle purchase is redelivered", async () => {
+      mockBundleConfigWhere.mockResolvedValue([
+        { id: 1, name: "6-Class Bundle", credits: 6, expiryDays: 90 },
+      ]);
+      // The unique payment id caught it: this bundle is already on the table.
+      mockInsertReturning.mockResolvedValue([]);
+
+      const response = await POST(bundleEvent(SOLD_TERMS));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // 200, not an error: the first delivery did the work, so there is nothing
+      // for Stripe to retry.
+      expect(response.status).toBe(200);
+      expect(mockSendBundleConfirmation).not.toHaveBeenCalled();
+      expect(mockSendBookingNotification).not.toHaveBeenCalled();
+      expect(mockSendBundleConfigMissingAlert).not.toHaveBeenCalled();
+    });
+
+    it("grants the bundle from the session when the config has gone", async () => {
+      mockBundleConfigWhere.mockResolvedValue([]);
+
+      const response = await POST(bundleEvent(SOLD_TERMS));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(response.status).toBe(200);
+
+      expect(mockInsertValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          creditsTotal: 6,
+          creditsRemaining: 6,
+          // Nothing to point the foreign key at.
+          bundleConfigId: null,
+        }),
+      );
+      expect(mockSendBundleConfirmation).toHaveBeenCalled();
+      // She has her credits, but a product a sale referenced has disappeared.
+      expect(mockSendBundleConfigMissingAlert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerEmail: "jane@example.com",
+          configReference: "1",
+          granted: { credits: 6, expiryDate: "10 Apr 2026" },
+        }),
+      );
+    });
+
+    it("acknowledges an ungrantable bundle and raises it, rather than retrying forever", async () => {
+      const consoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      // No config row, and a session from before the terms travelled: there is
+      // nothing left to grant from.
+      mockBundleConfigWhere.mockResolvedValue([]);
+
+      const response = await POST(
+        bundleEvent({ bundleConfigId: "999" }, "cs_test_bundle_missing"),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // The condition is permanent: 5xx would have Stripe redelivering it
+      // identically for three days.
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ received: true });
+      expect(mockInsert).not.toHaveBeenCalled();
+
+      expect(mockSendBundleConfigMissingAlert).toHaveBeenCalledWith({
+        customerEmail: "jane@example.com",
+        sessionId: "cs_test_bundle_missing",
+        configReference: "999",
+        // Nobody got anything: someone has paid for nothing.
+        granted: null,
+      });
+      expect(mockSendBundleConfirmation).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining("cs_test_bundle_missing"),
+      );
+      consoleError.mockRestore();
+    });
+
+    it("does not look up a config the session names unusably", async () => {
+      const consoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+
+      const response = await POST(bundleEvent({ bundleConfigId: "" }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // `Number.parseInt("")` is NaN, which is not an id to go looking for.
+      expect(response.status).toBe(200);
+      expect(mockBundleConfigSelect).not.toHaveBeenCalled();
+      expect(mockSendBundleConfigMissingAlert).toHaveBeenCalledWith(
+        expect.objectContaining({ configReference: "none", granted: null }),
+      );
+      consoleError.mockRestore();
+    });
   });
 
   it("returns 200 for unhandled event types", async () => {

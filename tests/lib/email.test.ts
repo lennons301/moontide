@@ -25,6 +25,7 @@ import {
   buildEmailHtml,
   sendBookingConfirmation,
   sendBookingNotification,
+  sendBundleConfigMissingAlert,
   sendBundleConfirmation,
   sendContactEmail,
   sendOfferDigest,
@@ -85,6 +86,40 @@ describe("sendBundleConfirmation", () => {
     });
 
     expect(result).toEqual({ success: true });
+  });
+});
+
+describe("sendBundleConfigMissingAlert", () => {
+  it("says outright that a customer has paid and got nothing", async () => {
+    await sendBundleConfigMissingAlert({
+      customerEmail: "jane@example.com",
+      sessionId: "cs_test_123",
+      configReference: "999",
+      granted: null,
+    });
+
+    const sent = lastSend();
+    expect(sent.subject).toContain("ACTION NEEDED");
+    expect(sent.text).toContain("WAS NOT granted");
+    expect(sent.text).toContain("jane@example.com");
+    // The two things a human needs to go and find the payment.
+    expect(sent.text).toContain("cs_test_123");
+    expect(sent.text).toContain("999");
+  });
+
+  it("says the customer is fine when the bundle was granted anyway", async () => {
+    await sendBundleConfigMissingAlert({
+      customerEmail: "jane@example.com",
+      sessionId: "cs_test_123",
+      configReference: "1",
+      granted: { credits: 6, expiryDate: "10 Apr 2026" },
+    });
+
+    const sent = lastSend();
+    expect(sent.subject).not.toContain("ACTION NEEDED");
+    expect(sent.text).toContain("WAS granted");
+    expect(sent.text).toContain("6 classes");
+    expect(sent.text).toContain("10 Apr 2026");
   });
 });
 
