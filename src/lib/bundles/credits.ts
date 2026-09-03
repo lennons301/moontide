@@ -1,4 +1,5 @@
 import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { emailMatches } from "@/lib/customers/email";
 import type { db } from "@/lib/db";
 import { bundles } from "@/lib/db/schema";
 
@@ -47,7 +48,10 @@ export async function findSpendableBundle(
     .from(bundles)
     .where(
       and(
-        eq(bundles.customerEmail, customerEmail),
+        // The customer is one person however she capitalised herself: a bundle
+        // bought as `Jane@` is hers to spend as `jane@`, and refusing it is
+        // what made her pay for a class she already had credits for.
+        emailMatches(bundles.customerEmail, customerEmail),
         eq(bundles.status, "active"),
         gt(bundles.creditsRemaining, 0),
         gt(bundles.expiresAt, now),

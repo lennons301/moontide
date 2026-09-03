@@ -1,6 +1,7 @@
 import { and, eq, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { bundleTermsMetadata } from "@/lib/bundles/purchase";
+import { emailMatches, normaliseEmail } from "@/lib/customers/email";
 import { db } from "@/lib/db";
 import { bookings, bundleConfig, classes, schedules } from "@/lib/db/schema";
 import { getStripe } from "@/lib/stripe";
@@ -10,14 +11,12 @@ import { decideCheckoutSeat } from "@/lib/waitlist/offers";
 export async function POST(request: Request) {
   const stripe = getStripe();
   const body = await request.json();
-  const {
-    type,
-    scheduleId,
-    customerName,
-    customerEmail,
-    bundleConfigId,
-    offerToken,
-  } = body;
+  const { type, scheduleId, customerName, bundleConfigId, offerToken } = body;
+
+  // Normalised once, here, and it is this value that is matched against
+  // existing bookings, sent to Stripe and written back by the webhook — so the
+  // customer is one person however they capitalised themselves.
+  const customerEmail = normaliseEmail(body.customerEmail);
 
   if (!customerEmail) {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });
@@ -102,7 +101,10 @@ export async function POST(request: Request) {
     .where(
       and(
         eq(bookings.scheduleId, scheduleId),
-        eq(bookings.customerEmail, customerEmail),
+        // Matched case-insensitively rather than on the normalised value
+        // alone: bookings made before addresses were normalised are still
+        // stored as they were typed, and one of those is still this customer.
+        emailMatches(bookings.customerEmail, customerEmail),
         ne(bookings.status, "cancelled"),
       ),
     );

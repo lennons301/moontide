@@ -8,7 +8,7 @@ Wellbeing website for women navigating change through yoga, coaching, and embodi
 - **Database:** Neon (Postgres) with Drizzle ORM
 - **CMS:** Sanity (project ID: 77icfczp, dataset: production)
 - **Auth:** Better Auth (admin-only, email/password)
-- **Validation:** Zod 4 (request schemas for `/api/admin/*`)
+- **Validation:** Zod 4 (request schemas for `/api/admin/*`, and the public contact form)
 - **Payments:** Stripe Checkout + webhooks
 - **UI:** shadcn/ui + Tailwind CSS v4
 - **Email:** Resend
@@ -42,7 +42,7 @@ src/
   app/                    # Next.js App Router pages
     api/
       auth/[...all]/      # Better Auth API handler
-      contact/            # Contact form POST endpoint
+      contact/            # Contact form POST endpoint (zod-validated, address normalised)
       stripe/webhook/     # Stripe webhook (checkout.session.completed)
       book/
         checkout/         # Create Stripe Checkout session (individual + bundle, or an offered held seat)
@@ -105,6 +105,8 @@ src/
     stripe.ts             # Stripe client singleton
     bookings/
       transitions.ts      # Pure cancel/release/reschedule decisions (no DB)
+    customers/
+      email.ts            # The one place an address is folded, and the case-insensitive match for a WHERE
     bundles/
       credits.ts          # Sole owner of bundles.creditsRemaining writes, and the read that picks the bundle
       purchase.ts         # The terms a bundle was sold on: the session's metadata keys, and expiry from when she paid
@@ -167,7 +169,9 @@ tests/
   components/admin/format-date.test.ts # The four date shapes, and todayString
   components/admin/table-filters.test.ts # Status/class/time filter composition
   lib/admin-pricing-changes.test.ts # Pricing diff: summary and payload agree
-  api/contact.test.ts     # Contact form API tests
+  api/contact.test.ts     # Contact form API tests, and what it refuses
+  lib/customer-email.test.ts # normaliseEmail: the case and whitespace folded away
+  lib/email-normalisation-is-one-place.test.ts # No handler folds an address itself
   api/stripe-webhook.test.ts  # Stripe webhook handler tests
   api/book-checkout.test.ts   # Checkout session tests
   api/book-redeem.test.ts     # Bundle redemption tests
@@ -199,7 +203,8 @@ tests/
     support/setup.ts        # Empty every table before each test
     support/factories.ts    # Rows to test against
     schedule-occupancy.test.ts # Real occupancy numbers, clamps and a seat race
-    booking-constraints.test.ts # The unique indexes, refusing duplicates
+    booking-constraints.test.ts # The unique indexes, refusing duplicates and case variants
+    case-variant-reconciliation.test.ts # Migration 0017 applied to the duplicates it forbids
     bundle-constraints.test.ts # One bundle per payment, the config it came from, the credit range
     capacity-constraints.test.ts # The CHECK refusing occupancy over capacity
     bundle-credits.test.ts  # Real balances, the clamps and a race for one credit
@@ -239,6 +244,7 @@ drizzle/
 - **Proxy session check:** `src/proxy.ts` resolves the cookie through `auth.api.getSession` rather than testing that a cookie exists — a cookie is a string a visitor can type. No session, a forged or expired token, a non-admin user, or a session lookup that throws are all refused (401 for `/api/admin/*`, redirect to login for pages). The proxy runs on the Node runtime, so it can reach the database directly. Tests: `tests/proxy.test.ts`.
 - **Admin APIs:** Every handler under `/api/admin/*` is `withAdmin(schema, handler)` from `src/app/api/admin/_lib`, and nothing else. It resolves the session through `auth.api.getSession` and insists on the admin role (401 with no session, a forged one or a lookup that throws; 403 for a real session on a non-admin), parses `schema.body` and `schema.query` with zod, and renders every failure as `{ error }` through the one `jsonError`. So a handler receives `{ body, query, user, request }` — parsed values, never a `Request` to pick apart — and never validates, never reads `request.json()`, never constructs an error response. **Every validation message is written into the schema** (`z.number({ error: "Missing schedule ID" })`), because the response says exactly what the schema said; repeated messages are collapsed, so three fields sharing "Missing required fields" answer with it once. A refusal is **thrown** as `ApiError(status, message)` — including from inside `db.transaction`, where the throw is also the rollback — and `refuse(decision)` is the shorthand for the `{ ok: false, error, httpStatus }` the pure decision functions return. Anything else thrown is a fault: logged, and answered `500 { error: "Something went wrong" }`. Checking auth here as well as at the proxy is deliberate: the proxy is a matcher, and a handler that refuses on its own does not depend on being routed through anything. Tests: `tests/admin/with-admin.test.ts` for the module, `tests/admin/routes-are-protected.test.ts` for the sweep — it **discovers** the routes with `import.meta.glob("/src/app/api/admin/**/route.ts")` rather than listing them, so a new route directory is swept the moment it exists and a handler that forgets the module fails. `tests/admin/validation-messages.test.ts` holds the convention up: it feeds every admin schema the awkward bodies and asserts the answer is never one of zod's own phrasings, because the admin pages show `error` to Gabrielle exactly as it arrives.
 - **Stripe webhook:** At `/api/stripe/webhook` — reads raw body for signature verification, never parse JSON before verifying.
+- **The customer's email address is the customer:** there is no customer login, so bookings, bundles and waiting-list places are all keyed by what someone typed into a form — which makes comparing two addresses a decision, and `src/lib/customers/email.ts` is the one place it is made. `normaliseEmail` (trim, fold to lower case) is applied once at the edge of every handler that takes an address — checkout, redeem, waitlist, contact, and the webhook reading it back out of Stripe metadata — and no handler folds or trims one itself (`tests/lib/email-normalisation-is-one-place.test.ts` sweeps `src/**` for that, discovering the files rather than listing them). `emailMatches(column, value)` is the read: `lower(column) = lower(value)`, used wherever a customer's rows are looked up, because rows written before any of this exist as they were typed. Both uniqueness indexes are on **`lower(customer_email)`** for the same reason (migration `0017`) — matched raw, `Ada@example.com` and `ada@example.com` were two people to the index, so the same person could be charged twice for one class and could not spend the bundle she had bought under the other capitalisation. `0017` reconciles the rows that predate it before adding the index, or it could not be applied to a production database at all: the earliest active booking of each case-variant set keeps its place, the later ones are cancelled and their seats returned (never a `released` one's — that seat went back when it was released), and a redundant waiting-list place is deleted, keeping whichever holds an outstanding offer. Money is Stripe's record and a second payment is a refund only a human can decide on; the cancelled rows are findable by the query in the migration's comment. Tests: `tests/integration/case-variant-reconciliation.test.ts` applies it to exactly those duplicates.
 - **Booking flow:** `/api/book/checkout` (Stripe Checkout) and `/api/book/redeem` (bundle credit). Checkout handles both individual and bundle purchases via `type` field, and an offered held seat via `offerToken`.
 - **Prices in pence:** Class prices stored in `classes.priceInPence`. Bundle config (price, credits, expiry) stored in `bundleConfig` table — editable via admin UI at `/admin/pricing`.
 - **Bundle config:** The `bundleConfig` table holds bundle products (price, credits, expiry days). Changes only affect new purchases, and that is enforced rather than assumed: **the terms are fixed at purchase time.** Checkout writes `bundleName`, `bundleCredits` and `bundleExpiryDays` into the Stripe session metadata alongside `bundleConfigId`, in the same read that sets the price charged (`bundleTermsMetadata` in `src/lib/bundles/purchase.ts` owns those keys, and the webhook reads them back through `decideBundleTerms` — one definition, both sides). The webhook grants what the session says; the config row is re-read only for the foreign key and as the fallback for a session created before the terms travelled with it. Expiry is counted from `session.created` (`bundlePaidAt` + `bundleExpiry`), not from when the webhook ran, so a delayed or retried delivery cannot quietly extend the validity window. The webhook also **records which config was bought** on `bundles.bundleConfigId`, a real FK, so a later read names the right product: the resend route used to join on `creditsTotal = credits`, which picks the wrong config the moment two of them sell the same number of classes. Nullable, because bundles bought before the column existed can only have it inferred from their credit count. Migration `0013` adds the column and backfills the old rows with exactly that credit-count guess, once. `/api/cron/retry-emails` still joins on credits and should be moved onto the column too.

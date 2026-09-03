@@ -6,6 +6,7 @@ import {
   bundlePaidAt,
   decideBundleTerms,
 } from "@/lib/bundles/purchase";
+import { emailMatches, normaliseEmail } from "@/lib/customers/email";
 import { db } from "@/lib/db";
 import {
   bookings,
@@ -49,6 +50,10 @@ export async function POST(request: Request) {
     const session = event.data.object;
     const metadata = session.metadata;
 
+    // The session may predate normalisation, and Stripe replays sessions for
+    // days: what is written here is what every later read matches on.
+    const customerEmail = normaliseEmail(metadata?.customerEmail);
+
     if (metadata?.type === "individual") {
       const scheduleId = Number.parseInt(metadata.scheduleId, 10);
       const offerToken = metadata.offerToken || null;
@@ -65,7 +70,7 @@ export async function POST(request: Request) {
         .where(
           and(
             eq(bookings.scheduleId, scheduleId),
-            eq(bookings.customerEmail, metadata.customerEmail),
+            emailMatches(bookings.customerEmail, customerEmail),
             ne(bookings.status, "cancelled"),
           ),
         );
@@ -74,7 +79,7 @@ export async function POST(request: Request) {
         token: offerToken,
         heldBookingId,
         offer: offerToken ? await findOfferByToken(offerToken) : null,
-        request: { scheduleId, customerEmail: metadata.customerEmail },
+        request: { scheduleId, customerEmail },
         existingBookings: existingBooking,
       });
 
@@ -118,7 +123,7 @@ export async function POST(request: Request) {
           await tx.insert(bookings).values({
             scheduleId,
             customerName: metadata.customerName,
-            customerEmail: metadata.customerEmail,
+            customerEmail,
             stripePaymentId: session.id,
           });
           // The customer has already paid, so the seat is taken regardless of
@@ -154,7 +159,7 @@ export async function POST(request: Request) {
 
             await sendBookingConfirmation({
               customerName: metadata.customerName,
-              customerEmail: metadata.customerEmail,
+              customerEmail,
               classTitle: classInfo.title,
               date: schedule.date,
               startTime: schedule.startTime,
@@ -166,7 +171,7 @@ export async function POST(request: Request) {
             await sendBookingNotification({
               type: "individual",
               customerName: metadata.customerName,
-              customerEmail: metadata.customerEmail,
+              customerEmail,
               classTitle: classInfo.title,
               date: schedule.date,
               startTime: schedule.startTime,
@@ -209,7 +214,7 @@ export async function POST(request: Request) {
         after(async () => {
           try {
             await sendBundleConfigMissingAlert({
-              customerEmail: metadata.customerEmail,
+              customerEmail,
               sessionId: session.id,
               configReference: metadata.bundleConfigId || "none",
               granted,
@@ -246,7 +251,7 @@ export async function POST(request: Request) {
       const inserted = await db
         .insert(bundles)
         .values({
-          customerEmail: metadata.customerEmail,
+          customerEmail,
           creditsTotal: credits,
           creditsRemaining: credits,
           stripePaymentId: session.id,
@@ -275,7 +280,7 @@ export async function POST(request: Request) {
       after(async () => {
         try {
           await sendBundleConfirmation({
-            customerEmail: metadata.customerEmail,
+            customerEmail,
             bundleName: name,
             credits,
             expiryDate: expiryDateFormatted,
@@ -283,7 +288,7 @@ export async function POST(request: Request) {
 
           await sendBookingNotification({
             type: "bundle",
-            customerEmail: metadata.customerEmail,
+            customerEmail,
             bundleName: name,
             credits,
             expiryDate: expiryDateFormatted,

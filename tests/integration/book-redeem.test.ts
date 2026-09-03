@@ -206,3 +206,34 @@ describe("two redemptions racing for one credit", () => {
     expect((await response.json()).error).toBe("No active bundle found");
   });
 });
+
+describe("a bundle bought under one casing", () => {
+  it("is the same customer's to spend under another", async () => {
+    const schedule = await createSchedule({ capacity: 8 });
+    const purchase = await createBundle({
+      // As Stripe recorded it before addresses were normalised.
+      customerEmail: "Jane@Example.com",
+      creditsTotal: 6,
+      creditsRemaining: 6,
+    });
+
+    const response = await POST(
+      new Request("http://localhost/api/book/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scheduleId: schedule.id,
+          customerName: "Jane Doe",
+          customerEmail: "jane@example.com",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await readBundle(purchase.id)).creditsRemaining).toBe(5);
+    // Written under the address the booking system uses from here on, whatever
+    // the bundle was bought as.
+    const [booking] = await bookingsFor("jane@example.com");
+    expect(booking.bundleId).toBe(purchase.id);
+  });
+});
