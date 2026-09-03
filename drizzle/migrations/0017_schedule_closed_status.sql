@@ -18,7 +18,10 @@
 -- no longer a member of the type.
 DO $$
 BEGIN
-  IF NOT EXISTS (
+  -- The guard is the whole body's condition rather than an early return: a
+  -- `DO` block is an anonymous function and `RETURN` in one is a detail of
+  -- plpgsql, where `IF ... THEN` is the same skip in plain SQL terms.
+  IF EXISTS (
     SELECT 1
     FROM pg_enum e
     JOIN pg_type t ON t.oid = e.enumtypid
@@ -27,25 +30,24 @@ BEGIN
       AND t.typname = 'schedule_status'
       AND e.enumlabel = 'full'
   ) THEN
-    RETURN;
+    -- The type is replaced rather than edited: Postgres can add an enum value
+    -- but not remove one. A wholly new type may be used in the transaction
+    -- that created it (unlike a newly *added* value), so this stays one
+    -- atomic step.
+    ALTER TYPE "public"."schedule_status" RENAME TO "schedule_status_pre_0017";
+    CREATE TYPE "public"."schedule_status" AS ENUM('open', 'closed', 'cancelled');
+
+    -- The default is dropped and restored around the cast: it is typed by the
+    -- old type and would otherwise block the column changing under it.
+    ALTER TABLE "schedules" ALTER COLUMN "status" DROP DEFAULT;
+    ALTER TABLE "schedules"
+      ALTER COLUMN "status" SET DATA TYPE "public"."schedule_status"
+      USING (
+        CASE "status"::text WHEN 'full' THEN 'closed' ELSE "status"::text END
+      )::"public"."schedule_status";
+    ALTER TABLE "schedules"
+      ALTER COLUMN "status" SET DEFAULT 'open'::"public"."schedule_status";
+
+    DROP TYPE "public"."schedule_status_pre_0017";
   END IF;
-
-  -- The type is replaced rather than edited: Postgres can add an enum value but
-  -- not remove one. A wholly new type may be used in the transaction that
-  -- created it (unlike a newly *added* value), so this stays one atomic step.
-  ALTER TYPE "public"."schedule_status" RENAME TO "schedule_status_pre_0017";
-  CREATE TYPE "public"."schedule_status" AS ENUM('open', 'closed', 'cancelled');
-
-  -- The default is dropped and restored around the cast: it is typed by the old
-  -- type and would otherwise block the column changing under it.
-  ALTER TABLE "schedules" ALTER COLUMN "status" DROP DEFAULT;
-  ALTER TABLE "schedules"
-    ALTER COLUMN "status" SET DATA TYPE "public"."schedule_status"
-    USING (
-      CASE "status"::text WHEN 'full' THEN 'closed' ELSE "status"::text END
-    )::"public"."schedule_status";
-  ALTER TABLE "schedules"
-    ALTER COLUMN "status" SET DEFAULT 'open'::"public"."schedule_status";
-
-  DROP TYPE "public"."schedule_status_pre_0017";
 END $$;
