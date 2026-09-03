@@ -19,15 +19,23 @@ const CARD_BOOKING: BookingState = {
 
 const BUNDLE_BOOKING: BookingState = { ...CARD_BOOKING, bundleId: 7 };
 
+const TODAY = "2026-06-01";
+
 const SOURCE: ScheduleState = {
   id: 10,
   classId: 100,
+  date: "2026-06-08",
   capacity: 8,
   bookedCount: 3,
   status: "open",
 };
 
-const TARGET: ScheduleState = { ...SOURCE, id: 20, bookedCount: 2 };
+const TARGET: ScheduleState = {
+  ...SOURCE,
+  id: 20,
+  date: "2026-06-15",
+  bookedCount: 2,
+};
 
 describe("describeReleaseEffect", () => {
   it("states that a bundle-funded booking gets its credit back", () => {
@@ -144,7 +152,12 @@ describe("decideCancel", () => {
 });
 
 describe("decideReschedule", () => {
-  const base = { source: SOURCE, target: TARGET, newScheduleId: 20 };
+  const base = {
+    source: SOURCE,
+    target: TARGET,
+    newScheduleId: 20,
+    today: TODAY,
+  };
 
   it("rejects a missing booking", () => {
     expect(decideReschedule({ ...base, booking: null })).toMatchObject({
@@ -222,6 +235,30 @@ describe("decideReschedule", () => {
         target: { ...TARGET, bookedCount: 8, capacity: 8 },
       }),
     ).toMatchObject({ error: "Target class is full" });
+  });
+
+  it("rejects a target whose class has already happened", () => {
+    expect(
+      decideReschedule({
+        ...base,
+        booking: CARD_BOOKING,
+        target: { ...TARGET, date: "2026-05-31" },
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: "Cannot reschedule to a class that has already happened",
+      httpStatus: 400,
+    });
+  });
+
+  it("allows a target on today's date", () => {
+    expect(
+      decideReschedule({
+        ...base,
+        booking: CARD_BOOKING,
+        target: { ...TARGET, date: TODAY },
+      }),
+    ).toMatchObject({ ok: true });
   });
 
   it("moves a confirmed booking, decrementing the source", () => {
