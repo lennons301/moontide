@@ -187,7 +187,8 @@ drizzle/
 
 ## Key Conventions
 
-- **Package manager:** pnpm (not npm). Use `pnpm add`, `pnpm exec`, `pnpm dlx`.
+- **Package manager:** pnpm (not npm). Use `pnpm add`, `pnpm exec`, `pnpm dlx`. The version is pinned in two places that must agree: `packageManager` in `package.json` (what corepack, Vercel and the agent containers read) and `pnpm` in `.mise.toml` (what CI reads, via `jdx/mise-action`). Change both or environments diverge again.
+- **`pnpm-workspace.yaml` is intentional — do not delete it as a stray file.** There is no workspace here; the file exists for its `allowBuilds` map, which is how pnpm ≥ 10.26 is told which dependencies may run install scripts (`esbuild` and `sharp` yes, they place native binaries; `msw` no). Left undecided, pnpm writes the same file back full of `set this to true or false` placeholders — which is what four separate PRs mistook for a stray file and reverted. A `pnpm-workspace.yaml` in a diff is only wrong if it contains those placeholders; then decide the new entry rather than deleting the file. The pinned pnpm is why the prompt is now the same everywhere.
 - **Secrets:** Managed via Doppler — never commit .env files. Use `doppler run --` to inject.
 - **CMS boundary:** Editorial content (text, images, descriptions) → Sanity. Transactional data (bookings, contact submissions) → Neon Postgres.
 - **Tailwind CSS v4:** No tailwind.config.ts. Colours configured via `@theme inline` in globals.css. Custom palette: deep-tide-blue (#1e3a5f), deep-ocean (#2c3e50), ocean-light-blue (#5fa8d3), bright-orange (#ff7a2f), soft-moonstone (#e7e3dc), dawn-light (#f7f9fb), seagrass (#6b8f71), sky-mist (#dceaf4).
