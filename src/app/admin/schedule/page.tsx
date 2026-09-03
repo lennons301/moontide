@@ -1,11 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { AdminAlert } from "@/components/admin/admin-alert";
+import { mutateAdmin, useAdminResource } from "@/components/admin/admin-fetch";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
+import { ClassFilterSelect } from "@/components/admin/class-filter-select";
 import { PillGroup } from "@/components/admin/pill-group";
 import { StatusBadge } from "@/components/admin/status-badge";
 import {
   buildAdminTableFilters,
+  TIME_FILTER_OPTIONS,
   type TimeFilter,
 } from "@/components/admin/table-filters";
 import {
@@ -13,46 +17,39 @@ import {
   SortableHead,
   SortHeader,
 } from "@/components/admin/table-headers";
+import {
+  adminStateMessage,
+  TableStateRow,
+} from "@/components/admin/table-state";
 import { useTableControls } from "@/components/admin/use-table-controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { AdminScheduleRow, ClassRow } from "@/lib/admin/rows";
 import { WaitlistPanel } from "./waitlist-panel";
 
-interface ClassType {
-  id: number;
-  slug: string;
-  title: string;
-  category: string;
-  bookingType: string;
-  active: boolean;
-  priceInPence: number;
-}
-
-interface Schedule {
-  schedules: {
-    id: number;
-    classId: number;
-    date: string;
-    startTime: string;
-    endTime: string;
-    capacity: number;
-    bookedCount: number;
-    location: string | null;
-    recurringRule: string | null;
-    status: string;
-  };
-  classes: ClassType;
-  waitlistCount: number;
-  /** Seats inside bookedCount that are being held for a waiting-list offer. */
-  heldCount: number;
-}
+type Schedule = AdminScheduleRow;
 
 type StatusFilter = "all" | "open" | "full" | "cancelled";
 
+const NO_SCHEDULES: Schedule[] = [];
+const NO_CLASSES: ClassRow[] = [];
+
 export default function SchedulePage() {
-  const [scheduleList, setScheduleList] = useState<Schedule[]>([]);
-  const [classTypes, setClassTypes] = useState<ClassType[]>([]);
+  const {
+    data: scheduleList,
+    loading,
+    error: loadError,
+    refetch: fetchSchedules,
+  } = useAdminResource<Schedule[]>("/api/admin/schedules", NO_SCHEDULES);
+  const { data: classTypes } = useAdminResource<ClassRow[]>(
+    "/api/admin/classes",
+    NO_CLASSES,
+  );
+  // A refusal from a delete, a cancel or the form — the API phrases these
+  // carefully ("Capacity cannot be lower than the 5 seats already booked"), and
+  // they belong on the page rather than in an alert box.
+  const [actionError, setActionError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -75,23 +72,6 @@ export default function SchedulePage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [classFilter, setClassFilter] = useState<string>("all");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("upcoming");
-
-  const fetchSchedules = useCallback(async () => {
-    const res = await fetch("/api/admin/schedules");
-    const data = await res.json();
-    setScheduleList(data);
-  }, []);
-
-  const fetchClassTypes = useCallback(async () => {
-    const res = await fetch("/api/admin/classes");
-    const data = await res.json();
-    setClassTypes(data);
-  }, []);
-
-  useEffect(() => {
-    fetchSchedules();
-    fetchClassTypes();
-  }, [fetchSchedules, fetchClassTypes]);
 
   const filters = useMemo(
     () =>
@@ -122,21 +102,30 @@ export default function SchedulePage() {
       defaultSort: { key: "date", direction: "asc" },
     });
 
+  const tableState = {
+    loading,
+    error: loadError,
+    isEmpty: rows.length === 0,
+    emptyMessage:
+      scheduleList.length === 0
+        ? "No scheduled classes yet."
+        : "No classes match the current filters.",
+  };
+
   async function handleDelete(id: number) {
     if (!window.confirm("Are you sure you want to delete this schedule?")) {
       return;
     }
-    const res = await fetch("/api/admin/schedules", {
+    setActionError(null);
+    const result = await mutateAdmin("/api/admin/schedules", {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: { id },
     });
-    if (res.ok) {
-      await fetchSchedules();
+    if (!result.ok) {
+      setActionError(result.error);
       return;
     }
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    window.alert(data.error || "Failed to delete schedule.");
+    await fetchSchedules();
   }
 
   async function handleCancelClass(id: number) {
@@ -147,17 +136,16 @@ export default function SchedulePage() {
     ) {
       return;
     }
-    const res = await fetch("/api/admin/schedules", {
+    setActionError(null);
+    const result = await mutateAdmin("/api/admin/schedules", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status: "cancelled" }),
+      body: { id, status: "cancelled" },
     });
-    if (res.ok) {
-      await fetchSchedules();
+    if (!result.ok) {
+      setActionError(result.error);
       return;
     }
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    window.alert(data.error || "Failed to cancel class.");
+    await fetchSchedules();
   }
 
   function handleEdit(item: Schedule) {
@@ -178,43 +166,29 @@ export default function SchedulePage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+    setActionError(null);
 
     const isEditing = editingId !== null;
 
-    const res = await fetch("/api/admin/schedules", {
+    const fields = {
+      classId: Number(formData.classId),
+      date: formData.date,
+      startTime: formData.startTime,
+      endTime: formData.endTime,
+      capacity: Number(formData.capacity),
+      location: formData.location || null,
+      repeatWeekly: formData.repeatWeekly,
+      numberOfWeeks: formData.repeatWeekly
+        ? Number(formData.numberOfWeeks)
+        : undefined,
+    };
+
+    const result = await mutateAdmin("/api/admin/schedules", {
       method: isEditing ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        isEditing
-          ? {
-              id: editingId,
-              classId: Number(formData.classId),
-              date: formData.date,
-              startTime: formData.startTime,
-              endTime: formData.endTime,
-              capacity: Number(formData.capacity),
-              location: formData.location || null,
-              repeatWeekly: formData.repeatWeekly,
-              numberOfWeeks: formData.repeatWeekly
-                ? Number(formData.numberOfWeeks)
-                : undefined,
-            }
-          : {
-              classId: Number(formData.classId),
-              date: formData.date,
-              startTime: formData.startTime,
-              endTime: formData.endTime,
-              capacity: Number(formData.capacity),
-              location: formData.location || null,
-              repeatWeekly: formData.repeatWeekly,
-              numberOfWeeks: formData.repeatWeekly
-                ? Number(formData.numberOfWeeks)
-                : undefined,
-            },
-      ),
+      body: isEditing ? { id: editingId, ...fields } : fields,
     });
 
-    if (res.ok) {
+    if (result.ok) {
       setFormData({
         classId: "",
         date: "",
@@ -231,8 +205,7 @@ export default function SchedulePage() {
     } else {
       // A refusal has a reason — lowering the capacity below the seats already
       // taken, say. Saying nothing leaves the form looking like it did nothing.
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      window.alert(data.error || "Failed to save schedule.");
+      setActionError(result.error);
     }
 
     setSubmitting(false);
@@ -253,6 +226,8 @@ export default function SchedulePage() {
           {showForm ? "Cancel" : "New Class"}
         </Button>
       </div>
+
+      <AdminAlert message={actionError} className="mb-4" />
 
       {showForm && (
         <form
@@ -421,30 +396,16 @@ export default function SchedulePage() {
             { value: "cancelled", label: "Cancelled" },
           ]}
         />
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-deep-ocean/60">Class:</span>
-          <select
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-            className="h-7 rounded-full bg-soft-moonstone/30 px-2.5 text-xs text-deep-ocean focus:outline-none focus:ring-2 focus:ring-ring/50"
-          >
-            <option value="all">All</option>
-            {classTypes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
-              </option>
-            ))}
-          </select>
-        </div>
+        <ClassFilterSelect
+          value={classFilter}
+          onChange={setClassFilter}
+          classes={classTypes}
+        />
         <PillGroup
           label="Time"
           value={timeFilter}
           onChange={setTimeFilter}
-          options={[
-            { value: "upcoming", label: "Upcoming" },
-            { value: "past", label: "Past" },
-            { value: "all", label: "All" },
-          ]}
+          options={TIME_FILTER_OPTIONS}
         />
       </AdminTableToolbar>
 
@@ -460,24 +421,8 @@ export default function SchedulePage() {
             <PlainHeader label="Actions" />
           </SortableHead>
           <tbody className="divide-y divide-soft-moonstone/10">
-            {scheduleList.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="px-4 py-8 text-center text-soft-moonstone"
-                >
-                  No scheduled classes yet.
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="px-4 py-8 text-center text-soft-moonstone"
-                >
-                  No classes match the current filters.
-                </td>
-              </tr>
+            {adminStateMessage(tableState) !== null ? (
+              <TableStateRow colSpan={7} {...tableState} />
             ) : (
               rows.map((item) => (
                 <tr

@@ -88,6 +88,25 @@ describe("buildAdminTableFilters", () => {
     expect(apply(past)).toEqual([ROWS[0]]);
   });
 
+  it("takes a table that only has a status — bundles, messages", () => {
+    const filters = buildAdminTableFilters(
+      { status: "cancelled" },
+      { status: ACCESSORS.status },
+      TODAY,
+    );
+    expect(Object.keys(filters)).toEqual(["status"]);
+    expect(apply(filters)).toEqual([ROWS[2]]);
+  });
+
+  it("adds no predicate for a part the table did not give an accessor for", () => {
+    const filters = buildAdminTableFilters(
+      { status: "all", classId: "2", time: "past" },
+      { status: ACCESSORS.status },
+      TODAY,
+    );
+    expect(Object.keys(filters)).toEqual([]);
+  });
+
   it("composes the three filters with AND", () => {
     const filters = buildAdminTableFilters(
       { status: "open", classId: "1", time: "past" },

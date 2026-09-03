@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AdminAlert } from "@/components/admin/admin-alert";
+import { mutateAdmin } from "@/components/admin/admin-fetch";
 import {
   formatDateWithWeekday,
   todayString,
@@ -34,6 +36,8 @@ interface RescheduleSheetProps {
   sourceStartTime: string;
   sourceEndTime: string;
   allSchedules: ScheduleRow[];
+  /** Why the schedule list is empty, when it is empty because it never loaded. */
+  schedulesError?: string | null;
   onMoved: () => void;
 }
 
@@ -49,6 +53,7 @@ export function RescheduleSheet({
   sourceStartTime,
   sourceEndTime,
   allSchedules,
+  schedulesError = null,
   onMoved,
 }: RescheduleSheetProps) {
   const [submitting, setSubmitting] = useState(false);
@@ -68,18 +73,16 @@ export function RescheduleSheet({
   async function handleMove(newScheduleId: number) {
     setSubmitting(true);
     setError(null);
-    const res = await fetch("/api/admin/bookings", {
+    const result = await mutateAdmin("/api/admin/bookings", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: bookingId, newScheduleId }),
+      body: { id: bookingId, newScheduleId },
     });
-    if (res.ok) {
+    if (result.ok) {
       onMoved();
       onOpenChange(false);
       return;
     }
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    setError(data.error ?? "Failed to reschedule. Please try again.");
+    setError(result.error);
     setSubmitting(false);
   }
 
@@ -97,17 +100,18 @@ export function RescheduleSheet({
         </SheetHeader>
 
         <div className="px-4 pb-6">
-          {error && (
-            <p className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {error}
-            </p>
-          )}
+          <AdminAlert message={error ?? schedulesError} className="mb-3" />
 
           <p className="mb-3 text-sm font-medium text-deep-tide-blue">
             Move to:
           </p>
 
-          {eligibleSchedules.length === 0 ? (
+          {schedulesError ? (
+            <p className="text-center text-soft-moonstone py-8">
+              The list of dates could not be loaded, so there is nothing to move
+              this booking to yet. Close this and try again.
+            </p>
+          ) : eligibleSchedules.length === 0 ? (
             <p className="text-center text-soft-moonstone py-8">
               No other dates available for this class. Add a new schedule first,
               then come back.
