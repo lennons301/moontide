@@ -162,10 +162,13 @@ export const bookings = pgTable(
     // Which notification this booking still owes its customer while
     // `emailSent` is false. A booking owes one at a time: it is created owing a
     // confirmation, and a reschedule replaces that with the moved-date note —
-    // but only once the confirmation has gone out, so a booking moved before
-    // anyone told the customer it existed still gets its confirmation, for the
-    // date it is now on. Text rather than an enum: the retry sweep names the
-    // kinds it can send and reports anything else rather than guessing.
+    // including when the confirmation had not gone out yet, because the note
+    // names the class, the date it was on and the date it is on now, so it
+    // stands on its own for someone who never received the first email either.
+    // Text rather than an enum: `recognisedKind` in
+    // `src/lib/notifications/booking-emails.ts` names the kinds that can be
+    // sent, and both senders count and report anything else rather than
+    // guessing at it.
     emailKind: text("email_kind").default("confirmation").notNull(),
     // Delivery state — see `src/lib/notifications/delivery.ts`, which owns
     // every write to these three columns.

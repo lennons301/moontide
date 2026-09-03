@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -7,11 +8,11 @@ import {
 } from "@/lib/bundles/with-config";
 import { db } from "@/lib/db";
 import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
+import { sendBookingNotification, sendBundleConfirmation } from "@/lib/email";
 import {
-  sendBookingConfirmation,
-  sendBookingNotification,
-  sendBundleConfirmation,
-} from "@/lib/email";
+  recognisedKind,
+  sendBookingEmail,
+} from "@/lib/notifications/booking-emails";
 import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
 import { ApiError, withAdmin } from "../_lib";
 
@@ -55,6 +56,8 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
   const { type, id } = body;
 
   if (type === "booking") {
+    const originalSchedules = alias(schedules, "original_schedules");
+
     const result = await db
       .select()
       .from(bookings)
@@ -63,6 +66,12 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       // The bundle the booking was funded from, when there is one — a resend
       // has to know a credit was spent, or it quotes a price nobody paid.
       .leftJoin(bundles, eq(bookings.bundleId, bundles.id))
+      // The class it was moved off, for a booking whose pending notification is
+      // the moved-date note rather than a confirmation.
+      .leftJoin(
+        originalSchedules,
+        eq(bookings.originalScheduleId, originalSchedules.id),
+      )
       .where(eq(bookings.id, id));
 
     if (result.length === 0) {
@@ -77,40 +86,19 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       throw new ApiError(400, "This seat is being held, not booked");
     }
 
-    const payment = row.bundles
-      ? ({
-          method: "credit",
-          creditsRemaining: row.bundles.creditsRemaining,
-        } as const)
-      : ({
-          method: "card",
-          priceInPence: row.classes.priceInPence,
-        } as const);
+    // Which email this booking is owed is the row's to say, not this route's.
+    // Sending a confirmation to someone owed a moved-date note — and then
+    // marking the row settled — took the note out of the sweep and it was never
+    // sent by anything, which is the drift this whole change is about.
+    const kind = recognisedKind(row.bookings.emailKind);
+    if (kind === null) {
+      throw new ApiError(
+        400,
+        `This booking is owed a "${row.bookings.emailKind}" email, which is not one this can send`,
+      );
+    }
 
-    await resend(bookings, id, async () => {
-      await sendBookingConfirmation({
-        customerName: row.bookings.customerName,
-        customerEmail: row.bookings.customerEmail,
-        classTitle: row.classes.title,
-        date: row.schedules.date,
-        startTime: row.schedules.startTime,
-        endTime: row.schedules.endTime,
-        location: row.schedules.location,
-        payment,
-      });
-
-      await sendBookingNotification({
-        type: "individual",
-        customerName: row.bookings.customerName,
-        customerEmail: row.bookings.customerEmail,
-        classTitle: row.classes.title,
-        date: row.schedules.date,
-        startTime: row.schedules.startTime,
-        endTime: row.schedules.endTime,
-        location: row.schedules.location,
-        payment,
-      });
-    });
+    await resend(bookings, id, () => sendBookingEmail(row, kind));
 
     return NextResponse.json({ success: true });
   }

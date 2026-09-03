@@ -29,6 +29,7 @@ export async function POST(request: Request) {
   const total = (key: "sent" | "failed" | "skipped") =>
     retries.bookingConfirmations[key] +
     retries.reschedules[key] +
+    retries.unrecognised[key] +
     retries.bundleConfirmations[key] +
     retries.waitlistConfirmations[key];
 

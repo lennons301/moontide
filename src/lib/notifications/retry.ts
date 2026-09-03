@@ -13,13 +13,15 @@ import {
   waitlistEntries,
 } from "@/lib/db/schema";
 import {
-  sendBookingConfirmation,
   sendBookingNotification,
   sendBundleConfirmation,
-  sendRescheduleNotification,
   sendWaitlistConfirmation,
   sendWaitlistNotification,
 } from "@/lib/email";
+import {
+  recognisedKind,
+  sendBookingEmail,
+} from "@/lib/notifications/booking-emails";
 import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
 import { londonDateString } from "@/lib/time/london";
 
@@ -53,6 +55,8 @@ export type RetryOutcome = {
 export type RetrySweep = {
   bookingConfirmations: RetryOutcome;
   reschedules: RetryOutcome;
+  /** Rows owing a notification whose kind this does not recognise. */
+  unrecognised: RetryOutcome;
   bundleConfirmations: RetryOutcome;
   waitlistConfirmations: RetryOutcome;
 };
@@ -97,23 +101,7 @@ function hasHappened(date: string, today: string): boolean {
 }
 
 /**
- * A booking with a bundle behind it was paid for with a credit, so the retry
- * says so and states the balance. Only a booking with no bundle gets a price.
- */
-function paymentFor(row: {
-  bundles: { creditsRemaining: number } | null;
-  classes: { priceInPence: number };
-}) {
-  return row.bundles
-    ? ({
-        method: "credit",
-        creditsRemaining: row.bundles.creditsRemaining,
-      } as const)
-    : ({ method: "card", priceInPence: row.classes.priceInPence } as const);
-}
-
-/**
- * Which bookings still owe their customer the notification named by `kind`.
+ * Which bookings still owe their customer a notification.
  *
  * Three statuses are excluded, all for the same reason — the email would say
  * something that is no longer true of the row. A **held** seat is an offer
@@ -122,78 +110,33 @@ function paymentFor(row: {
  * place, so neither "you are booked" nor "your booking has moved" is a thing to
  * send about it: the sweep being unbounded is exactly what would otherwise turn
  * an old cancelled row into a confirmation months later.
+ *
+ * Both kinds come back in one read rather than one query each, so a row whose
+ * `emailKind` is neither of them is a row this has in its hand and can report,
+ * instead of one that quietly matches no query at all.
  */
-function stillOwed(kind: "confirmation" | "reschedule") {
+function stillOwedANotification() {
   return and(
     eq(bookings.emailSent, false),
-    eq(bookings.emailKind, kind),
     ne(bookings.status, "held"),
     ne(bookings.status, "cancelled"),
     ne(bookings.status, "released"),
   );
 }
 
-/** Confirmations for bookings nobody has been told about. */
-async function retryBookingConfirmations(today: string): Promise<RetryOutcome> {
-  const pending = await db
-    .select()
-    .from(bookings)
-    .innerJoin(schedules, eq(bookings.scheduleId, schedules.id))
-    .innerJoin(classes, eq(schedules.classId, classes.id))
-    // The bundle the booking was funded from, when there is one: a retry has to
-    // know a credit was spent, or it sends a cash price nobody paid.
-    .leftJoin(bundles, eq(bookings.bundleId, bundles.id))
-    .where(stillOwed("confirmation"));
-
-  const outcome = nothing();
-
-  for (const row of pending) {
-    const description = `booking confirmation for booking ${row.bookings.id}`;
-
-    if (hasHappened(row.schedules.date, today)) {
-      skip(
-        outcome,
-        description,
-        `the class on ${row.schedules.date} has passed`,
-      );
-      continue;
-    }
-
-    const payment = paymentFor(row);
-    const details = {
-      customerName: row.bookings.customerName,
-      customerEmail: row.bookings.customerEmail,
-      classTitle: row.classes.title,
-      date: row.schedules.date,
-      startTime: row.schedules.startTime,
-      endTime: row.schedules.endTime,
-      location: row.schedules.location,
-      payment,
-    };
-
-    await attempt(outcome, bookings, row.bookings.id, description, async () => {
-      await sendBookingConfirmation(details);
-      await sendBookingNotification({ type: "individual", ...details });
-    });
-  }
-
-  return outcome;
-}
-
 /**
- * "Your booking has been moved" notes that did not go out when the move was made.
+ * Every booking notification nobody has received: confirmations, and the
+ * moved-date notes a reschedule failed to send.
  *
- * The note names the class the booking started on — `originalScheduleId`, which
- * after a chain of moves is where the customer first booked rather than the hop
- * before this one. True either way, and the alternative is a second foreign key
- * to `schedules` recording only the last hop.
- *
- * When that original class has been deleted there is no "from" to name, so the
- * customer gets a plain confirmation of the class they are on instead: accurate,
- * useful, and it means the row leaves the sweep rather than failing nightly for
- * ever on a class that no longer exists.
+ * Which email a given row owes is `sendBookingEmail`'s decision, shared with the
+ * admin's resend button so the two paths cannot send different things about the
+ * same pending notification.
  */
-async function retryReschedules(today: string): Promise<RetryOutcome> {
+async function retryBookingNotifications(today: string): Promise<{
+  confirmations: RetryOutcome;
+  reschedules: RetryOutcome;
+  unrecognised: RetryOutcome;
+}> {
   const originalSchedules = alias(schedules, "original_schedules");
 
   const pending = await db
@@ -201,17 +144,39 @@ async function retryReschedules(today: string): Promise<RetryOutcome> {
     .from(bookings)
     .innerJoin(schedules, eq(bookings.scheduleId, schedules.id))
     .innerJoin(classes, eq(schedules.classId, classes.id))
+    // The bundle the booking was funded from, when there is one: an email has to
+    // know a credit was spent, or it sends a cash price nobody paid.
     .leftJoin(bundles, eq(bookings.bundleId, bundles.id))
+    // The class it was moved off, for a note that has to name where it moved from.
     .leftJoin(
       originalSchedules,
       eq(bookings.originalScheduleId, originalSchedules.id),
     )
-    .where(stillOwed("reschedule"));
+    .where(stillOwedANotification());
 
-  const outcome = nothing();
+  const confirmations = nothing();
+  const reschedules = nothing();
+  const unrecognised = nothing();
 
   for (const row of pending) {
-    const description = `reschedule notification for booking ${row.bookings.id}`;
+    const kind = recognisedKind(row.bookings.emailKind);
+    if (kind === null) {
+      // Nothing here knows what this row is owed, so it is counted and named
+      // rather than passed over — the flag stays false and it keeps its place in
+      // tomorrow's sweep, whatever taught it to say this.
+      skip(
+        unrecognised,
+        `booking ${row.bookings.id}`,
+        `"${row.bookings.emailKind}" is not a notification this can send`,
+      );
+      continue;
+    }
+
+    const outcome = kind === "reschedule" ? reschedules : confirmations;
+    const description =
+      kind === "reschedule"
+        ? `reschedule notification for booking ${row.bookings.id}`
+        : `booking confirmation for booking ${row.bookings.id}`;
 
     if (hasHappened(row.schedules.date, today)) {
       skip(
@@ -222,39 +187,12 @@ async function retryReschedules(today: string): Promise<RetryOutcome> {
       continue;
     }
 
-    const from = row.original_schedules;
-
-    await attempt(outcome, bookings, row.bookings.id, description, async () => {
-      if (!from) {
-        await sendBookingConfirmation({
-          customerName: row.bookings.customerName,
-          customerEmail: row.bookings.customerEmail,
-          classTitle: row.classes.title,
-          date: row.schedules.date,
-          startTime: row.schedules.startTime,
-          endTime: row.schedules.endTime,
-          location: row.schedules.location,
-          payment: paymentFor(row),
-        });
-        return;
-      }
-
-      await sendRescheduleNotification({
-        customerName: row.bookings.customerName,
-        customerEmail: row.bookings.customerEmail,
-        classTitle: row.classes.title,
-        oldDate: from.date,
-        oldStartTime: from.startTime,
-        oldEndTime: from.endTime,
-        newDate: row.schedules.date,
-        newStartTime: row.schedules.startTime,
-        newEndTime: row.schedules.endTime,
-        newLocation: row.schedules.location,
-      });
-    });
+    await attempt(outcome, bookings, row.bookings.id, description, () =>
+      sendBookingEmail(row, kind),
+    );
   }
 
-  return outcome;
+  return { confirmations, reschedules, unrecognised };
 }
 
 /** Confirmations for bundles nobody has been told about. */
@@ -372,8 +310,8 @@ async function retryWaitlistConfirmations(
 }
 
 /**
- * Every kind of pending notification, each guarded on its own so one kind
- * failing wholesale cannot cost another kind its run.
+ * Every pending notification. Each read is guarded on its own, so one of them
+ * failing wholesale cannot cost the others their run.
  *
  * `now` is passed in rather than read, so the boundary is testable. Today is
  * Gabrielle's, not the runtime's: a schedule's date is a London wall clock and
@@ -387,18 +325,26 @@ export async function retryPendingEmails(
   const sweep: RetrySweep = {
     bookingConfirmations: nothing(),
     reschedules: nothing(),
+    unrecognised: nothing(),
     bundleConfirmations: nothing(),
     waitlistConfirmations: nothing(),
   };
 
-  const kinds = [
-    ["bookingConfirmations", () => retryBookingConfirmations(today)],
-    ["reschedules", () => retryReschedules(today)],
+  try {
+    const notifications = await retryBookingNotifications(today);
+    sweep.bookingConfirmations = notifications.confirmations;
+    sweep.reschedules = notifications.reschedules;
+    sweep.unrecognised = notifications.unrecognised;
+  } catch (error) {
+    console.error("Retry sweep for booking notifications failed:", error);
+  }
+
+  const rest = [
     ["bundleConfirmations", () => retryBundleConfirmations(now)],
     ["waitlistConfirmations", () => retryWaitlistConfirmations(today)],
   ] as const;
 
-  for (const [key, run] of kinds) {
+  for (const [key, run] of rest) {
     try {
       sweep[key] = await run();
     } catch (error) {

@@ -169,10 +169,9 @@ const EXPIRED_OFFER = {
 };
 
 /**
- * The handler's reads in order: the four retry sweeps (booking confirmations,
- * reschedule notes, bundle confirmations, waiting-list confirmations), then
- * expired offers, then the digest's schedules, waiting-list entries and
- * released bookings.
+ * The handler's reads in order: the three retry sweeps (booking notifications,
+ * bundle confirmations, waiting-list confirmations), then expired offers, then
+ * the digest's schedules, waiting-list entries and released bookings.
  */
 function queueRun(options: {
   expiredOffers?: unknown[];
@@ -181,7 +180,6 @@ function queueRun(options: {
   released?: unknown[];
 }) {
   queueSelects(
-    [],
     [],
     [],
     [],

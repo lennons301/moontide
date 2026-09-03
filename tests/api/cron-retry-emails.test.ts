@@ -154,6 +154,7 @@ function pendingBooking(overrides: Record<string, unknown> = {}) {
       customerEmail: "jane@example.com",
       stripePaymentId: "cs_test_1",
       bundleId: null,
+      emailKind: "confirmation",
       // Created three days ago: outside the window the sweep used to have.
       createdAt: new Date(Date.now() - 3 * DAY_MS),
     },
@@ -167,6 +168,8 @@ function pendingBooking(overrides: Record<string, unknown> = {}) {
     // The bundle the booking was funded from, if any: a left join, so null for
     // a card booking.
     bundles: null,
+    // The class it was moved off, if any — the same left join.
+    original_schedules: null,
     ...overrides,
   };
 }
@@ -187,20 +190,19 @@ function pendingBundle(overrides: Record<string, unknown> = {}) {
 }
 
 /**
- * The sweep's reads in order: booking confirmations, reschedule notes, bundle
- * confirmations, waiting-list confirmations. The waiting-list count query only
- * runs when there is a waiting-list entry to send to.
+ * The sweep's reads in order: every booking that owes a notification (both kinds
+ * in one read, so a kind it does not recognise is a row it has in its hand),
+ * bundle confirmations, then waiting-list confirmations. The waiting-list count
+ * query only runs when there is a waiting-list entry to send to.
  */
 function queueSweep(options: {
   bookings?: unknown[];
-  reschedules?: unknown[];
   bundles?: unknown[];
   waitlist?: unknown[];
   waitlistCounts?: unknown[];
 }) {
   queueSelects(
     options.bookings ?? [],
-    options.reschedules ?? [],
     options.bundles ?? [],
     options.waitlist ?? [],
     options.waitlistCounts ?? [],
@@ -384,6 +386,27 @@ describe("POST /api/cron/retry-emails", () => {
     });
   });
 
+  it("counts and names a booking owing a notification it cannot send", async () => {
+    // `emailKind` is text, so a third value is possible. Both kinds come back in
+    // one read precisely so this row is one the sweep has in its hand: it is
+    // reported rather than matching no query and being counted nowhere.
+    queueSweep({
+      bookings: [
+        pendingBooking({
+          bookings: { ...pendingBooking().bookings, emailKind: "postcard" },
+        }),
+      ],
+    });
+
+    const response = await POST(authorized());
+
+    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({
+      skipped: 1,
+      retries: { unrecognised: { skipped: 1 } },
+    });
+  });
+
   describe("bundle confirmations", () => {
     it("names the product the purchase recorded", async () => {
       queueSweep({ bundles: [pendingBundle()] });
@@ -461,6 +484,7 @@ describe("POST /api/cron/retry-emails", () => {
         customerEmail: "jane@example.com",
         bundleId: null,
         originalScheduleId: 41,
+        emailKind: "reschedule",
       },
       schedules: {
         date: isoDate(9),
@@ -478,7 +502,7 @@ describe("POST /api/cron/retry-emails", () => {
     };
 
     it("retries the moved-date note the move failed to send", async () => {
-      queueSweep({ reschedules: [rescheduled] });
+      queueSweep({ bookings: [rescheduled] });
 
       const response = await POST(authorized());
 
@@ -501,7 +525,7 @@ describe("POST /api/cron/retry-emails", () => {
       // There is no "from" to name, and failing nightly for ever on a deleted
       // class would tell the customer nothing at all.
       queueSweep({
-        reschedules: [{ ...rescheduled, original_schedules: null }],
+        bookings: [{ ...rescheduled, original_schedules: null }],
       });
 
       const response = await POST(authorized());

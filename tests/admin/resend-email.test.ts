@@ -13,6 +13,7 @@ const {
   mockSendBookingConfirmation,
   mockSendBookingNotification,
   mockSendBundleConfirmation,
+  mockSendRescheduleNotification,
   mockEq,
 } = vi.hoisted(() => {
   const selectRows: unknown[] = [];
@@ -29,7 +30,9 @@ const {
     leftJoin: mockLeftJoin,
     where: selectWhere,
   });
-  mockLeftJoin.mockReturnValue({ where: selectWhere });
+  // Two left joins on the booking read: the bundle that funded it, and the
+  // class it was moved off.
+  mockLeftJoin.mockReturnValue({ leftJoin: mockLeftJoin, where: selectWhere });
 
   const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
   const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
@@ -43,6 +46,9 @@ const {
     mockSendBookingConfirmation: vi.fn().mockResolvedValue({ success: true }),
     mockSendBookingNotification: vi.fn().mockResolvedValue({ success: true }),
     mockSendBundleConfirmation: vi.fn().mockResolvedValue({ success: true }),
+    mockSendRescheduleNotification: vi
+      .fn()
+      .mockResolvedValue({ success: true }),
     mockEq: vi.fn((...args: unknown[]) => args),
   };
 });
@@ -62,6 +68,10 @@ vi.mock("@/lib/db/schema", () => ({
   schedules: { id: "schedules.id", classId: "schedules.class_id" },
 }));
 
+vi.mock("drizzle-orm/pg-core", () => ({
+  alias: vi.fn((table: unknown) => table),
+}));
+
 vi.mock("drizzle-orm", () => ({
   eq: mockEq,
   sql: vi.fn((...args: unknown[]) => args),
@@ -71,6 +81,7 @@ vi.mock("@/lib/email", () => ({
   sendBookingConfirmation: mockSendBookingConfirmation,
   sendBookingNotification: mockSendBookingNotification,
   sendBundleConfirmation: mockSendBundleConfirmation,
+  sendRescheduleNotification: mockSendRescheduleNotification,
 }));
 
 import { POST } from "@/app/api/admin/resend-email/route";
@@ -99,6 +110,7 @@ const BOOKING_ROW = {
     customerName: "Jane Doe",
     customerEmail: "jane@example.com",
     status: "confirmed",
+    emailKind: "confirmation",
   },
   schedules: {
     id: 42,
@@ -111,6 +123,9 @@ const BOOKING_ROW = {
   // The bundle the booking was funded from: a left join, so null when the
   // customer paid by card.
   bundles: null,
+  // The class it was moved off: the same left join, null for a booking that has
+  // never been rescheduled.
+  original_schedules: null,
 };
 
 const BUNDLE_ROW = {
@@ -227,6 +242,54 @@ describe("POST /api/admin/resend-email — a booking", () => {
         payment: { method: "credit", creditsRemaining: 2 },
       }),
     );
+  });
+
+  it("resends the moved-date note to a booking that owes one", async () => {
+    // Sending a plain confirmation here — and then marking the row sent — took
+    // the note out of the overnight sweep, and nothing ever sent it.
+    queue({
+      ...BOOKING_ROW,
+      bookings: { ...BOOKING_ROW.bookings, emailKind: "reschedule" },
+      original_schedules: {
+        date: "2026-05-02",
+        startTime: "09:00:00",
+        endTime: "10:00:00",
+      },
+    });
+
+    const response = await POST(request({ type: "booking", id: 12 }));
+
+    expect(response.status).toBe(200);
+    expect(mockSendRescheduleNotification).toHaveBeenCalledWith({
+      customerName: "Jane Doe",
+      customerEmail: "jane@example.com",
+      classTitle: "Prenatal Yoga",
+      oldDate: "2026-05-02",
+      oldStartTime: "09:00:00",
+      oldEndTime: "10:00:00",
+      newDate: "2026-06-09",
+      newStartTime: "10:00:00",
+      newEndTime: "11:00:00",
+      newLocation: "Studio 1, Hove",
+    });
+    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+  });
+
+  it("refuses a notification kind it does not know how to send", async () => {
+    queue({
+      ...BOOKING_ROW,
+      bookings: { ...BOOKING_ROW.bookings, emailKind: "postcard" },
+    });
+
+    const response = await POST(request({ type: "booking", id: 12 }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error:
+        'This booking is owed a "postcard" email, which is not one this can send',
+    });
+    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+    expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the booking is gone", async () => {
