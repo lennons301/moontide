@@ -1,6 +1,7 @@
 import { and, eq, ne } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
 import { findSpendableBundle, spendCredit } from "@/lib/bundles/credits";
+import { emailMatches, normaliseEmail } from "@/lib/customers/email";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import { sendBookingConfirmation, sendBookingNotification } from "@/lib/email";
@@ -17,8 +18,12 @@ import { decideRedemptionSeat } from "@/lib/waitlist/offers";
 class CreditGone extends Error {}
 
 export async function POST(request: Request) {
-  const { scheduleId, customerName, customerEmail, offerToken } =
-    await request.json();
+  const body = await request.json();
+  const { scheduleId, customerName, offerToken } = body;
+
+  // Normalised once, here: the bundle is looked for under this address, the
+  // booking is written with it, and the confirmation goes to it.
+  const customerEmail = normaliseEmail(body.customerEmail);
 
   if (!scheduleId || !customerName || !customerEmail) {
     return NextResponse.json(
@@ -82,7 +87,10 @@ export async function POST(request: Request) {
     .where(
       and(
         eq(bookings.scheduleId, scheduleId),
-        eq(bookings.customerEmail, customerEmail),
+        // Case-insensitive, so a booking made before addresses were normalised
+        // is still recognised as this customer's rather than read as somebody
+        // else with the same address in different capitals.
+        emailMatches(bookings.customerEmail, customerEmail),
         ne(bookings.status, "cancelled"),
       ),
     );

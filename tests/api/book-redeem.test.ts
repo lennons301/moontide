@@ -783,3 +783,98 @@ describe("POST /api/book/redeem with an offer token", () => {
     expect(mockDelete).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /api/book/redeem — the address the customer typed", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSelect.mockReturnValue({ from: mockSelectFrom });
+    mockInnerJoin.mockReturnValue({ where: mockSelectWhere });
+    mockLeftJoin.mockReturnValue({ where: mockSelectWhere });
+    mockSelectFrom.mockReturnValue({
+      where: mockSelectWhere,
+      innerJoin: mockInnerJoin,
+      leftJoin: mockLeftJoin,
+    });
+    mockSelectWhere.mockResolvedValue([]);
+    mockInsert.mockReturnValue({ values: mockInsertValues });
+    mockInsertValues.mockReturnValue({ returning: mockInsertReturning });
+    mockInsertReturning.mockResolvedValue([{ id: 1 }]);
+    mockUpdate.mockReturnValue({ set: mockUpdateSet });
+    mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
+    mockUpdateWhere.mockImplementation(() =>
+      Object.assign(Promise.resolve([]), { returning: mockUpdateReturning }),
+    );
+    mockUpdateReturning.mockResolvedValue([{ id: 1 }]);
+    mockTransaction.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          insert: mockInsert,
+          update: mockUpdate,
+          select: vi.fn().mockReturnValue({ from: mockSelectFrom }),
+        };
+        return await fn(tx);
+      },
+    );
+    mockFindSpendableBundle.mockResolvedValue(SPENDABLE);
+    mockSpendCredit.mockResolvedValue({ spent: true, creditsRemaining: 3 });
+  });
+
+  it("books and asks for a bundle under one address, however it was typed", async () => {
+    mockSelectWhere
+      .mockResolvedValueOnce([
+        {
+          bundleEligible: true,
+          status: "open",
+          classTitle: "Morning Yoga",
+          date: "2026-05-01",
+          startTime: "09:00",
+          endTime: "10:00",
+          location: "Studio",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const response = await POST(
+      new Request("http://localhost:3000/api/book/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scheduleId: 1,
+          customerName: "Jane Doe",
+          customerEmail: " Jane@Example.COM ",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ customerEmail: "jane@example.com" }),
+    );
+    // The bundle is looked for under the same address the booking is written
+    // with — a bundle bought as `Jane@` is hers to spend as `jane@`.
+    expect(mockFindSpendableBundle).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ customerEmail: "jane@example.com" }),
+    );
+    expect(mockSendBookingConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ customerEmail: "jane@example.com" }),
+    );
+  });
+
+  it("refuses an address that is nothing but whitespace", async () => {
+    const response = await POST(
+      new Request("http://localhost:3000/api/book/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scheduleId: 1,
+          customerName: "Jane Doe",
+          customerEmail: "   ",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("Missing required fields");
+  });
+});
