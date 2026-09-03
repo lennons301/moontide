@@ -177,6 +177,7 @@ tests/
   api/contact.test.ts     # Contact form API tests, and what it refuses
   lib/customer-email.test.ts # normaliseEmail: the case and whitespace folded away
   lib/email-normalisation-is-one-place.test.ts # No handler folds an address itself
+  lib/delivery-state-is-one-place.test.ts # No handler marks an email sent itself
   api/stripe-webhook.test.ts  # Stripe webhook handler tests
   api/book-checkout.test.ts   # Checkout session tests
   api/book-redeem.test.ts     # Bundle redemption tests

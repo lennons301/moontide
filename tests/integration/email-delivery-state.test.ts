@@ -31,12 +31,13 @@ describe("markEmailSent", () => {
 
     await markEmailSent(bookings, row.id, sentAt);
 
-    expect(await booking(row.id)).toMatchObject({
+    const stored = await booking(row.id);
+    expect(stored).toMatchObject({
       emailSent: true,
-      emailSentAt: sentAt,
       emailAttempts: 1,
       emailLastError: null,
     });
+    expect(stored.emailSentAt?.toISOString()).toBe(sentAt.toISOString());
   });
 
   it("takes a condition rather than an id, for the paths that only know one", async () => {
