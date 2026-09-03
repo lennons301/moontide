@@ -108,3 +108,66 @@ describe("waitlist_schedule_email_idx", () => {
     ).toBe("waitlist_schedule_email_idx");
   });
 });
+
+/**
+ * Capitalisation is not a customer. Both indexes are on `lower(customer_email)`
+ * so that `Ada@example.com` and `ada@example.com` are one person to Postgres —
+ * the handlers normalise what they write, and this is what holds when one of
+ * them forgets or when a row predates the normalising.
+ */
+describe("a customer who capitalised themselves differently", () => {
+  it("cannot take a second active booking on the same class", async () => {
+    const schedule = await createSchedule();
+    await createBooking({
+      scheduleId: schedule.id,
+      customerEmail: "Ada@example.com",
+    });
+
+    expect(
+      await violatedConstraint(
+        createBooking({
+          scheduleId: schedule.id,
+          customerEmail: "ada@example.com",
+        }),
+      ),
+    ).toBe("bookings_schedule_email_active_idx");
+  });
+
+  it("cannot take a second place on the same waiting list", async () => {
+    const schedule = await createSchedule();
+    await db.insert(waitlistEntries).values({
+      scheduleId: schedule.id,
+      customerName: "Ada",
+      customerEmail: "ADA@example.com",
+    });
+
+    expect(
+      await violatedConstraint(
+        db.insert(waitlistEntries).values({
+          scheduleId: schedule.id,
+          customerName: "Ada",
+          customerEmail: "ada@example.com",
+        }),
+      ),
+    ).toBe("waitlist_schedule_email_idx");
+  });
+
+  it("is still let back in once the first booking is cancelled", async () => {
+    const schedule = await createSchedule();
+    const first = await createBooking({
+      scheduleId: schedule.id,
+      customerEmail: "Ada@example.com",
+    });
+
+    await db
+      .update(bookings)
+      .set({ status: "cancelled" })
+      .where(eq(bookings.id, first.id));
+
+    const second = await createBooking({
+      scheduleId: schedule.id,
+      customerEmail: "ada@example.com",
+    });
+    expect(second.status).toBe("confirmed");
+  });
+});

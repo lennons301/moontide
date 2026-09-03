@@ -166,8 +166,12 @@ export const bookings = pgTable(
     // Partial so a customer can re-book after cancelling. A released booking is
     // still active here: the customer keeps their claim on a class and cannot
     // re-book this same schedule themselves — Gabrielle reschedules them.
+    //
+    // On `lower(customer_email)`, because capitalisation is not a customer:
+    // matched raw, `Ada@` and `ada@` were two people to the index and the same
+    // person could be charged twice for one class.
     scheduleEmailActiveUnique: uniqueIndex("bookings_schedule_email_active_idx")
-      .on(table.scheduleId, table.customerEmail)
+      .on(table.scheduleId, sql`lower(${table.customerEmail})`)
       .where(sql`${table.status} <> 'cancelled'`),
   }),
 );
@@ -193,9 +197,12 @@ export const waitlistEntries = pgTable(
     heldBookingId: integer("held_booking_id").references(() => bookings.id),
   },
   (table) => ({
+    // One place per customer per class, and on `lower(customer_email)` for the
+    // same reason the booking index is: someone who joined as `Ada@` is the
+    // person who comes back as `ada@`.
     scheduleEmailUnique: uniqueIndex("waitlist_schedule_email_idx").on(
       table.scheduleId,
-      table.customerEmail,
+      sql`lower(${table.customerEmail})`,
     ),
   }),
 );
