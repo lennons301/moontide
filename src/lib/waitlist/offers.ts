@@ -11,6 +11,8 @@
  * own and the routes are left with wiring.
  */
 
+import { normaliseEmail } from "@/lib/customers/email";
+
 export type OfferFailure = {
   ok: false;
   error: string;
@@ -26,7 +28,7 @@ function fail(
 
 /** Normalised for comparison — an offer is bound to an address, not a login. */
 function sameEmail(a: string, b: string): boolean {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return normaliseEmail(a) === normaliseEmail(b);
 }
 
 /* ------------------------------------------------------------- occupancy */
