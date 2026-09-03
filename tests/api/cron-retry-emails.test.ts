@@ -371,12 +371,16 @@ describe("POST /api/cron/retry-emails", () => {
       );
     });
 
-    it("leaves held seats out of the sweep", async () => {
+    it("leaves out the bookings the email would no longer be true of", async () => {
       await POST(authorized());
 
-      // Nobody has taken a held seat up, so there is no confirmation owing on
-      // it: retrying would tell them their class is booked when it is not.
-      expect(vi.mocked(ne)).toHaveBeenCalledWith("bookings.status", "held");
+      // Nobody has taken a held seat up, so confirming it would tell them their
+      // class is booked when it is not; a cancelled or released booking holds no
+      // place, and an unbounded sweep is exactly what would otherwise turn one
+      // of those into a confirmation months later.
+      for (const status of ["held", "cancelled", "released"]) {
+        expect(vi.mocked(ne)).toHaveBeenCalledWith("bookings.status", status);
+      }
     });
   });
 

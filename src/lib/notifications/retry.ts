@@ -113,11 +113,27 @@ function paymentFor(row: {
 }
 
 /**
- * Confirmations for bookings nobody has been told about.
+ * Which bookings still owe their customer the notification named by `kind`.
  *
- * A held seat is excluded: nobody has taken the offer up, and confirming it
- * would tell them their class is booked when it is not.
+ * Three statuses are excluded, all for the same reason — the email would say
+ * something that is no longer true of the row. A **held** seat is an offer
+ * nobody has taken up, so confirming it would tell them their class is booked
+ * when it is not. A **cancelled** or **released** booking no longer holds a
+ * place, so neither "you are booked" nor "your booking has moved" is a thing to
+ * send about it: the sweep being unbounded is exactly what would otherwise turn
+ * an old cancelled row into a confirmation months later.
  */
+function stillOwed(kind: "confirmation" | "reschedule") {
+  return and(
+    eq(bookings.emailSent, false),
+    eq(bookings.emailKind, kind),
+    ne(bookings.status, "held"),
+    ne(bookings.status, "cancelled"),
+    ne(bookings.status, "released"),
+  );
+}
+
+/** Confirmations for bookings nobody has been told about. */
 async function retryBookingConfirmations(today: string): Promise<RetryOutcome> {
   const pending = await db
     .select()
@@ -127,13 +143,7 @@ async function retryBookingConfirmations(today: string): Promise<RetryOutcome> {
     // The bundle the booking was funded from, when there is one: a retry has to
     // know a credit was spent, or it sends a cash price nobody paid.
     .leftJoin(bundles, eq(bookings.bundleId, bundles.id))
-    .where(
-      and(
-        eq(bookings.emailSent, false),
-        ne(bookings.status, "held"),
-        eq(bookings.emailKind, "confirmation"),
-      ),
-    );
+    .where(stillOwed("confirmation"));
 
   const outcome = nothing();
 
@@ -196,13 +206,7 @@ async function retryReschedules(today: string): Promise<RetryOutcome> {
       originalSchedules,
       eq(bookings.originalScheduleId, originalSchedules.id),
     )
-    .where(
-      and(
-        eq(bookings.emailSent, false),
-        ne(bookings.status, "held"),
-        eq(bookings.emailKind, "reschedule"),
-      ),
-    );
+    .where(stillOwed("reschedule"));
 
   const outcome = nothing();
 
