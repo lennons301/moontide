@@ -524,30 +524,32 @@ export default function SchedulePage() {
                     >
                       Edit
                     </button>
+                    {/* Neither closing nor cancelling means anything to a class
+                        that is already cancelled. */}
                     {item.schedules.status !== "cancelled" && (
-                      <button
-                        type="button"
-                        onClick={() => handleToggleClosed(item)}
-                        className="text-ocean-light-blue hover:text-deep-tide-blue text-sm mr-3"
-                        title={
-                          item.schedules.status === "closed"
-                            ? "Take bookings for this class again"
-                            : "Stop taking bookings for this class. It still runs, and existing bookings are untouched."
-                        }
-                      >
-                        {item.schedules.status === "closed"
-                          ? "Reopen"
-                          : "Close"}
-                      </button>
-                    )}
-                    {item.schedules.status !== "cancelled" && (
-                      <button
-                        type="button"
-                        onClick={() => handleCancelClass(item.schedules.id)}
-                        className="text-bright-orange hover:text-deep-tide-blue text-sm mr-3"
-                      >
-                        Cancel
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleClosed(item)}
+                          className="text-ocean-light-blue hover:text-deep-tide-blue text-sm mr-3"
+                          title={
+                            item.schedules.status === "closed"
+                              ? "Take bookings for this class again"
+                              : "Stop taking bookings for this class. It still runs, and existing bookings are untouched."
+                          }
+                        >
+                          {item.schedules.status === "closed"
+                            ? "Reopen"
+                            : "Close"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCancelClass(item.schedules.id)}
+                          className="text-bright-orange hover:text-deep-tide-blue text-sm mr-3"
+                        >
+                          Cancel
+                        </button>
+                      </>
                     )}
                     <button
                       type="button"
