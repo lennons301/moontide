@@ -14,6 +14,7 @@ function schedule(overrides: Partial<DigestSchedule> = {}): DigestSchedule {
     date: "2026-06-20",
     startTime: "10:00:00",
     endTime: "11:00:00",
+    status: "open",
     capacity: 8,
     bookedCount: 8,
     waitingCount: 0,
@@ -270,6 +271,88 @@ describe("buildAdminDigest", () => {
       expect(digest.offersOutstanding[0].expiresAt).toEqual(
         new Date("2026-06-10T17:00:00.000Z"),
       );
+    });
+  });
+
+  // Closing a class stops new bookings and retires nothing: `PUT
+  // /api/admin/schedules` voids held bookings only on the cancelled branch. So
+  // an offer made before she closed the class is still outstanding, and the
+  // digest is the only thing that tells her so.
+  describe("a class she has closed", () => {
+    it("still reports an offer nobody has answered on it", () => {
+      const digest = buildAdminDigest({
+        schedules: [
+          schedule({
+            status: "closed",
+            bookedCount: 8,
+            waitingCount: 2,
+            offers: [
+              {
+                customerName: "Jane Doe",
+                customerEmail: "jane@example.com",
+                expiresAt: new Date("2026-06-12T08:00:00.000Z"),
+              },
+            ],
+          }),
+        ],
+        released: [],
+        now: NOW,
+      });
+
+      expect(
+        digest.offersOutstanding.map((o) => [o.customerName, o.scheduleId]),
+      ).toEqual([["Jane Doe", 42]]);
+      expect(digest.isEmpty).toBe(false);
+    });
+
+    it("does not prompt her to offer its free seats", () => {
+      const digest = buildAdminDigest({
+        schedules: [
+          schedule({ status: "closed", bookedCount: 4, waitingCount: 3 }),
+        ],
+        released: [],
+        now: NOW,
+      });
+
+      expect(digest.seatsToOffer).toEqual([]);
+      expect(digest.isEmpty).toBe(true);
+    });
+
+    it("prompts her about the same seats once it is open again", () => {
+      const digest = buildAdminDigest({
+        schedules: [
+          schedule({ status: "open", bookedCount: 4, waitingCount: 3 }),
+        ],
+        released: [],
+        now: NOW,
+      });
+
+      expect(digest.seatsToOffer.map((s) => s.freeSeats)).toEqual([4]);
+    });
+
+    it("says nothing about a lapsed offer on it, seats or otherwise", () => {
+      const digest = buildAdminDigest({
+        schedules: [
+          schedule({
+            status: "closed",
+            bookedCount: 8,
+            waitingCount: 1,
+            offers: [
+              {
+                customerName: "Jane Doe",
+                customerEmail: "jane@example.com",
+                expiresAt: new Date("2026-06-09T08:00:00.000Z"),
+              },
+            ],
+          }),
+        ],
+        released: [],
+        now: NOW,
+      });
+
+      expect(digest.offersOutstanding).toEqual([]);
+      expect(digest.seatsToOffer).toEqual([]);
+      expect(digest.isEmpty).toBe(true);
     });
   });
 

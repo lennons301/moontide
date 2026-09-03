@@ -1,8 +1,7 @@
-import { and, eq, gte, isNotNull, lte } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lte, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import { sendOfferDigest, sendOfferExpired } from "@/lib/email";
-import { BOOKABLE_SCHEDULE_STATUS } from "@/lib/schedules/availability";
 import { londonDateString } from "@/lib/time/london";
 import type {
   DigestOffer,
@@ -124,7 +123,7 @@ export async function settleExpiredOffers(now: Date): Promise<ExpirySweep> {
   return { found: expired.length, released, emailed, failed };
 }
 
-/** Upcoming classes open to bookings, with their waiting lists and offers. */
+/** Upcoming, uncancelled classes with their waiting lists and their offers. */
 async function readDigestSchedules(now: Date): Promise<DigestSchedule[]> {
   const scheduleRows = await db
     .select({
@@ -133,20 +132,26 @@ async function readDigestSchedules(now: Date): Promise<DigestSchedule[]> {
       date: schedules.date,
       startTime: schedules.startTime,
       endTime: schedules.endTime,
+      status: schedules.status,
       capacity: schedules.capacity,
       bookedCount: schedules.bookedCount,
     })
     .from(schedules)
     .innerJoin(classes, eq(schedules.classId, classes.id))
-    // Only classes open to bookings: a cancelled or closed one needs nothing
-    // from her, because the digest prompts her to offer a seat and no seat can
-    // be held on either. A past class cannot be acted on. The date is a London
-    // wall clock, so today is London's today; classes earlier today are dropped
-    // by `buildAdminDigest` against the start time.
+    // Not cancelled, rather than open: cancelling voids a class's offers in the
+    // same transaction, so a cancelled class has none left to report, but
+    // closing deliberately leaves outstanding offers standing. Narrowed to open
+    // here, an offer nobody has answered on a class she closed afterwards would
+    // vanish from the digest — the one prompt telling her it is still hanging.
+    // Which sections a closed class can contribute to is decided by
+    // `buildAdminDigest`, where the difference between the two is a rule rather
+    // than a WHERE clause. A past class cannot be acted on either way. The date
+    // is a London wall clock, so today is London's today; classes earlier today
+    // are dropped by `buildAdminDigest` against the start time.
     .where(
       and(
         gte(schedules.date, londonDateString(now)),
-        eq(schedules.status, BOOKABLE_SCHEDULE_STATUS),
+        ne(schedules.status, "cancelled"),
       ),
     );
 
