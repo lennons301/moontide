@@ -2,25 +2,17 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { PortableText } from "next-sanity";
-import { sanityClient, urlFor } from "@/lib/sanity/client";
-import { serviceBySlugQuery } from "@/lib/sanity/queries";
-import type { Service } from "@/lib/sanity/types";
+import { getService } from "@/lib/content/services";
+import { urlFor } from "@/lib/sanity/client";
 
 export const metadata: Metadata = { title: "Private Classes — Moontide" };
 
 export const revalidate = 3600;
 
 export default async function PrivatePage() {
-  let service: Service | null = null;
-  try {
-    service = await sanityClient.fetch<Service>(serviceBySlugQuery, {
-      slug: "private",
-    });
-  } catch {
-    // Sanity not connected yet — use fallback content
-  }
+  const service = await getService("private");
 
-  const imageUrl = service?.image
+  const imageUrl = service.image
     ? urlFor(service.image).width(1200).height(500).url()
     : null;
 
@@ -51,16 +43,14 @@ export default async function PrivatePage() {
           <div className="w-8 h-0.5 bg-bright-orange mb-8" />
 
           <div className="text-deep-ocean leading-relaxed mb-10 space-y-4">
-            {service?.fullDescription ? (
+            {service.fullDescription ? (
               <div className="prose prose-stone">
                 <PortableText value={service.fullDescription} />
               </div>
             ) : (
-              <p>
-                Everyone comes to the mat for different reasons. Private classes
-                are highly personalised to your desired outcomes for mind, body
-                and spirit.
-              </p>
+              service.descriptionParagraphs.map((para, i) => (
+                <p key={i}>{para}</p>
+              ))
             )}
           </div>
 

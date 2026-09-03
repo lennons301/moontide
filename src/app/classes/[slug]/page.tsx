@@ -2,37 +2,12 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { PortableText } from "next-sanity";
-import { sanityClient, urlFor } from "@/lib/sanity/client";
-import { serviceBySlugQuery } from "@/lib/sanity/queries";
-import type { Service } from "@/lib/sanity/types";
+import { getService } from "@/lib/content/services";
+import { urlFor } from "@/lib/sanity/client";
 
 export const revalidate = 3600;
 
 const knownSlugs = ["prenatal", "postnatal", "baby-yoga", "vinyasa"];
-
-const fallbackContent: Record<string, { title: string; description: string }> =
-  {
-    prenatal: {
-      title: "Prenatal Yoga",
-      description:
-        "Gentle movement and breath work to support you and your baby through pregnancy. These classes are designed to ease common discomforts, build strength and flexibility, and nurture a deep connection with your growing baby. Suitable from the second trimester onwards.",
-    },
-    postnatal: {
-      title: "Postnatal Yoga",
-      description:
-        "Rebuild strength and connection in the months after birth. These classes offer a gentle, supported return to movement, focusing on pelvic floor health, core reconnection and emotional wellbeing. Babies are welcome and encouraged to join.",
-    },
-    "baby-yoga": {
-      title: "Baby Yoga & Massage",
-      description:
-        "Bonding, relaxation and developmental support for you and your baby. Through gentle massage strokes and playful yoga-inspired movements, you will learn to read your baby's cues, support their physical development, and deepen your bond through touch.",
-    },
-    vinyasa: {
-      title: "Autumn Equinox Yin",
-      description:
-        "Seasonal flow connecting your practice to nature's rhythms. Each series honours the qualities of the season — the stillness of winter, the renewal of spring, the abundance of summer, the release of autumn — weaving breath, movement and reflection into a practice that feels alive.",
-    },
-  };
 
 export async function generateStaticParams() {
   return knownSlugs.map((slug) => ({ slug }));
@@ -44,8 +19,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const fallback = fallbackContent[slug];
-  const title = fallback?.title ?? "Class — Moontide";
+  const { title } = await getService(slug);
   return { title: `${title} — Moontide` };
 }
 
@@ -56,16 +30,9 @@ export default async function ClassDetailPage({
 }) {
   const { slug } = await params;
 
-  let service: Service | null = null;
-  try {
-    service = await sanityClient.fetch<Service>(serviceBySlugQuery, { slug });
-  } catch {
-    // Sanity not connected yet — use fallback content
-  }
-
-  const fallback = fallbackContent[slug];
-  const title = service?.title ?? fallback?.title ?? "Class";
-  const imageUrl = service?.image
+  const service = await getService(slug);
+  const title = service.title;
+  const imageUrl = service.image
     ? urlFor(service.image).width(1200).height(500).url()
     : null;
 
@@ -96,12 +63,14 @@ export default async function ClassDetailPage({
           <div className="w-8 h-0.5 bg-bright-orange mb-8" />
 
           <div className="text-deep-ocean leading-relaxed mb-10">
-            {service?.fullDescription ? (
+            {service.fullDescription ? (
               <div className="prose prose-stone">
                 <PortableText value={service.fullDescription} />
               </div>
             ) : (
-              <p>{fallback?.description ?? "Class details coming soon."}</p>
+              service.descriptionParagraphs.map((para, i) => (
+                <p key={i}>{para}</p>
+              ))
             )}
           </div>
 
