@@ -124,8 +124,15 @@
     {
       "idx": 17,
       "version": "7",
+      "when": 1788420171813,
+      "tag": "0017_case_insensitive_customer_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
       "when": 1788421268502,
-      "tag": "0017_schedule_closed_status",
+      "tag": "0018_schedule_closed_status",
       "breakpoints": true
     }
   ]

@@ -56,6 +56,10 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn((...args: unknown[]) => args),
   and: vi.fn((...args: unknown[]) => args),
   ne: vi.fn((...args: unknown[]) => args),
+  sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
+    strings,
+    values,
+  }),
 }));
 
 vi.mock("@/lib/waitlist/held-seats", () => ({
@@ -572,5 +576,117 @@ describe("POST /api/book/checkout", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe("Bundle configuration not found");
+  });
+});
+
+describe("POST /api/book/checkout — the address the customer typed", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSelectFrom.mockReturnValue({
+      innerJoin: mockInnerJoin,
+      where: mockWhere,
+    });
+    mockInnerJoin.mockReturnValue({ where: mockWhere });
+    mockWhere.mockResolvedValue([]);
+    mockCheckoutSessionsCreate.mockResolvedValue({
+      url: "https://checkout.stripe.com/test",
+    });
+    mockFindOfferByToken.mockResolvedValue(null);
+  });
+
+  it("goes to Stripe normalised, so the webhook writes one customer", async () => {
+    mockWhere
+      .mockResolvedValueOnce([
+        {
+          schedules: {
+            id: 1,
+            status: "open",
+            bookedCount: 2,
+            capacity: 8,
+            date: "2026-05-01",
+            startTime: "09:00",
+            endTime: "10:00",
+          },
+          classes: { id: 1, title: "Morning Yoga", priceInPence: 1200 },
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const response = await POST(
+      new Request("http://localhost:3000/api/book/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scheduleId: 1,
+          customerName: "Jane Doe",
+          customerEmail: " Jane@Example.COM ",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockCheckoutSessionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer_email: "jane@example.com",
+        metadata: expect.objectContaining({
+          customerEmail: "jane@example.com",
+        }),
+      }),
+    );
+  });
+
+  it("goes to Stripe normalised for a bundle too", async () => {
+    mockSelectFrom.mockReturnValueOnce({
+      innerJoin: mockInnerJoin,
+      where: vi.fn().mockResolvedValue([
+        {
+          id: 1,
+          name: "6-Class Bundle",
+          priceInPence: 6600,
+          credits: 6,
+          expiryDays: 90,
+          active: true,
+        },
+      ]),
+    });
+
+    const response = await POST(
+      new Request("http://localhost:3000/api/book/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "bundle",
+          bundleConfigId: 1,
+          customerEmail: "Jane@Example.COM",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockCheckoutSessionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer_email: "jane@example.com",
+        metadata: expect.objectContaining({
+          customerEmail: "jane@example.com",
+        }),
+      }),
+    );
+  });
+
+  it("refuses an address that is nothing but whitespace", async () => {
+    const response = await POST(
+      new Request("http://localhost:3000/api/book/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scheduleId: 1,
+          customerName: "Jane Doe",
+          customerEmail: "   ",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("Email is required");
   });
 });

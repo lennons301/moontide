@@ -1,5 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
+import { normaliseEmail } from "@/lib/customers/email";
 import { db } from "@/lib/db";
 import { classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import {
@@ -16,15 +17,15 @@ export async function POST(request: Request) {
     customerEmail?: string;
   };
 
-  if (!scheduleId || !customerName?.trim() || !customerEmail?.trim()) {
+  const normalisedName = customerName?.trim() ?? "";
+  const normalisedEmail = normaliseEmail(customerEmail);
+
+  if (!scheduleId || !normalisedName || !normalisedEmail) {
     return NextResponse.json(
       { error: "Missing required fields" },
       { status: 400 },
     );
   }
-
-  const normalisedName = customerName.trim();
-  const normalisedEmail = customerEmail.trim().toLowerCase();
 
   const result = await db
     .select()

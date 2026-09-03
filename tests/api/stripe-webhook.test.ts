@@ -790,3 +790,147 @@ describe("POST /api/stripe/webhook", () => {
     expect(mockTransaction).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * A session created before checkout normalised anything still carries the
+ * address as the customer typed it, and Stripe replays sessions for days. What
+ * the webhook writes is what every later read matches on, so it folds the case
+ * itself rather than trusting the session.
+ */
+describe("POST /api/stripe/webhook — an address that came back capitalised", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockInsert.mockReturnValue({ values: mockInsertValues });
+    mockInsertValues.mockImplementation((_values: Record<string, unknown>) =>
+      Object.assign(Promise.resolve([{ id: 1 }]), {
+        onConflictDoNothing: () => ({ returning: mockInsertReturning }),
+      }),
+    );
+    mockInsertReturning.mockResolvedValue([{ id: 1 }]);
+    mockUpdate.mockReturnValue({ set: mockUpdateSet });
+    mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
+    mockUpdateWhere.mockImplementation(() =>
+      Object.assign(Promise.resolve([]), { returning: mockUpdateReturning }),
+    );
+    mockUpdateReturning.mockResolvedValue([{ bookedCount: 1, capacity: 8 }]);
+    mockTransaction.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          insert: mockInsert,
+          update: mockUpdate,
+          delete: mockDelete,
+        };
+        return fn(tx);
+      },
+    );
+    mockDelete.mockReturnValue({ where: mockDeleteWhere });
+    mockDeleteWhere.mockResolvedValue([]);
+    mockFindOfferByToken.mockResolvedValue(null);
+    mockBundleConfigWhere.mockResolvedValue([]);
+    mockBundleConfigFrom.mockReturnValue({ where: mockBundleConfigWhere });
+    mockBundleConfigSelect.mockReset();
+    mockBundleConfigSelect.mockReturnValue({ from: mockBundleConfigFrom });
+    mockSendBookingConfirmation.mockResolvedValue({ success: true });
+    mockSendBundleConfirmation.mockResolvedValue({ success: true });
+    mockSendBookingNotification.mockResolvedValue({ success: true });
+    mockSendBundleConfigMissingAlert.mockResolvedValue({ success: true });
+  });
+
+  it("books the customer under the normalised address", async () => {
+    // 1st select() → the duplicate check finds nothing
+    mockBundleConfigSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }),
+    });
+    // 2nd select() → the schedule and class the confirmation is written from
+    mockBundleConfigSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            {
+              schedules: {
+                date: "2026-05-01",
+                startTime: "09:00",
+                endTime: "10:00",
+                location: "Studio 1",
+              },
+              classes: { title: "Prenatal Yoga", priceInPence: 1250 },
+            },
+          ]),
+        }),
+      }),
+    });
+
+    mockConstructEvent.mockReturnValue({
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_capitals",
+          metadata: {
+            type: "individual",
+            scheduleId: "1",
+            customerName: "Jane Doe",
+            customerEmail: "Jane@Example.COM",
+          },
+        },
+      },
+    } as unknown as Stripe.Event);
+
+    const response = await POST(
+      new Request("http://localhost:3000/api/stripe/webhook", {
+        method: "POST",
+        headers: { "stripe-signature": "valid" },
+        body: "{}",
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(response.status).toBe(200);
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ customerEmail: "jane@example.com" }),
+    );
+    expect(mockSendBookingConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ customerEmail: "jane@example.com" }),
+    );
+  });
+
+  it("grants the bundle under the normalised address", async () => {
+    mockBundleConfigWhere.mockResolvedValue([
+      { id: 1, name: "6-Class Bundle", credits: 6, expiryDays: 90 },
+    ]);
+
+    mockConstructEvent.mockReturnValue({
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_bundle_capitals",
+          created: Math.floor(Date.UTC(2026, 0, 10, 12, 0, 0) / 1000),
+          metadata: {
+            type: "bundle",
+            customerEmail: "Jane@Example.COM",
+            bundleConfigId: "1",
+            bundleName: "6-Class Bundle",
+            bundleCredits: "6",
+            bundleExpiryDays: "90",
+          },
+        },
+      },
+    } as unknown as Stripe.Event);
+
+    const response = await POST(
+      new Request("http://localhost:3000/api/stripe/webhook", {
+        method: "POST",
+        headers: { "stripe-signature": "valid" },
+        body: "{}",
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(response.status).toBe(200);
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ customerEmail: "jane@example.com" }),
+    );
+    expect(mockSendBundleConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ customerEmail: "jane@example.com" }),
+    );
+  });
+});

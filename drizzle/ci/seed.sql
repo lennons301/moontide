@@ -48,7 +48,7 @@ INSERT INTO schedules (id, class_id, date, start_time, end_time, capacity, booke
   (1, 1, CURRENT_DATE - 14, '09:30', '10:30', 8, 8, 'The Studio, Hove', 'weekly', 'open'),
   (2, 2, CURRENT_DATE - 7, '11:00', '12:00', 8, 3, 'The Studio, Hove', 'weekly', 'open'),
   -- Closed to bookings while seats remain: what `full` used to be reached for,
-  -- and the row `0017_schedule_closed_status` converted from it.
+  -- and the row `0018_schedule_closed_status` converted from it.
   (3, 1, CURRENT_DATE + 3, '09:30', '10:30', 8, 5, 'The Studio, Hove', 'weekly', 'closed'),
   (4, 3, CURRENT_DATE + 5, '13:00', '14:00', 10, 9, 'The Studio, Hove', 'weekly', 'open'),
   (5, 4, CURRENT_DATE + 10, '18:30', '19:45', 12, 12, 'Church Hall, Portslade', 'weekly', 'open'),

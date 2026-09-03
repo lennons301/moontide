@@ -34,7 +34,7 @@ BEGIN
     -- but not remove one. A wholly new type may be used in the transaction
     -- that created it (unlike a newly *added* value), so this stays one
     -- atomic step.
-    ALTER TYPE "public"."schedule_status" RENAME TO "schedule_status_pre_0017";
+    ALTER TYPE "public"."schedule_status" RENAME TO "schedule_status_pre_0018";
     CREATE TYPE "public"."schedule_status" AS ENUM('open', 'closed', 'cancelled');
 
     -- The default is dropped and restored around the cast: it is typed by the
@@ -48,6 +48,6 @@ BEGIN
     ALTER TABLE "schedules"
       ALTER COLUMN "status" SET DEFAULT 'open'::"public"."schedule_status";
 
-    DROP TYPE "public"."schedule_status_pre_0017";
+    DROP TYPE "public"."schedule_status_pre_0018";
   END IF;
 END $$;
