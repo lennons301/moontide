@@ -1,12 +1,16 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
-import { sanityClient } from "@/lib/sanity/client";
-import { siteSettingsQuery } from "@/lib/sanity/queries";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  givenCmsHolds,
+  givenCmsUnreachable,
+  resetContentSource,
+} from "../support/content";
 
-vi.mock("@/lib/sanity/client", () => ({
-  sanityClient: { fetch: vi.fn() },
-}));
+vi.mock(
+  "@/lib/sanity/client",
+  async () => (await import("../support/sanity-client")).sanityModuleMock,
+);
 
 // next/font/google is a build-time loader; the layout only uses the variables.
 vi.mock("next/font/google", () => {
@@ -20,10 +24,7 @@ vi.mock("next/font/google", () => {
   };
 });
 
-// `fetch` is heavily overloaded; the layout only ever calls the query form.
-const fetchMock = sanityClient.fetch as unknown as Mock<
-  (query: string) => Promise<unknown>
->;
+afterEach(resetContentSource);
 
 /** Render the layout around a stand-in page, the way every route does. */
 async function renderLayout() {
@@ -35,13 +36,9 @@ async function renderLayout() {
   );
 }
 
-beforeEach(() => {
-  fetchMock.mockReset();
-});
-
 describe("RootLayout", () => {
-  it("renders the site without an Instagram link when Sanity throws", async () => {
-    fetchMock.mockRejectedValue(new Error("ENOTFOUND api.sanity.io"));
+  it("renders the site without an Instagram link when Sanity is unreachable", async () => {
+    givenCmsUnreachable();
 
     const html = await renderLayout();
 
@@ -54,7 +51,7 @@ describe("RootLayout", () => {
   });
 
   it("renders the site without an Instagram link when Sanity has no settings", async () => {
-    fetchMock.mockResolvedValue(null);
+    givenCmsHolds({ siteSettings: null });
 
     const html = await renderLayout();
 
@@ -63,15 +60,16 @@ describe("RootLayout", () => {
   });
 
   it("shows the Instagram link when Sanity answers with one", async () => {
-    fetchMock.mockResolvedValue({
-      title: "Moontide",
-      contactEmail: "hello@example.com",
-      instagramUrl: "https://instagram.com/moontide",
+    givenCmsHolds({
+      siteSettings: {
+        title: "Moontide",
+        contactEmail: "hello@example.com",
+        instagramUrl: "https://instagram.com/moontide",
+      },
     });
 
     const html = await renderLayout();
 
-    expect(fetchMock).toHaveBeenCalledWith(siteSettingsQuery);
     expect(html).toContain("https://instagram.com/moontide");
     expect(html).toContain("Instagram");
   });

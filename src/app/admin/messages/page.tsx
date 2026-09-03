@@ -1,52 +1,60 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { AdminAlert } from "@/components/admin/admin-alert";
+import { mutateAdmin, useAdminResource } from "@/components/admin/admin-fetch";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
 import { formatDateTime } from "@/components/admin/format-date";
 import { PillGroup } from "@/components/admin/pill-group";
+import { buildAdminTableFilters } from "@/components/admin/table-filters";
+import { adminStateMessage } from "@/components/admin/table-state";
 import { useTableControls } from "@/components/admin/use-table-controls";
 import { Button } from "@/components/ui/button";
+import type { MessageRow } from "@/lib/admin/rows";
 
-interface Message {
-  id: number;
-  name: string;
-  email: string;
-  subject: string;
-  message: string;
-  createdAt: string;
-  read: boolean;
-}
+type Message = MessageRow;
 
 type StatusFilter = "all" | "unread" | "read";
 
+const NO_MESSAGES: Message[] = [];
+
 export default function MessagesPage() {
   const router = useRouter();
-  const [allMessages, setAllMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    data: allMessages,
+    loading,
+    error: loadError,
+  } = useAdminResource<Message[]>("/api/admin/messages", NO_MESSAGES);
+  // Read/unread is this table's status, so it goes through the shared filters.
+  const [optimisticReadIds, setOptimisticReadIds] = useState<number[]>([]);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
-  const fetchMessages = useCallback(async () => {
-    const res = await fetch("/api/admin/messages");
-    const data = await res.json();
-    setAllMessages(data);
-    setLoading(false);
-  }, []);
+  const filters = useMemo(
+    () =>
+      buildAdminTableFilters<Message>(
+        { status: statusFilter },
+        { status: (m) => (m.read ? "read" : "unread") },
+      ),
+    [statusFilter],
+  );
 
-  useEffect(() => {
-    fetchMessages();
-  }, [fetchMessages]);
-
-  const filters = useMemo(() => {
-    const map: Record<string, (m: Message) => boolean> = {};
-    if (statusFilter === "unread") map.read = (m) => !m.read;
-    if (statusFilter === "read") map.read = (m) => m.read;
-    return map;
-  }, [statusFilter]);
+  // Marking one read is optimistic: an overlay on the loaded rows rather than a
+  // write back into them, so a refetch cannot be undone by stale local state.
+  const messages = useMemo(
+    () =>
+      optimisticReadIds.length === 0
+        ? allMessages
+        : allMessages.map((m) =>
+            optimisticReadIds.includes(m.id) ? { ...m, read: true } : m,
+          ),
+    [allMessages, optimisticReadIds],
+  );
 
   const { rows, search, setSearch, total } = useTableControls<Message>({
-    rows: allMessages,
+    rows: messages,
     sortKeys: {
       received: (m) => (m.read ? "0_" : "1_") + m.createdAt,
     },
@@ -55,28 +63,37 @@ export default function MessagesPage() {
     defaultSort: { key: "received", direction: "desc" },
   });
 
-  const selected = allMessages.find((m) => m.id === selectedId);
+  // The list is panels rather than a table, but it answers the same question
+  // in the same order: loading, then why not, then empty.
+  const stateMessage = adminStateMessage({
+    loading,
+    error: loadError,
+    isEmpty: rows.length === 0,
+    emptyMessage:
+      allMessages.length === 0
+        ? "No messages yet."
+        : "No messages match the current filters.",
+  });
+
+  const selected = messages.find((m) => m.id === selectedId);
 
   async function handleOpen(msg: Message) {
     setSelectedId(msg.id);
     if (msg.read) return;
+    setActionError(null);
     // Optimistically mark read locally so the list updates immediately.
-    setAllMessages((prev) =>
-      prev.map((m) => (m.id === msg.id ? { ...m, read: true } : m)),
-    );
-    const res = await fetch("/api/admin/messages", {
+    setOptimisticReadIds((prev) => [...prev, msg.id]);
+    const result = await mutateAdmin("/api/admin/messages", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: msg.id, read: true }),
+      body: { id: msg.id, read: true },
     });
-    if (res.ok) {
+    if (result.ok) {
       router.refresh();
-    } else {
-      // Rollback on failure.
-      setAllMessages((prev) =>
-        prev.map((m) => (m.id === msg.id ? { ...m, read: false } : m)),
-      );
+      return;
     }
+    // Rollback on failure, and say why it did not stick.
+    setOptimisticReadIds((prev) => prev.filter((id) => id !== msg.id));
+    setActionError(result.error);
   }
 
   if (selected) {
@@ -115,6 +132,8 @@ export default function MessagesPage() {
         Messages
       </h1>
 
+      <AdminAlert message={actionError} className="mb-4" />
+
       <AdminTableToolbar
         search={search}
         onSearchChange={setSearch}
@@ -134,15 +153,13 @@ export default function MessagesPage() {
         />
       </AdminTableToolbar>
 
-      {loading ? (
-        <div className="rounded-lg border border-soft-moonstone/30 bg-white p-8 text-center text-soft-moonstone shadow-sm">
-          Loading...
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="rounded-lg border border-soft-moonstone/30 bg-white p-8 text-center text-soft-moonstone shadow-sm">
-          {allMessages.length === 0
-            ? "No messages yet."
-            : "No messages match the current filters."}
+      {stateMessage !== null ? (
+        <div
+          className={`rounded-lg border border-soft-moonstone/30 bg-white p-8 text-center shadow-sm ${
+            loadError && !loading ? "text-red-600" : "text-soft-moonstone"
+          }`}
+        >
+          {stateMessage}
         </div>
       ) : (
         <div className="space-y-2">

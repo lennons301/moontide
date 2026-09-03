@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { AdminAlert } from "@/components/admin/admin-alert";
+import { mutateAdmin, useAdminResource } from "@/components/admin/admin-fetch";
 import {
   formatDateWithWeekday,
   formatDeadline,
@@ -42,6 +44,12 @@ interface WaitlistResponse {
   scheduleStatus: string | null;
 }
 
+const EMPTY_WAITLIST: WaitlistResponse = {
+  entries: [],
+  occupancy: null,
+  scheduleStatus: null,
+};
+
 interface WaitlistPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -82,68 +90,62 @@ export function WaitlistPanel({
   classTitle,
   date,
 }: WaitlistPanelProps) {
-  const [entries, setEntries] = useState<WaitlistEntry[]>([]);
-  const [occupancy, setOccupancy] = useState<Occupancy | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: waitlist,
+    loading,
+    error: loadError,
+    refetch: fetchEntries,
+  } = useAdminResource<WaitlistResponse>(
+    `/api/admin/waitlist?scheduleId=${scheduleId}`,
+    EMPTY_WAITLIST,
+    // The panel is mounted before it is opened, and opened again on the same
+    // class after a change — so the fetch follows `open`, not just the id.
+    { enabled: open },
+  );
+  const { entries, occupancy } = waitlist;
+  const [actionError, setActionError] = useState<string | null>(null);
   const [offeringId, setOfferingId] = useState<number | null>(null);
   const [hold, setHold] = useState<HoldDuration>("24h");
   const [busy, setBusy] = useState(false);
 
-  const fetchEntries = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch(`/api/admin/waitlist?scheduleId=${scheduleId}`);
-    if (res.ok) {
-      const data = (await res.json()) as WaitlistResponse;
-      setEntries(data.entries);
-      setOccupancy(data.occupancy);
-      setError(null);
-    } else {
-      setEntries([]);
-      setOccupancy(null);
-      setError("Failed to load waiting list.");
-    }
-    setLoading(false);
-  }, [scheduleId]);
-
+  // Reopening the panel starts from no offer half-made and nothing to explain.
   useEffect(() => {
     if (open) {
       setOfferingId(null);
       setHold("24h");
-      fetchEntries();
+      setActionError(null);
     }
-  }, [open, fetchEntries]);
+  }, [open]);
 
   async function handleRemove(id: number) {
     if (!window.confirm("Remove this person from the waiting list?")) {
       return;
     }
-    const res = await fetch(`/api/admin/waitlist?id=${id}`, {
+    setActionError(null);
+    const result = await mutateAdmin(`/api/admin/waitlist?id=${id}`, {
       method: "DELETE",
     });
-    if (res.ok) {
-      await fetchEntries();
+    if (!result.ok) {
+      setActionError(result.error);
       return;
     }
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    window.alert(data.error || "Failed to remove entry. Please try again.");
+    await fetchEntries();
   }
 
   async function handleOffer(id: number) {
     setBusy(true);
-    const res = await fetch("/api/admin/waitlist/offer", {
+    setActionError(null);
+    const result = await mutateAdmin("/api/admin/waitlist/offer", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entryId: id, hold }),
+      body: { entryId: id, hold },
     });
     setBusy(false);
-    if (res.ok) {
-      setOfferingId(null);
-      await fetchEntries();
+    if (!result.ok) {
+      setActionError(result.error);
       return;
     }
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    window.alert(data.error || "Failed to make the offer. Please try again.");
+    setOfferingId(null);
+    await fetchEntries();
   }
 
   async function handleWithdraw(id: number) {
@@ -155,16 +157,19 @@ export function WaitlistPanel({
       return;
     }
     setBusy(true);
-    const res = await fetch(`/api/admin/waitlist/offer?entryId=${id}`, {
-      method: "DELETE",
-    });
+    setActionError(null);
+    const result = await mutateAdmin(
+      `/api/admin/waitlist/offer?entryId=${id}`,
+      {
+        method: "DELETE",
+      },
+    );
     setBusy(false);
-    if (res.ok) {
-      await fetchEntries();
+    if (!result.ok) {
+      setActionError(result.error);
       return;
     }
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    window.alert(data.error || "Failed to withdraw the offer.");
+    await fetchEntries();
   }
 
   // Longest waiting first is how the list is ordered, and it is a prompt, not a
@@ -183,6 +188,8 @@ export function WaitlistPanel({
         </SheetHeader>
 
         <div className="px-4 pb-6">
+          <AdminAlert message={actionError} className="mb-4" />
+
           {occupancy && (
             <div className="mb-4 rounded-lg bg-soft-moonstone/30 p-3 text-sm text-deep-ocean">
               <p>
@@ -210,8 +217,8 @@ export function WaitlistPanel({
 
           {loading ? (
             <p className="text-center text-soft-moonstone py-8">Loading...</p>
-          ) : error ? (
-            <p className="text-center text-red-600 py-8">{error}</p>
+          ) : loadError ? (
+            <p className="text-center text-red-600 py-8">{loadError}</p>
           ) : entries.length === 0 ? (
             <p className="text-center text-soft-moonstone py-8">
               Nobody on the waiting list yet.

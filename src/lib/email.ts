@@ -163,6 +163,47 @@ export async function sendBundleConfirmation(params: BundleConfirmationParams) {
   return { success: true };
 }
 
+interface BundleConfigMissingParams {
+  customerEmail: string;
+  sessionId: string;
+  /** What the session named, verbatim — it may be nothing, or nonsense. */
+  configReference: string;
+  /** The terms granted from the session itself, or null if nothing was granted. */
+  granted: { credits: number; expiryDate: string } | null;
+}
+
+/**
+ * A bundle was paid for and the config row it names is not there.
+ *
+ * Stripe is answered 200 either way — the condition is permanent, so retrying
+ * it for three days recovers nothing and hides it — which means this email is
+ * the only thing that tells anyone. It goes out whether or not the bundle was
+ * granted from the session's own terms: something a purchase pointed at has
+ * disappeared, and if the grant failed a customer has been charged for nothing.
+ */
+export async function sendBundleConfigMissingAlert(
+  params: BundleConfigMissingParams,
+) {
+  const { customerEmail, sessionId, configReference, granted } = params;
+  const to = process.env.CONTACT_EMAIL || "gwaring5@googlemail.com";
+  const adminUrl = `${process.env.BETTER_AUTH_URL}/admin/bundles`;
+
+  const outcome = granted
+    ? `The bundle WAS granted, from the terms recorded when she paid: ${granted.credits} classes, valid until ${granted.expiryDate}. She has her confirmation email and can book. Nothing is owed to her — but the bundle is not linked to a product, so resending her confirmation from the admin will not work.`
+    : `The bundle WAS NOT granted. ${customerEmail} has been charged and has no credits. She needs a bundle creating by hand, or refunding.`;
+
+  await resend.emails.send({
+    from: "Moontide <noreply@gabriellemoontide.co.uk>",
+    to,
+    subject: granted
+      ? "[Moontide] Bundle purchase: its product is missing"
+      : "[Moontide] ACTION NEEDED: bundle paid for but not granted",
+    text: `A bundle purchase named a bundle product that no longer exists.\n\nCustomer: ${customerEmail}\nStripe session: ${sessionId}\nProduct referenced: ${configReference}\n\n${outcome}\n\nBundles: ${adminUrl}`,
+  });
+
+  return { success: true };
+}
+
 interface WaitlistConfirmationParams {
   customerName: string;
   customerEmail: string;

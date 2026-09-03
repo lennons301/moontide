@@ -1,6 +1,7 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { holdsAPlace } from "@/lib/bookings/transitions";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import { voidOffersOnCancellation } from "@/lib/waitlist/cancellation";
@@ -53,6 +54,15 @@ const missingFields = { error: "Missing required fields" };
 const missingId = { error: "Missing schedule ID" };
 const badCapacity = { error: "Capacity must be a whole number of seats" };
 const badWeeks = { error: "Number of weeks must be a whole number" };
+/**
+ * A year of weekly classes is as far ahead as Gabrielle ever sets a class up,
+ * and it is what the form's `max` already offers. Without a bound the count is
+ * a row count: every week asked for becomes a schedule in one insert.
+ */
+const MAX_WEEKS = 52;
+const tooManyWeeks = {
+  error: `Number of weeks cannot be more than ${MAX_WEEKS}`,
+};
 const badLocation = { error: "Location must be text" };
 const badRepeat = { error: "Repeat weekly must be true or false" };
 
@@ -69,7 +79,11 @@ const seatCount = z
   .number(badCapacity)
   .int(badCapacity)
   .nonnegative(badCapacity);
-const weekCount = z.number(badWeeks).int(badWeeks).nonnegative(badWeeks);
+const weekCount = z
+  .number(badWeeks)
+  .int(badWeeks)
+  .nonnegative(badWeeks)
+  .max(MAX_WEEKS, tooManyWeeks);
 
 const createBody = z.object({
   classId: z.number(missingFields).int(missingFields).positive(missingFields),
@@ -281,19 +295,51 @@ const deleteBody = z.object({ id: scheduleId });
 export const DELETE = withAdmin({ body: deleteBody }, async ({ body }) => {
   const { id } = body;
 
-  const existingBookings = await db
-    .select({ id: bookings.id })
-    .from(bookings)
-    .where(eq(bookings.scheduleId, id))
-    .limit(1);
+  // Deleting the class means deleting what is left pointing at it. Every one of
+  // those rows is a foreign key with `ON DELETE no action`, so Postgres refuses
+  // the parent delete while any of them exists — whatever their status says.
+  // Doing it here rather than as `ON DELETE CASCADE` in the schema keeps the
+  // destruction behind the guard below, which is the only place that has
+  // decided it is safe; a cascade would apply to every future path that ever
+  // deletes a schedule, silently.
+  await db.transaction(async (tx) => {
+    // Only a booking that still holds a place stands in the way. A class set up
+    // by mistake, whose one booking was cancelled, has nobody attending it and
+    // was otherwise undeletable forever. The statuses are filtered in JS rather
+    // than in the WHERE clause so `holdsAPlace` stays the one definition of
+    // which they are; a schedule has a handful of bookings, not a table scan.
+    const existingBookings = await tx
+      .select({ status: bookings.status })
+      .from(bookings)
+      .where(eq(bookings.scheduleId, id));
 
-  if (existingBookings.length > 0) {
-    throw new ApiError(
-      409,
-      "Cannot delete a schedule that has bookings. Cancel the class instead.",
-    );
-  }
+    // Thrown inside the transaction, so the refusal is also the rollback.
+    if (existingBookings.some(holdsAPlace)) {
+      throw new ApiError(
+        409,
+        "Cannot delete a schedule that people are still booked onto. Cancel the class instead.",
+      );
+    }
 
-  await db.delete(schedules).where(eq(schedules.id, id));
+    // Anyone waiting goes with the class they were waiting for. First, because
+    // an entry left behind by a voided offer still points at the held booking
+    // about to be deleted below.
+    await tx.delete(waitlistEntries).where(eq(waitlistEntries.scheduleId, id));
+
+    // By the guard, every booking still on this schedule is cancelled or
+    // released: nobody is coming, and the class they name is going. Stripe
+    // remains the record of any money taken.
+    await tx.delete(bookings).where(eq(bookings.scheduleId, id));
+
+    // A booking moved *off* this class lives on another one and must not be
+    // touched — it only remembers where it came from, and that class is gone.
+    await tx
+      .update(bookings)
+      .set({ originalScheduleId: null })
+      .where(eq(bookings.originalScheduleId, id));
+
+    await tx.delete(schedules).where(eq(schedules.id, id));
+  });
+
   return NextResponse.json({ deleted: true });
 });

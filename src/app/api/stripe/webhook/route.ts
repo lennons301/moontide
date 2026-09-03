@@ -1,5 +1,11 @@
 import { and, eq, ne } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
+import {
+  bundleConfigIdFromSession,
+  bundleExpiry,
+  bundlePaidAt,
+  decideBundleTerms,
+} from "@/lib/bundles/purchase";
 import { db } from "@/lib/db";
 import {
   bookings,
@@ -12,6 +18,7 @@ import {
 import {
   sendBookingConfirmation,
   sendBookingNotification,
+  sendBundleConfigMissingAlert,
   sendBundleConfirmation,
 } from "@/lib/email";
 import { forceClaimSeat } from "@/lib/schedule-occupancy";
@@ -178,25 +185,60 @@ export async function POST(request: Request) {
         }
       });
     } else if (metadata?.type === "bundle") {
-      const configId = Number.parseInt(metadata.bundleConfigId, 10);
-      const configs = await db
-        .select()
-        .from(bundleConfig)
-        .where(eq(bundleConfig.id, configId));
+      const configId = bundleConfigIdFromSession(metadata);
+      const configs = configId
+        ? await db
+            .select()
+            .from(bundleConfig)
+            .where(eq(bundleConfig.id, configId))
+        : [];
 
-      const config = configs[0];
-      if (!config) {
+      // The config is read for the foreign key and as the fallback for a
+      // session created before the terms travelled with it — never as the
+      // source of terms a session of its own carries.
+      const decision = decideBundleTerms({
+        metadata,
+        config: configs[0] ?? null,
+      });
+
+      // The one thing that tells anyone the product a purchase named is gone:
+      // Stripe is answered 200 either way, so nothing else would.
+      const raiseMissingConfig = (
+        granted: { credits: number; expiryDate: string } | null,
+      ) => {
+        after(async () => {
+          try {
+            await sendBundleConfigMissingAlert({
+              customerEmail: metadata.customerEmail,
+              sessionId: session.id,
+              configReference: metadata.bundleConfigId || "none",
+              granted,
+            });
+          } catch (error) {
+            console.error("Failed to send bundle config alert:", error);
+          }
+        });
+      };
+
+      // Nothing left to grant from. The condition is permanent — the row is
+      // gone, or the session named nothing — so Stripe is told the event was
+      // received rather than being made to retry it identically for three
+      // days, and Gabrielle is told instead: someone has paid for nothing.
+      if (!decision.ok) {
         console.error(
-          `Bundle config not found for id: ${configId}, session: ${session.id}`,
+          `Bundle not granted (${decision.reason}) for session: ${session.id}`,
         );
-        return NextResponse.json(
-          { error: "Bundle config not found" },
-          { status: 500 },
-        );
+        raiseMissingConfig(null);
+        return NextResponse.json({ received: true });
       }
 
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + config.expiryDays);
+      const {
+        name,
+        credits,
+        expiryDays,
+        configId: purchasedConfigId,
+      } = decision.terms;
+      const expiresAt = bundleExpiry(bundlePaidAt(session.created), expiryDays);
 
       // `stripe_payment_id` is unique, so a redelivered event conflicts rather
       // than granting a second bundle of free credits. Nothing to insert means
@@ -205,10 +247,10 @@ export async function POST(request: Request) {
         .insert(bundles)
         .values({
           customerEmail: metadata.customerEmail,
-          creditsTotal: config.credits,
-          creditsRemaining: config.credits,
+          creditsTotal: credits,
+          creditsRemaining: credits,
           stripePaymentId: session.id,
-          bundleConfigId: config.id,
+          bundleConfigId: purchasedConfigId,
           expiresAt,
         })
         .onConflictDoNothing({ target: bundles.stripePaymentId })
@@ -224,20 +266,26 @@ export async function POST(request: Request) {
         year: "numeric",
       });
 
+      // Granted in full from what she was sold, but the product it points at
+      // has gone: worth a word, because nothing else records that.
+      if (purchasedConfigId === null) {
+        raiseMissingConfig({ credits, expiryDate: expiryDateFormatted });
+      }
+
       after(async () => {
         try {
           await sendBundleConfirmation({
             customerEmail: metadata.customerEmail,
-            bundleName: config.name,
-            credits: config.credits,
+            bundleName: name,
+            credits,
             expiryDate: expiryDateFormatted,
           });
 
           await sendBookingNotification({
             type: "bundle",
             customerEmail: metadata.customerEmail,
-            bundleName: config.name,
-            credits: config.credits,
+            bundleName: name,
+            credits,
             expiryDate: expiryDateFormatted,
           });
 
