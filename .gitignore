@@ -2,6 +2,11 @@
 
 # dependencies
 /node_modules
+# Written by pnpm 11 in some working trees; mise pins pnpm 9 for CI, which
+# reads it as a workspace root and fails install with "packages field missing
+# or empty". It has been committed by accident five times. This is not a
+# workspace.
+/pnpm-workspace.yaml
 /.pnp
 .pnp.*
 .yarn/*

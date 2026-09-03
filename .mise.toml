@@ -1,5 +1,8 @@
 [tools]
 node = "22"
-pnpm = "9"
+# Must match `packageManager` in package.json: only pnpm >= 10.26 reads the
+# allowBuilds decisions in pnpm-workspace.yaml, and pnpm 9 would run every
+# install script instead of the three that were decided on.
+pnpm = "10.34.5"
 just = "latest"
 stripe = "latest"

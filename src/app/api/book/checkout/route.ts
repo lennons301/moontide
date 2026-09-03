@@ -1,5 +1,6 @@
 import { and, eq, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { bundleTermsMetadata } from "@/lib/bundles/purchase";
 import { db } from "@/lib/db";
 import { bookings, bundleConfig, classes, schedules } from "@/lib/db/schema";
 import { getStripe } from "@/lib/stripe";
@@ -54,9 +55,13 @@ export async function POST(request: Request) {
           quantity: 1,
         },
       ],
+      // The terms travel with the payment, read in the same breath as the
+      // price being charged. The webhook grants these rather than re-reading
+      // the config, so an edit made while this session is open cannot change
+      // what the customer was sold.
       metadata: {
         type: "bundle",
-        bundleConfigId: String(config.id),
+        ...bundleTermsMetadata(config),
         customerEmail,
       },
       customer_email: customerEmail,

@@ -1,0 +1,23 @@
+# Which dependencies may run lifecycle scripts at install time. pnpm blocks
+# them all by default and asks for a decision per package; left undecided it
+# writes this file back with placeholder values, which is how it kept turning
+# up as a "stray file". The decisions below are the answer — keep the file.
+#
+# The line: a package gets `true` only when its install script is how it
+# obtains or verifies a native binary it cannot work without. Anything whose
+# script is a convenience gets `false` — a blocked script is a package that
+# cannot execute code on every developer machine and CI runner.
+allowBuilds:
+  # `node install.js` links the platform binary from the @esbuild/* package
+  # that pnpm has already installed; without it the `esbuild` bin is a stub.
+  # Vite and Vitest run esbuild anyway, so the script grants it nothing new.
+  esbuild: true
+  # `node install/check.js || npm run build` checks for a prebuilt
+  # @img/sharp-* binary and falls back to compiling libvips from source. Next
+  # uses sharp for image optimisation in production, so a platform with no
+  # prebuilt should fail loudly at install rather than at the first resize.
+  sharp: true
+  # A postinstall that copies the browser service worker into a public
+  # directory, wrapped in a catch-and-ignore. msw is a transitive optional
+  # peer of Vitest here and nothing runs it in a browser, so it buys nothing.
+  msw: false
