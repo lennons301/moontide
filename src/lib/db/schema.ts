@@ -116,6 +116,11 @@ export const bundles = pgTable(
     expiresAt: timestamp("expires_at").notNull(),
     status: bundleStatus("status").notNull().default("active"),
     emailSent: boolean("email_sent").default(false).notNull(),
+    // Delivery state — see `src/lib/notifications/delivery.ts`, which owns
+    // every write to these three columns.
+    emailAttempts: integer("email_attempts").default(0).notNull(),
+    emailSentAt: timestamp("email_sent_at"),
+    emailLastError: text("email_last_error"),
   },
   (table) => ({
     // A bundle cannot owe more classes than it was sold with, and cannot owe a
@@ -154,6 +159,19 @@ export const bookings = pgTable(
     status: bookingStatus("status").notNull().default("confirmed"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     emailSent: boolean("email_sent").default(false).notNull(),
+    // Which notification this booking still owes its customer while
+    // `emailSent` is false. A booking owes one at a time: it is created owing a
+    // confirmation, and a reschedule replaces that with the moved-date note —
+    // but only once the confirmation has gone out, so a booking moved before
+    // anyone told the customer it existed still gets its confirmation, for the
+    // date it is now on. Text rather than an enum: the retry sweep names the
+    // kinds it can send and reports anything else rather than guessing.
+    emailKind: text("email_kind").default("confirmation").notNull(),
+    // Delivery state — see `src/lib/notifications/delivery.ts`, which owns
+    // every write to these three columns.
+    emailAttempts: integer("email_attempts").default(0).notNull(),
+    emailSentAt: timestamp("email_sent_at"),
+    emailLastError: text("email_last_error"),
     originalScheduleId: integer("original_schedule_id").references(
       () => schedules.id,
     ),
@@ -187,6 +205,12 @@ export const waitlistEntries = pgTable(
     customerEmail: text("customer_email").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     emailSent: boolean("email_sent").default(false).notNull(),
+    // Delivery state — see `src/lib/notifications/delivery.ts`, which owns
+    // every write to these three columns. The flag was written once and read by
+    // nothing until the sweep learned to retry waiting-list confirmations too.
+    emailAttempts: integer("email_attempts").default(0).notNull(),
+    emailSentAt: timestamp("email_sent_at"),
+    emailLastError: text("email_last_error"),
     // Offer state lives here rather than on the booking: accepting removes the
     // entry, so a confirmed booking carries no offer residue. Re-offering the
     // same person overwrites these fields — no offer history is kept.

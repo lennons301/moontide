@@ -7,6 +7,7 @@ import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
 import { ClassFilterSelect } from "@/components/admin/class-filter-select";
 import { formatDate, formatDateTime } from "@/components/admin/format-date";
 import { PillGroup } from "@/components/admin/pill-group";
+import { ResendEmailButton } from "@/components/admin/resend-email-button";
 import { StatusBadge } from "@/components/admin/status-badge";
 import {
   buildAdminTableFilters,
@@ -359,16 +360,15 @@ export default function BookingsPage() {
                   <td className="px-4 py-3">{paymentType(item)}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={item.bookings.status} />
-                    {!item.bookings.emailSent &&
-                      item.bookings.status !== "held" && (
-                        <button
-                          type="button"
-                          onClick={() => handleResendEmail(item.bookings.id)}
-                          className="ml-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-bright-orange/20 text-bright-orange hover:bg-bright-orange/30 transition-colors cursor-pointer"
-                        >
-                          resend email
-                        </button>
-                      )}
+                    {/* A held seat is an offer nobody has taken up, so there is
+                        no confirmation to send or resend for it. Every other
+                        booking gets the button whatever its flag says. */}
+                    {item.bookings.status !== "held" && (
+                      <ResendEmailButton
+                        delivery={item.bookings}
+                        onResend={() => handleResendEmail(item.bookings.id)}
+                      />
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {(item.bookings.status === "confirmed" ||

@@ -5,6 +5,7 @@ import { emailMatches, normaliseEmail } from "@/lib/customers/email";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import { sendBookingConfirmation, sendBookingNotification } from "@/lib/email";
+import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
 import { claimSeat } from "@/lib/schedule-occupancy";
 import { findOfferByToken } from "@/lib/waitlist/held-seats";
 import { decideRedemptionSeat } from "@/lib/waitlist/offers";
@@ -237,13 +238,15 @@ export async function POST(request: Request) {
       });
 
       if (bookingId !== undefined) {
-        await db
-          .update(bookings)
-          .set({ emailSent: true })
-          .where(eq(bookings.id, bookingId));
+        await markEmailSent(bookings, bookingId);
       }
     } catch (e) {
       console.error("Redemption email send failed", e);
+      // The booking keeps its unsent flag, so the overnight sweep will try
+      // again; this records why the first attempt did not get through.
+      if (bookingId !== undefined) {
+        await markEmailFailed(bookings, bookingId, e);
+      }
     }
   });
 

@@ -127,6 +127,13 @@
       "when": 1788420171813,
       "tag": "0017_case_insensitive_customer_email",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788469856871,
+      "tag": "0018_email_delivery_state",
+      "breakpoints": true
     }
   ]
 }

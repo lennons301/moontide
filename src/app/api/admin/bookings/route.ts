@@ -11,6 +11,7 @@ import { refundCredit } from "@/lib/bundles/credits";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules } from "@/lib/db/schema";
 import { sendRescheduleNotification } from "@/lib/email";
+import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
 import { claimSeat, releaseSeat } from "@/lib/schedule-occupancy";
 import { londonDateString } from "@/lib/time/london";
 import { ApiError, refuse, withAdmin } from "../_lib";
@@ -138,6 +139,15 @@ export const PUT = withAdmin({ body: transitionBody }, async ({ body }) => {
           // Moving a released booking onto a new date settles what was owed.
           status: decision.nextStatus,
           releasedAt: null,
+          // The customer is owed a word about the move, and until it goes out
+          // this row sits in the retry sweep — the note used to be sent in an
+          // `after` with a try/catch and no flag at all, so a failed one was
+          // lost. It supersedes an unsent confirmation deliberately: the note
+          // names the class, the old date and the new one, so it stands on its
+          // own for someone who never received the first email either.
+          emailSent: false,
+          emailKind: "reschedule",
+          emailLastError: null,
         })
         .where(eq(bookings.id, id));
       // A released booking already handed its seat back, so only the target
@@ -167,8 +177,10 @@ export const PUT = withAdmin({ body: transitionBody }, async ({ body }) => {
           newEndTime: target.endTime,
           newLocation: target.location,
         });
+        await markEmailSent(bookings, id);
       } catch (e) {
         console.error("Reschedule email send failed", e);
+        await markEmailFailed(bookings, id, e);
       }
     });
 
