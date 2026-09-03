@@ -18,6 +18,8 @@ export type BookingState = {
 export type ScheduleState = {
   id: number;
   classId: number;
+  /** `YYYY-MM-DD`, so a bare string comparison orders it. */
+  date: string;
   capacity: number;
   bookedCount: number;
   status: string;
@@ -31,6 +33,17 @@ export type DecisionFailure = {
 
 function fail(error: string, httpStatus: 400 | 404): DecisionFailure {
   return { ok: false, error, httpStatus };
+}
+
+/**
+ * Whether this booking still holds a place on its class.
+ *
+ * Stated as an exclusion, so a status nobody has thought about yet counts as
+ * holding a place: the callers are refusals, and refusing wrongly is recoverable
+ * where letting something through is not.
+ */
+export function holdsAPlace(booking: Pick<BookingState, "status">): boolean {
+  return booking.status !== "cancelled" && booking.status !== "released";
 }
 
 /* ------------------------------------------------------------------ cancel */
@@ -187,16 +200,14 @@ export function checkReschedulable<B extends BookingState>(
 }
 
 /** A schedule considered as somewhere a booking could be moved to. */
-export type RescheduleTarget = ScheduleState & { date: string };
+export type RescheduleTarget = ScheduleState;
 
 /**
  * The schedules a booking may be offered as new dates, soonest first.
  *
  * These are the refusals `decideReschedule` would give, applied ahead of time
- * so Gabrielle is never shown a date the server would reject — plus one the
- * server has no opinion on: a date in the past, which is not a refusal but is
- * never a useful offer. `today` is passed in rather than read so the boundary
- * is testable.
+ * so Gabrielle is never shown a date the server would reject. `today` is passed
+ * in rather than read so the boundary is testable.
  */
 export function selectRescheduleTargets<S extends RescheduleTarget>(
   schedules: S[],
@@ -223,8 +234,10 @@ export function decideReschedule<
   source: S | null;
   target: S | null;
   newScheduleId: number;
+  /** Today as `YYYY-MM-DD`, passed in so the boundary is testable. */
+  today: string;
 }): RescheduleDecision<B, S> {
-  const { source, target, newScheduleId } = input;
+  const { source, target, newScheduleId, today } = input;
 
   const reschedulable = checkReschedulable(input.booking);
   if (!reschedulable.ok) return reschedulable;
@@ -240,6 +253,12 @@ export function decideReschedule<
   }
   if (newScheduleId === booking.scheduleId) {
     return fail("Booking is already on that schedule", 400);
+  }
+  // A class that has been and gone is no use to the customer, and moving her
+  // onto it would email her a date in the past. Today's class still counts: it
+  // may not have started yet, and the sheet offers it.
+  if (target.date < today) {
+    return fail("Cannot reschedule to a class that has already happened", 400);
   }
   if (target.bookedCount >= target.capacity) {
     return fail("Target class is full", 400);

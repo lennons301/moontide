@@ -11,7 +11,6 @@ const {
   mockInnerJoin,
   mockOrderBy,
   mockSelectWhere,
-  mockSelectLimit,
   mockSelectRows,
   mockInsertValues,
   mockReturning,
@@ -27,15 +26,10 @@ const {
 } = vi.hoisted(() => {
   const mockOrderBy = vi.fn().mockResolvedValue([]);
   const mockInnerJoin = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
-  const mockSelectLimit = vi.fn().mockResolvedValue([]);
-  // The capacity guard awaits the where() directly; other reads go on to
-  // limit(). So the chain has to be both awaitable and chainable.
+  // Both filtered reads — the capacity guard and the delete guard — await the
+  // where() directly, and each takes whatever rows the test put here.
   const mockSelectRows = vi.fn().mockReturnValue([]);
-  const mockSelectWhere = vi.fn(() =>
-    Object.assign(Promise.resolve(mockSelectRows()), {
-      limit: mockSelectLimit,
-    }),
-  );
+  const mockSelectWhere = vi.fn(() => Promise.resolve(mockSelectRows()));
   const mockSelectFrom = vi.fn().mockReturnValue({
     innerJoin: mockInnerJoin,
     where: mockSelectWhere,
@@ -78,9 +72,15 @@ const {
   });
   const mockTxUpdateSet = vi.fn().mockReturnValue({ where: mockTxUpdateWhere });
   const mockTxUpdate = vi.fn().mockReturnValue({ set: mockTxUpdateSet });
+  // The delete transaction reads and deletes as well as updating, through the
+  // same builders the unwrapped calls use.
   const mockTransaction = vi.fn(
     async (fn: (tx: unknown) => Promise<unknown>) =>
-      await fn({ update: mockTxUpdate }),
+      await fn({
+        update: mockTxUpdate,
+        select: vi.fn().mockReturnValue({ from: mockSelectFrom }),
+        delete: mockDeleteFrom,
+      }),
   );
 
   return {
@@ -88,7 +88,6 @@ const {
     mockInnerJoin,
     mockOrderBy,
     mockSelectWhere,
-    mockSelectLimit,
     mockSelectRows,
     mockInsertValues,
     mockReturning,
@@ -136,6 +135,8 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 import { DELETE, GET, POST, PUT } from "@/app/api/admin/schedules/route";
+// The mocked stand-ins above, so a test can say which table a call named.
+import { bookings, schedules, waitlistEntries } from "@/lib/db/schema";
 
 describe("GET /api/admin/schedules", () => {
   beforeEach(() => {
@@ -536,6 +537,48 @@ describe("POST /api/admin/schedules", () => {
     expect(Array.isArray(body)).toBe(false);
   });
 
+  // The form's max="52" is an HTML attribute, so a direct call ignores it; the
+  // schema is what stops 100000 rows going in.
+  it("refuses more weeks than a year of them, naming the limit", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        repeatWeekly: true,
+        numberOfWeeks: 100000,
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Number of weeks cannot be more than 52");
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("accepts the full 52 weeks", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        repeatWeekly: true,
+        numberOfWeeks: 52,
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    expect(mockInsertValues.mock.calls[0]?.[0]).toHaveLength(52);
+  });
+
   it("returns 400 when classId is missing", async () => {
     const request = new Request("http://localhost:3000/api/admin/schedules", {
       method: "POST",
@@ -643,6 +686,25 @@ describe("PUT /api/admin/schedules", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe("Missing schedule ID");
+  });
+
+  it("refuses adding more weeks of recurrence than the limit", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: 1,
+        repeatWeekly: true,
+        numberOfWeeks: 100000,
+      }),
+    });
+
+    const response = await PUT(request);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Number of weeks cannot be more than 52");
+    expect(mockInsertValues).not.toHaveBeenCalled();
+    expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 
   it("returns 404 when schedule does not exist", async () => {
@@ -820,43 +882,84 @@ describe("DELETE /api/admin/schedules", () => {
       innerJoin: mockInnerJoin,
       where: mockSelectWhere,
     });
-    mockSelectWhere.mockReturnValue(
-      Object.assign(Promise.resolve([]), { limit: mockSelectLimit }),
-    );
-    mockSelectLimit.mockResolvedValue([]);
+    mockSelectRows.mockReturnValue([]);
     mockDeleteFrom.mockReturnValue({ where: mockDeleteWhere });
     mockDeleteWhere.mockResolvedValue(undefined);
   });
 
-  it("returns 200 and deletes the schedule when no bookings exist", async () => {
-    mockSelectLimit.mockResolvedValue([]);
-
-    const request = new Request("http://localhost:3000/api/admin/schedules", {
+  function deleteRequest(id: number) {
+    return new Request("http://localhost:3000/api/admin/schedules", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: 1 }),
+      body: JSON.stringify({ id }),
     });
+  }
 
-    const response = await DELETE(request);
+  /** The tables the handler deleted from, in the order it reached them. */
+  function deletedTables() {
+    return mockDeleteFrom.mock.calls.map(([table]) => table);
+  }
+
+  it("returns 200 and deletes the schedule when no bookings exist", async () => {
+    mockSelectRows.mockReturnValue([]);
+
+    const response = await DELETE(deleteRequest(1));
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.deleted).toBe(true);
-    expect(mockDeleteFrom).toHaveBeenCalledTimes(1);
+    // Everything pointing at the schedule goes first: Postgres refuses the
+    // parent delete while any of it is there. The waiting list before the
+    // bookings, because an entry can still point at a held booking.
+    expect(deletedTables()).toEqual([waitlistEntries, bookings, schedules]);
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
   });
 
-  it("returns 409 and does not delete when any booking exists", async () => {
-    mockSelectLimit.mockResolvedValue([{ id: 42 }]);
+  it("forgets the schedule on bookings that were moved off it", async () => {
+    mockSelectRows.mockReturnValue([]);
 
-    const request = new Request("http://localhost:3000/api/admin/schedules", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: 1 }),
-    });
+    await DELETE(deleteRequest(1));
 
-    const response = await DELETE(request);
+    expect(mockTxUpdateSet).toHaveBeenCalledWith({ originalScheduleId: null });
+  });
+
+  // Was "when any booking exists": a booking row that no longer holds a place
+  // made the class undeletable forever, which is not what the refusal is for.
+  it.each([
+    "confirmed",
+    "held",
+    "waitlisted",
+  ])("returns 409 and does not delete when a %s booking still holds a place", async (status) => {
+    mockSelectRows.mockReturnValue([{ status }]);
+
+    const response = await DELETE(deleteRequest(1));
     expect(response.status).toBe(409);
     const body = await response.json();
     expect(body.error).toMatch(/cancel the class instead/i);
+    expect(mockDeleteFrom).not.toHaveBeenCalled();
+  });
+
+  it("deletes a class set up by mistake whose bookings were all given up", async () => {
+    mockSelectRows.mockReturnValue([
+      { status: "cancelled" },
+      { status: "released" },
+    ]);
+
+    const response = await DELETE(deleteRequest(1));
+    expect(response.status).toBe(200);
+    // Those rows go with the class: they still reference it, and nobody is
+    // coming. Asserted for real in tests/integration/schedule-delete.test.ts.
+    expect(deletedTables()).toContain(bookings);
+    expect(deletedTables()).toContain(schedules);
+  });
+
+  it("refuses when one booking is cancelled and another is not", async () => {
+    mockSelectRows.mockReturnValue([
+      { status: "cancelled" },
+      { status: "confirmed" },
+    ]);
+
+    const response = await DELETE(deleteRequest(1));
+    expect(response.status).toBe(409);
     expect(mockDeleteFrom).not.toHaveBeenCalled();
   });
 
