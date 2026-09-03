@@ -1,7 +1,10 @@
 import type { SQL } from "drizzle-orm";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { bookings, bundles, waitlistEntries } from "@/lib/db/schema";
+// Types only: the tables are named for their shape, and the caller passes the
+// one it is writing. Importing them as values would pull the schema into every
+// test that touches a send path.
+import type { bookings, bundles, waitlistEntries } from "@/lib/db/schema";
 
 /**
  * Sole owner of the delivery-state columns — `emailSent`, `emailAttempts`,
@@ -22,8 +25,6 @@ export type DeliveryTable =
   | typeof bookings
   | typeof bundles
   | typeof waitlistEntries;
-
-export const deliveryTables = { bookings, bundles, waitlistEntries };
 
 /**
  * Which row owes the email: its id, or a condition for the paths that do not

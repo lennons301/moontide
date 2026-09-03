@@ -124,6 +124,11 @@ vi.mock("drizzle-orm", () => ({
   isNotNull: vi.fn((...args: unknown[]) => args),
   lte: vi.fn((...args: unknown[]) => args),
   ne: vi.fn((...args: unknown[]) => args),
+  sql: vi.fn((...args: unknown[]) => args),
+}));
+
+vi.mock("drizzle-orm/pg-core", () => ({
+  alias: vi.fn((table: unknown) => table),
 }));
 
 vi.mock("@/lib/schedule-occupancy", () => ({
@@ -135,6 +140,9 @@ vi.mock("@/lib/email", () => ({
   sendBookingConfirmation: vi.fn().mockResolvedValue({ success: true }),
   sendBundleConfirmation: vi.fn().mockResolvedValue({ success: true }),
   sendBookingNotification: vi.fn().mockResolvedValue({ success: true }),
+  sendRescheduleNotification: vi.fn().mockResolvedValue({ success: true }),
+  sendWaitlistConfirmation: vi.fn().mockResolvedValue({ success: true }),
+  sendWaitlistNotification: vi.fn().mockResolvedValue({ success: true }),
   sendOfferExpired: mockSendOfferExpired,
   sendOfferDigest: mockSendOfferDigest,
 }));
@@ -161,9 +169,10 @@ const EXPIRED_OFFER = {
 };
 
 /**
- * The handler's reads in order: booking retries, bundle retries, expired
- * offers, then the digest's schedules, waiting-list entries and released
- * bookings.
+ * The handler's reads in order: the four retry sweeps (booking confirmations,
+ * reschedule notes, bundle confirmations, waiting-list confirmations), then
+ * expired offers, then the digest's schedules, waiting-list entries and
+ * released bookings.
  */
 function queueRun(options: {
   expiredOffers?: unknown[];
@@ -172,6 +181,8 @@ function queueRun(options: {
   released?: unknown[];
 }) {
   queueSelects(
+    [],
+    [],
     [],
     [],
     options.expiredOffers ?? [],

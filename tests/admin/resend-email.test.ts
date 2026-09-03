@@ -19,7 +19,11 @@ const {
   const selectWhere = vi.fn(async () => selectRows);
   const mockInnerJoin = vi.fn();
   const mockLeftJoin = vi.fn();
-  const mockSelectFrom = vi.fn().mockReturnValue({ innerJoin: mockInnerJoin });
+  const mockSelectFrom = vi.fn().mockReturnValue({
+    innerJoin: mockInnerJoin,
+    // The bundle read joins its config straight off `from`.
+    leftJoin: mockLeftJoin,
+  });
   mockInnerJoin.mockReturnValue({
     innerJoin: mockInnerJoin,
     leftJoin: mockLeftJoin,
@@ -58,7 +62,10 @@ vi.mock("@/lib/db/schema", () => ({
   schedules: { id: "schedules.id", classId: "schedules.class_id" },
 }));
 
-vi.mock("drizzle-orm", () => ({ eq: mockEq }));
+vi.mock("drizzle-orm", () => ({
+  eq: mockEq,
+  sql: vi.fn((...args: unknown[]) => args),
+}));
 
 vi.mock("@/lib/email", () => ({
   sendBookingConfirmation: mockSendBookingConfirmation,
@@ -194,7 +201,9 @@ describe("POST /api/admin/resend-email — a booking", () => {
         classTitle: "Prenatal Yoga",
       }),
     );
-    expect(mockUpdateSet).toHaveBeenCalledWith({ emailSent: true });
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ emailSent: true, emailLastError: null }),
+    );
   });
 
   it("resends a credit booking as a credit, not as a price", async () => {
@@ -228,6 +237,41 @@ describe("POST /api/admin/resend-email — a booking", () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "Booking not found" });
     expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+  });
+
+  it("resends a booking whose flag already says it was sent", async () => {
+    // The flag is what Gabrielle is disputing when a customer tells her nothing
+    // arrived, so it can never be the reason the resend is refused.
+    queue({
+      ...BOOKING_ROW,
+      bookings: { ...BOOKING_ROW.bookings, emailSent: true, emailAttempts: 1 },
+    });
+
+    const response = await POST(request({ type: "booking", id: 12 }));
+
+    expect(response.status).toBe(200);
+    expect(mockSendBookingConfirmation).toHaveBeenCalledOnce();
+  });
+
+  it("records the failure and says so when the send throws", async () => {
+    mockSendBookingConfirmation.mockRejectedValueOnce(
+      new Error("Resend is down"),
+    );
+
+    const response = await POST(request({ type: "booking", id: 12 }));
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      error:
+        "The email could not be sent. It has been recorded as unsent and the overnight retry will try again.",
+    });
+    // The attempt is counted and the reason kept, and the row is not marked sent.
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ emailLastError: "Resend is down" }),
+    );
+    expect(mockUpdateSet).not.toHaveBeenCalledWith(
+      expect.objectContaining({ emailSent: true }),
+    );
   });
 
   it("refuses a held seat — nobody has taken that offer up yet", async () => {
@@ -273,7 +317,25 @@ describe("POST /api/admin/resend-email — a bundle", () => {
     expect(mockSendBookingNotification).toHaveBeenCalledWith(
       expect.objectContaining({ type: "bundle", bundleName: "6-Class Bundle" }),
     );
-    expect(mockUpdateSet).toHaveBeenCalledWith({ emailSent: true });
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ emailSent: true, emailLastError: null }),
+    );
+  });
+
+  it("refuses a bundle whose product has been deleted, rather than 404ing it", async () => {
+    // A left join, so the payment still comes back — it is the product that is
+    // missing, and saying "bundle not found" about a bundle that is right there
+    // sends Gabrielle looking for the wrong thing.
+    queue({ ...BUNDLE_ROW, bundle_config: null });
+
+    const response = await POST(request({ type: "bundle", id: 5 }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error:
+        "This bundle's product has been deleted, so there is nothing to name in the confirmation",
+    });
+    expect(mockSendBundleConfirmation).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the bundle is gone", async () => {
