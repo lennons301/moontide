@@ -3,7 +3,7 @@ import { after, NextResponse } from "next/server";
 import { findSpendableBundle, spendCredit } from "@/lib/bundles/credits";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
-import { sendBookingConfirmation } from "@/lib/email";
+import { sendBookingConfirmation, sendBookingNotification } from "@/lib/email";
 import { claimSeat } from "@/lib/schedule-occupancy";
 import { findOfferByToken } from "@/lib/waitlist/held-seats";
 import { decideRedemptionSeat } from "@/lib/waitlist/offers";
@@ -36,7 +36,6 @@ export async function POST(request: Request) {
       location: schedules.location,
       bundleEligible: classes.bundleEligible,
       classTitle: classes.title,
-      priceInPence: classes.priceInPence,
     })
     .from(schedules)
     .innerJoin(classes, eq(schedules.classId, classes.id))
@@ -192,34 +191,53 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Class is full" }, { status: 400 });
   }
 
-  if (seat.kind === "held-seat") {
-    // Taking up an offer is a booking like any other, so it gets the existing
-    // confirmation unchanged. (Ordinary redemptions send nothing today; that is
-    // left as it was.)
-    const bookingId = outcome.bookingId;
-    after(async () => {
-      try {
-        await sendBookingConfirmation({
-          customerName,
-          customerEmail,
-          classTitle: schedule.classTitle,
-          date: schedule.date,
-          startTime: schedule.startTime,
-          endTime: schedule.endTime,
-          location: schedule.location,
-          priceInPence: schedule.priceInPence,
-        });
-        if (bookingId !== undefined) {
-          await db
-            .update(bookings)
-            .set({ emailSent: true })
-            .where(eq(bookings.id, bookingId));
-        }
-      } catch (e) {
-        console.error("Offer acceptance email send failed", e);
+  const bookingId = outcome.bookingId;
+  // A credit was spent, so that is what both emails say — the class list price
+  // is money this customer never paid. `creditsRemaining` is the balance the
+  // guarded debit actually wrote, not one computed here.
+  const payment = {
+    method: "credit",
+    creditsRemaining: outcome.creditsRemaining,
+  } as const;
+
+  // Every redemption is confirmed here, whether it came from an offer or
+  // straight off the booking page: an ordinary redemption used to send nothing
+  // and leave the customer to hope the overnight retry swept her booking up.
+  after(async () => {
+    try {
+      await sendBookingConfirmation({
+        customerName,
+        customerEmail,
+        classTitle: schedule.classTitle,
+        date: schedule.date,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        location: schedule.location,
+        payment,
+      });
+
+      await sendBookingNotification({
+        type: "individual",
+        customerName,
+        customerEmail,
+        classTitle: schedule.classTitle,
+        date: schedule.date,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        location: schedule.location,
+        payment,
+      });
+
+      if (bookingId !== undefined) {
+        await db
+          .update(bookings)
+          .set({ emailSent: true })
+          .where(eq(bookings.id, bookingId));
       }
-    });
-  }
+    } catch (e) {
+      console.error("Redemption email send failed", e);
+    }
+  });
 
   return NextResponse.json({
     success: true,

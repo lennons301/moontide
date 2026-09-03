@@ -32,6 +32,9 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       .from(bookings)
       .innerJoin(schedules, eq(bookings.scheduleId, schedules.id))
       .innerJoin(classes, eq(schedules.classId, classes.id))
+      // The bundle the booking was funded from, when there is one — a resend
+      // has to know a credit was spent, or it quotes a price nobody paid.
+      .leftJoin(bundles, eq(bookings.bundleId, bundles.id))
       .where(eq(bookings.id, id));
 
     if (result.length === 0) {
@@ -46,6 +49,16 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       throw new ApiError(400, "This seat is being held, not booked");
     }
 
+    const payment = row.bundles
+      ? ({
+          method: "credit",
+          creditsRemaining: row.bundles.creditsRemaining,
+        } as const)
+      : ({
+          method: "card",
+          priceInPence: row.classes.priceInPence,
+        } as const);
+
     await sendBookingConfirmation({
       customerName: row.bookings.customerName,
       customerEmail: row.bookings.customerEmail,
@@ -54,7 +67,7 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       startTime: row.schedules.startTime,
       endTime: row.schedules.endTime,
       location: row.schedules.location,
-      priceInPence: row.classes.priceInPence,
+      payment,
     });
 
     await sendBookingNotification({
@@ -66,6 +79,7 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       startTime: row.schedules.startTime,
       endTime: row.schedules.endTime,
       location: row.schedules.location,
+      payment,
     });
 
     await db

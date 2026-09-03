@@ -146,6 +146,11 @@ export async function POST(request: Request) {
           if (result.length > 0) {
             const schedule = result[0].schedules;
             const classInfo = result[0].classes;
+            // This path is only ever reached by a Stripe payment.
+            const payment = {
+              method: "card",
+              priceInPence: classInfo.priceInPence,
+            } as const;
 
             await sendBookingConfirmation({
               customerName: metadata.customerName,
@@ -155,7 +160,7 @@ export async function POST(request: Request) {
               startTime: schedule.startTime,
               endTime: schedule.endTime,
               location: schedule.location,
-              priceInPence: classInfo.priceInPence,
+              payment,
             });
 
             await sendBookingNotification({
@@ -167,6 +172,7 @@ export async function POST(request: Request) {
               startTime: schedule.startTime,
               endTime: schedule.endTime,
               location: schedule.location,
+              payment,
             });
 
             await db

@@ -52,6 +52,21 @@ export function buildEmailHtml(body: string): string {
 </html>`;
 }
 
+/**
+ * How the seat was paid for. One discriminator, carried by both booking emails:
+ * a card payment has a price to state, a credit has a balance. A booking funded
+ * by a bundle credit must never be shown a cash price it did not pay, so the
+ * two cannot be confused for one another by a caller that simply forgets.
+ */
+export type BookingPayment =
+  | { method: "card"; priceInPence: number }
+  | { method: "credit"; creditsRemaining: number };
+
+/** "3 classes", "1 class" \u2014 the balance as the customer counts it. */
+function classCount(credits: number) {
+  return `${credits} ${credits === 1 ? "class" : "classes"}`;
+}
+
 interface BookingConfirmationParams {
   customerName: string;
   customerEmail: string;
@@ -60,7 +75,7 @@ interface BookingConfirmationParams {
   startTime: string;
   endTime: string;
   location: string | null;
-  priceInPence: number;
+  payment: BookingPayment;
 }
 
 export async function sendBookingConfirmation(
@@ -74,9 +89,17 @@ export async function sendBookingConfirmation(
     startTime,
     endTime,
     location,
-    priceInPence,
+    payment,
   } = params;
-  const price = `\u00a3${(priceInPence / 100).toFixed(2)}`;
+  const cell = (label: string, value: string) =>
+    `<tr><td style="padding:4px 12px 4px 0;color:#999;">${label}</td><td style="padding:4px 0;">${value}</td></tr>`;
+  // The one place the two payment methods differ. A credit booking names the
+  // credit and what it leaves; only a card booking states a price.
+  const paymentRows =
+    payment.method === "card"
+      ? cell("Price", `\u00a3${(payment.priceInPence / 100).toFixed(2)}`)
+      : cell("Paid with", "1 class credit from your bundle") +
+        cell("Credits left", classCount(payment.creditsRemaining));
   const formattedDate = new Date(date).toLocaleDateString("en-GB", {
     weekday: "long",
     day: "numeric",
@@ -91,8 +114,8 @@ export async function sendBookingConfirmation(
       <tr><td style="padding:4px 12px 4px 0;color:#999;">Class</td><td style="padding:4px 0;">${classTitle}</td></tr>
       <tr><td style="padding:4px 12px 4px 0;color:#999;">Date</td><td style="padding:4px 0;">${formattedDate}</td></tr>
       <tr><td style="padding:4px 12px 4px 0;color:#999;">Time</td><td style="padding:4px 0;">${startTime}\u2013${endTime}</td></tr>
-      ${location ? `<tr><td style="padding:4px 12px 4px 0;color:#999;">Location</td><td style="padding:4px 0;">${location}</td></tr>` : ""}
-      <tr><td style="padding:4px 12px 4px 0;color:#999;">Price</td><td style="padding:4px 0;">${price}</td></tr>
+      ${location ? cell("Location", location) : ""}
+      ${paymentRows}
     </table>
     <p>See you there!</p>`;
 
@@ -471,6 +494,7 @@ type BookingNotificationParams =
       startTime: string;
       endTime: string;
       location: string | null;
+      payment: BookingPayment;
     }
   | {
       type: "bundle";
@@ -558,12 +582,19 @@ export async function sendBookingNotification(
       startTime,
       endTime,
       location,
+      payment,
     } = params;
+    // She needs to know whether money came in for this seat or a credit was
+    // spent on it — and if a credit, what the customer has left.
+    const paid =
+      payment.method === "card"
+        ? `£${(payment.priceInPence / 100).toFixed(2)}`
+        : `bundle credit (${classCount(payment.creditsRemaining)} left)`;
     await resend.emails.send({
       from: "Moontide <noreply@gabriellemoontide.co.uk>",
       to,
       subject: `[Moontide] New booking: ${classTitle}`,
-      text: `New class booking:\n\nCustomer: ${customerName} (${customerEmail})\nClass: ${classTitle}\nDate: ${date}\nTime: ${startTime}–${endTime}${location ? `\nLocation: ${location}` : ""}`,
+      text: `New class booking:\n\nCustomer: ${customerName} (${customerEmail})\nClass: ${classTitle}\nDate: ${date}\nTime: ${startTime}–${endTime}${location ? `\nLocation: ${location}` : ""}\nPaid: ${paid}`,
     });
   } else {
     const { customerEmail, bundleName, credits, expiryDate } = params;
