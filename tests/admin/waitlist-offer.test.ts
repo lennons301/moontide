@@ -140,7 +140,7 @@ const SCHEDULE_ROW = {
     capacity: 8,
     bookedCount: 7,
     location: "Studio 1, Hove",
-    status: "full",
+    status: "open",
   },
   classes: { id: 3, title: "Prenatal Yoga" },
 };

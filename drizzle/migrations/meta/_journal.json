@@ -120,6 +120,13 @@
       "when": 1788381771525,
       "tag": "0016_credit_balance_backstop",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788421268502,
+      "tag": "0017_schedule_closed_status",
+      "breakpoints": true
     }
   ]
 }

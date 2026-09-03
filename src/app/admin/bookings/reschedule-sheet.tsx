@@ -17,6 +17,7 @@ import {
   type RescheduleTarget,
   selectRescheduleTargets,
 } from "@/lib/bookings/transitions";
+import { seatsRemaining } from "@/lib/schedules/availability";
 
 interface ScheduleRow extends RescheduleTarget {
   startTime: string;
@@ -119,7 +120,7 @@ export function RescheduleSheet({
           ) : (
             <ul className="divide-y divide-soft-moonstone/20">
               {eligibleSchedules.map((s) => {
-                const spotsLeft = s.capacity - s.bookedCount;
+                const spotsLeft = seatsRemaining(s);
                 return (
                   <li key={s.id}>
                     <button

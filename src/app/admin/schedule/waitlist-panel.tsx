@@ -102,7 +102,7 @@ export function WaitlistPanel({
     // class after a change — so the fetch follows `open`, not just the id.
     { enabled: open },
   );
-  const { entries, occupancy } = waitlist;
+  const { entries, occupancy, scheduleStatus } = waitlist;
   const [actionError, setActionError] = useState<string | null>(null);
   const [offeringId, setOfferingId] = useState<number | null>(null);
   const [hold, setHold] = useState<HoldDuration>("24h");
@@ -209,7 +209,11 @@ export function WaitlistPanel({
               </p>
               {!occupancy.canOffer && (
                 <p className="mt-1 text-xs text-deep-ocean/60">
-                  Every free seat already has an offer against it.
+                  {scheduleStatus !== "open"
+                    ? // Holding a seat is taking one, so a class that is not
+                      // open to bookings cannot be offered from either.
+                      "This class is closed to bookings — reopen it to hold a seat."
+                    : "Every free seat already has an offer against it."}
                 </p>
               )}
             </div>

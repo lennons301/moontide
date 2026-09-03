@@ -11,6 +11,12 @@
  * own and the routes are left with wiring.
  */
 
+import {
+  isOpenToBookings,
+  isScheduleFull,
+  seatsRemaining,
+} from "@/lib/schedules/availability";
+
 export type OfferFailure = {
   ok: false;
   error: string;
@@ -32,6 +38,8 @@ function sameEmail(a: string, b: string): boolean {
 /* ------------------------------------------------------------- occupancy */
 
 export type OfferOccupancy = {
+  /** The class's own status: a class closed to bookings holds no new seats. */
+  status: string;
   capacity: number;
   /** Every booking holding a seat, held offers included. */
   bookedCount: number;
@@ -49,6 +57,11 @@ export type OfferOccupancySummary = {
    * True while a seat can still be held. Offers can never outnumber free seats
    * because making one takes a seat: with two free she can run two at once,
    * and with one seat and one offer out there is nothing left to hold.
+   *
+   * It also takes the same view of the class's status as every other booking
+   * path — holding a seat is taking one, through `claimSeat` — so a class she
+   * has closed cannot be offered from and the admin does not show a button the
+   * server would refuse.
    */
   canOffer: boolean;
 };
@@ -57,12 +70,12 @@ export function summariseOfferOccupancy(
   occupancy: OfferOccupancy,
 ): OfferOccupancySummary {
   const { capacity, bookedCount, offersOutstanding } = occupancy;
-  const unheldFreeSeats = Math.max(0, capacity - bookedCount);
+  const unheldFreeSeats = seatsRemaining({ capacity, bookedCount });
   return {
     freeSeats: unheldFreeSeats + offersOutstanding,
     offersOutstanding,
     seatsWithNobodyOnThem: unheldFreeSeats,
-    canOffer: unheldFreeSeats > 0,
+    canOffer: isOpenToBookings(occupancy) && unheldFreeSeats > 0,
   };
 }
 
@@ -176,6 +189,12 @@ export function decideMakeOffer<E extends WaitlistEntryState>(input: {
   if (schedule.status === "cancelled") {
     return fail("This class is cancelled", 400);
   }
+  // Holding a seat is taking one, so it obeys the same rule as every other
+  // booking: `claimSeat` would refuse a closed class anyway, and refusing it
+  // here says why rather than reporting a seat shortage that is not the reason.
+  if (!isOpenToBookings(schedule)) {
+    return fail("This class is closed to bookings — reopen it first", 400);
+  }
   if (hasOutstandingOffer(entry, heldBookingStatus)) {
     // Re-offering overwrites the offer on the entry, which would strand the
     // seat the previous offer is holding. Withdrawing first is the explicit
@@ -187,6 +206,7 @@ export function decideMakeOffer<E extends WaitlistEntryState>(input: {
   }
 
   const occupancy = summariseOfferOccupancy({
+    status: schedule.status,
     capacity: schedule.capacity,
     bookedCount: schedule.bookedCount,
     offersOutstanding,
@@ -354,10 +374,13 @@ export function decideRedemptionSeat(input: {
  * The refusals guarding ordinary public booking are triggered by an offer
  * recipient's own held seat: they are told they already have a booking, and
  * told the class is full — full because the seat being kept for them is what
- * filled it, whether that shows in the count or in the flag Gabrielle set by
- * hand. A valid token bypasses those, leaving a cancelled class refused to
- * everyone. That is the same posture the credit path takes for the same seat,
- * so a recipient meets one answer whichever way they pay.
+ * filled it. A valid token bypasses those, and bypasses a class Gabrielle has
+ * closed too: closing stops new bookings, and the seat this token names is
+ * already taken and already counted. Withdrawing the offer is how she takes
+ * that seat back, as it always was. A cancelled class is refused to everyone —
+ * cancelling is what voids outstanding offers. That is the same posture the
+ * credit path takes for the same seat, so a recipient meets one answer
+ * whichever way they pay.
  */
 export function decideCheckoutSeat(input: {
   token: string | null | undefined;
@@ -386,11 +409,13 @@ export function decideCheckoutSeat(input: {
     };
   }
 
-  // Wording and order preserved from before the bypass existed.
-  if (schedule.status !== "open") {
+  // Wording and order preserved from before the bypass existed. The two halves
+  // of `canTakeBooking` are asked separately only because the refusals read
+  // differently: a closed class is not the same news as a full one.
+  if (!isOpenToBookings(schedule)) {
     return fail("Class is not available", 400);
   }
-  if (schedule.bookedCount >= schedule.capacity) {
+  if (isScheduleFull(schedule)) {
     return fail("Class is full", 400);
   }
   if (existingBookings.length > 0) {

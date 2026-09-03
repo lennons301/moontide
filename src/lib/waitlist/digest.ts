@@ -1,3 +1,4 @@
+import { seatsRemaining } from "@/lib/schedules/availability";
 import { londonWallClockToUtc } from "@/lib/time/london";
 import { hasOfferLapsed } from "@/lib/waitlist/offers";
 
@@ -137,8 +138,7 @@ export function buildAdminDigest(input: {
 
     // A lapsed offer is holding a seat that is on its way back, and the person
     // holding it is waiting again, so both sides count towards the prompt.
-    const freeSeats =
-      Math.max(0, schedule.capacity - schedule.bookedCount) + lapsed;
+    const freeSeats = seatsRemaining(schedule) + lapsed;
     const waitingWithoutOffer = Math.max(
       0,
       schedule.waitingCount - live.length,

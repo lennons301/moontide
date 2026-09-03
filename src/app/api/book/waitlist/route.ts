@@ -6,6 +6,7 @@ import {
   sendWaitlistConfirmation,
   sendWaitlistNotification,
 } from "@/lib/email";
+import { canTakeBooking } from "@/lib/schedules/availability";
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -45,10 +46,10 @@ export async function POST(request: Request) {
     );
   }
 
-  const isFull =
-    schedule.status === "full" || schedule.bookedCount >= schedule.capacity;
-
-  if (!isFull) {
+  // The waiting list is for people who cannot book: a full class, or one
+  // Gabrielle has closed. Asked as the one question every booking path asks,
+  // so the list is open exactly when booking is refused.
+  if (canTakeBooking(schedule)) {
     return NextResponse.json(
       { error: "Class still has spots — please book normally" },
       { status: 400 },

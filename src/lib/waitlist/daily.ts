@@ -1,7 +1,8 @@
-import { and, eq, gte, isNotNull, lte, ne } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import { sendOfferDigest, sendOfferExpired } from "@/lib/email";
+import { BOOKABLE_SCHEDULE_STATUS } from "@/lib/schedules/availability";
 import { londonDateString } from "@/lib/time/london";
 import type {
   DigestOffer,
@@ -123,7 +124,7 @@ export async function settleExpiredOffers(now: Date): Promise<ExpirySweep> {
   return { found: expired.length, released, emailed, failed };
 }
 
-/** Upcoming, uncancelled classes with their waiting lists and their offers. */
+/** Upcoming classes open to bookings, with their waiting lists and offers. */
 async function readDigestSchedules(now: Date): Promise<DigestSchedule[]> {
   const scheduleRows = await db
     .select({
@@ -137,13 +138,15 @@ async function readDigestSchedules(now: Date): Promise<DigestSchedule[]> {
     })
     .from(schedules)
     .innerJoin(classes, eq(schedules.classId, classes.id))
-    // A cancelled class needs nothing from her, and a past one cannot be acted
-    // on. The date is a London wall clock, so today is London's today; classes
-    // earlier today are dropped by `buildAdminDigest` against the start time.
+    // Only classes open to bookings: a cancelled or closed one needs nothing
+    // from her, because the digest prompts her to offer a seat and no seat can
+    // be held on either. A past class cannot be acted on. The date is a London
+    // wall clock, so today is London's today; classes earlier today are dropped
+    // by `buildAdminDigest` against the start time.
     .where(
       and(
         gte(schedules.date, londonDateString(now)),
-        ne(schedules.status, "cancelled"),
+        eq(schedules.status, BOOKABLE_SCHEDULE_STATUS),
       ),
     );
 
