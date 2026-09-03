@@ -1,3 +1,5 @@
+import { type AnyColumn, type SQL, sql } from "drizzle-orm";
+
 /**
  * A customer's email address is their identity here — there is no customer
  * login, so bookings, bundles and waiting-list places are all keyed by what
@@ -17,4 +19,20 @@
  */
 export function normaliseEmail(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
+}
+
+/**
+ * "This column holds that customer's address", for a WHERE clause.
+ *
+ * Case-insensitive on both sides, so it finds the rows written before any of
+ * this existed — a bundle bought as `Ada@` is the same customer's as one bought
+ * as `ada@`, and refusing to spend it is the bug that made her pay twice. The
+ * unique indexes are on `lower(customer_email)` for the same reason, so this
+ * comparison is the one they can use.
+ */
+export function emailMatches(
+  column: AnyColumn,
+  value: string | null | undefined,
+): SQL {
+  return sql`lower(${column}) = ${normaliseEmail(value)}`;
 }
