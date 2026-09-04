@@ -8,12 +8,13 @@ import {
 } from "@/lib/bundles/with-config";
 import { db } from "@/lib/db";
 import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
-import { sendBookingNotification, sendBundleConfirmation } from "@/lib/email";
+import { notify } from "@/lib/notifications";
 import {
+  bookingNotificationFor,
   recognisedKind,
-  sendBookingEmail,
 } from "@/lib/notifications/booking-emails";
-import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
+import type { DeliveryTable } from "@/lib/notifications/delivery";
+import type { NotificationEvent } from "@/lib/notifications/events";
 import { ApiError, withAdmin } from "../_lib";
 
 const missingId = { error: "Missing id" };
@@ -32,24 +33,17 @@ const resendBody = z.object({
  * button at all.
  */
 async function resend(
-  table: Parameters<typeof markEmailSent>[0],
+  table: DeliveryTable,
   id: number,
-  send: () => Promise<void>,
+  event: NotificationEvent,
 ) {
-  try {
-    await send();
-  } catch (error) {
-    await markEmailFailed(table, id, error);
-    console.error(
-      `Resend failed for ${table === bookings ? "booking" : "bundle"} ${id}:`,
-      error,
-    );
+  const result = await notify(event, { on: table, row: id });
+  if (!result.ok) {
     throw new ApiError(
       502,
       "The email could not be sent. It has been recorded as unsent and the overnight retry will try again.",
     );
   }
-  await markEmailSent(table, id);
 }
 
 export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
@@ -98,7 +92,7 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       );
     }
 
-    await resend(bookings, id, () => sendBookingEmail(row, kind));
+    await resend(bookings, id, bookingNotificationFor(row, kind));
 
     return NextResponse.json({ success: true });
   }
@@ -117,21 +111,12 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
     throw new ApiError(400, product.error);
   }
 
-  await resend(bundles, id, async () => {
-    await sendBundleConfirmation({
-      customerEmail: product.customerEmail,
-      bundleName: product.bundleName,
-      credits: product.credits,
-      expiryDate: product.expiryDate,
-    });
-
-    await sendBookingNotification({
-      type: "bundle",
-      customerEmail: product.customerEmail,
-      bundleName: product.bundleName,
-      credits: product.credits,
-      expiryDate: product.expiryDate,
-    });
+  await resend(bundles, id, {
+    type: "bundle-purchased",
+    customerEmail: product.customerEmail,
+    bundleName: product.bundleName,
+    credits: product.credits,
+    expiryDate: product.expiryDate,
   });
 
   return NextResponse.json({ success: true });

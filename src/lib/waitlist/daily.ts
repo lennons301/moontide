@@ -1,7 +1,7 @@
 import { and, eq, gte, isNotNull, lte, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
-import { sendOfferDigest, sendOfferExpired } from "@/lib/email";
+import { notify } from "@/lib/notifications";
 import { londonDateString } from "@/lib/time/london";
 import type {
   DigestOffer,
@@ -99,19 +99,29 @@ export async function settleExpiredOffers(now: Date): Promise<ExpirySweep> {
       if (!outcome.released) continue;
       released++;
 
-      await sendOfferExpired({
-        customerName: offer.customerName,
-        customerEmail: offer.customerEmail,
-        classTitle: offer.classTitle,
-        date: offer.date,
-        startTime: offer.startTime,
-        endTime: offer.endTime,
-      });
-      emailed++;
+      // A send that failed after the seat came back is not retried, and so
+      // carries no delivery state: the offer is gone, so there is nothing left
+      // to be consistent with. It is counted here instead.
+      const sent = await notify(
+        {
+          type: "offer-expired",
+          customerName: offer.customerName,
+          customerEmail: offer.customerEmail,
+          classTitle: offer.classTitle,
+          date: offer.date,
+          startTime: offer.startTime,
+          endTime: offer.endTime,
+        },
+        {
+          notRecorded:
+            "the offer is gone, so there is nothing to be consistent with",
+        },
+      );
+
+      if (sent.ok) emailed++;
+      else failed++;
     } catch (error) {
-      // One offer failing must not strand the rest of the sweep. A send that
-      // failed after the seat came back is not retried: the offer is gone, so
-      // there is nothing left to be consistent with.
+      // One offer failing must not strand the rest of the sweep.
       console.error(
         `Failed to settle expired offer on waitlist entry ${offer.entryId}:`,
         error,
@@ -244,7 +254,18 @@ export async function sendDigestIfAnythingNeedsHer(
 
   if (digest.isEmpty) return { sent: false, items: 0 };
 
-  await sendOfferDigest(digest);
+  const sent = await notify(
+    { type: "daily-digest", digest },
+    {
+      notRecorded:
+        "rebuilt from live state every run, so a failed one is superseded rather than resent",
+    },
+  );
+
+  // Reported by throwing rather than by answering "sent" — `runDailyOfferWork`
+  // guards each piece of the day's work separately, and this one did not happen.
+  if (!sent.ok) throw sent.error;
+
   return { sent: true, items };
 }
 

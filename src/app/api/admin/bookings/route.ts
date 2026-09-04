@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   checkReschedulable,
@@ -10,8 +10,7 @@ import {
 import { refundCredit } from "@/lib/bundles/credits";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules } from "@/lib/db/schema";
-import { sendRescheduleNotification } from "@/lib/email";
-import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
+import { notifyAfterResponse } from "@/lib/notifications";
 import { claimSeat, releaseSeat } from "@/lib/schedule-occupancy";
 import { londonDateString } from "@/lib/time/london";
 import { ApiError, refuse, withAdmin } from "../_lib";
@@ -163,26 +162,22 @@ export const PUT = withAdmin({ body: transitionBody }, async ({ body }) => {
       }
     });
 
-    after(async () => {
-      try {
-        await sendRescheduleNotification({
-          customerName: decision.booking.customerName,
-          customerEmail: decision.booking.customerEmail,
-          classTitle: classInfo.title,
-          oldDate: source.date,
-          oldStartTime: source.startTime,
-          oldEndTime: source.endTime,
-          newDate: target.date,
-          newStartTime: target.startTime,
-          newEndTime: target.endTime,
-          newLocation: target.location,
-        });
-        await markEmailSent(bookings, id);
-      } catch (e) {
-        console.error("Reschedule email send failed", e);
-        await markEmailFailed(bookings, id, e);
-      }
-    });
+    notifyAfterResponse(
+      {
+        type: "booking-rescheduled",
+        customerName: decision.booking.customerName,
+        customerEmail: decision.booking.customerEmail,
+        classTitle: classInfo.title,
+        oldDate: source.date,
+        oldStartTime: source.startTime,
+        oldEndTime: source.endTime,
+        newDate: target.date,
+        newStartTime: target.startTime,
+        newEndTime: target.endTime,
+        newLocation: target.location,
+      },
+      { on: bookings, row: id },
+    );
 
     return NextResponse.json({ success: true });
   }

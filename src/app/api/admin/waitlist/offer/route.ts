@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
-import { sendSeatOffer } from "@/lib/email";
+import { notifyAfterResponse } from "@/lib/notifications";
 import { claimSeat } from "@/lib/schedule-occupancy";
 import { londonWallClockToUtc } from "@/lib/time/london";
 import {
@@ -125,29 +125,30 @@ export const POST = withAdmin({ body: offerBody }, async ({ body }) => {
       .where(eq(waitlistEntries.id, decision.entry.id));
   });
 
-  after(async () => {
-    try {
-      await sendSeatOffer({
-        customerName: decision.entry.customerName,
-        customerEmail: decision.entry.customerEmail,
-        classTitle: classInfo.title,
-        date: schedule.date,
-        startTime: schedule.startTime,
-        endTime: schedule.endTime,
-        location: schedule.location,
-        expiresAt: decision.expiresAt,
-        offerUrl: `${process.env.BETTER_AUTH_URL}/book/offer/${token}`,
-      });
-    } catch (e) {
+  notifyAfterResponse(
+    {
+      type: "seat-offered",
+      customerName: decision.entry.customerName,
+      customerEmail: decision.entry.customerEmail,
+      classTitle: classInfo.title,
+      date: schedule.date,
+      startTime: schedule.startTime,
+      endTime: schedule.endTime,
+      location: schedule.location,
+      expiresAt: decision.expiresAt,
+      offerToken: token,
+    },
+    {
       // Deliberately not retried, and so carries no delivery state. An offer is
       // a hold with a deadline on it: a copy sent overnight could arrive after
       // the seat has already gone back, inviting someone to take a place that
       // is not there. Re-offering the same person overwrites the offer and
       // sends it again, which is Gabrielle's move to make, and the daily digest
       // lists every outstanding offer so an unanswered one still reaches her.
-      console.error("Seat offer email send failed", e);
-    }
-  });
+      notRecorded:
+        "a hold with a deadline: a copy sent overnight could invite someone to a seat that has gone back",
+    },
+  );
 
   return NextResponse.json({
     success: true,
