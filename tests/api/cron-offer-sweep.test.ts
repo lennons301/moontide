@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   queueSelects,
+  selectFilters,
   mockSelect,
   mockTransaction,
   mockUpdateSet,
@@ -22,17 +23,27 @@ const {
   // resolves to it — so a query that stops at a join reads the same way as one
   // that goes on to filter, group or order.
   const results: unknown[][] = [];
+  // What each select filtered on, in the order the handler ran them. A mocked
+  // read answers with whatever it is handed, so the rows a query would actually
+  // have matched are only visible here, in its WHERE.
+  const selectFilters: unknown[][] = [];
   const queueSelects = (...rows: unknown[][]) => {
     results.length = 0;
     results.push(...rows);
+    selectFilters.length = 0;
   };
   const chain = () => {
     const rows = results.shift() ?? [];
+    const filters: unknown[] = [];
+    selectFilters.push(filters);
     const node: Promise<unknown[]> = Promise.resolve(rows);
     return Object.assign(node, {
       innerJoin: vi.fn(() => node),
       leftJoin: vi.fn(() => node),
-      where: vi.fn(() => node),
+      where: vi.fn((condition: unknown) => {
+        filters.push(condition);
+        return node;
+      }),
       orderBy: vi.fn(() => node),
       groupBy: vi.fn(() => node),
     });
@@ -59,6 +70,7 @@ const {
 
   return {
     queueSelects,
+    selectFilters,
     mockSelect,
     mockTransaction,
     mockUpdateSet,
@@ -147,7 +159,9 @@ vi.mock("@/lib/email", () => ({
   sendOfferDigest: mockSendOfferDigest,
 }));
 
+import { and, gte, ne } from "drizzle-orm";
 import { POST } from "@/app/api/cron/retry-emails/route";
+import { schedules } from "@/lib/db/schema";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -308,6 +322,7 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
             date: isoDate(5),
             startTime: "10:00:00",
             endTime: "11:00:00",
+            status: "open",
             capacity: 8,
             bookedCount: 7,
           },
@@ -355,6 +370,7 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
             date: isoDate(5),
             startTime: "10:00:00",
             endTime: "11:00:00",
+            status: "open",
             capacity: 8,
             bookedCount: 8,
           },
@@ -384,6 +400,79 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
             }),
           ],
         }),
+      );
+    });
+
+    // Closing a class does not retire the offers already made on it, so the
+    // read that feeds the digest cannot narrow to open classes: that would take
+    // the outstanding section down with the seats one.
+    it("reports an outstanding offer on a class she has since closed", async () => {
+      const expiresAt = new Date(Date.now() + DAY_MS);
+      queueRun({
+        schedules: [
+          {
+            scheduleId: 42,
+            classTitle: "Prenatal Yoga",
+            date: isoDate(5),
+            startTime: "10:00:00",
+            endTime: "11:00:00",
+            status: "closed",
+            capacity: 8,
+            // A seat free beside the held one: the prompt to offer it is what
+            // closing suppresses, and only that.
+            bookedCount: 7,
+          },
+        ],
+        entries: [
+          {
+            scheduleId: 42,
+            customerName: "Jane Doe",
+            customerEmail: "jane@example.com",
+            offerExpiresAt: expiresAt,
+            heldBookingId: 900,
+            heldBookingStatus: "held",
+          },
+          {
+            scheduleId: 42,
+            customerName: "Amy Bell",
+            customerEmail: "amy@example.com",
+            offerExpiresAt: null,
+            heldBookingId: null,
+            heldBookingStatus: null,
+          },
+        ],
+      });
+
+      await POST(cronRequest());
+
+      expect(mockSendOfferDigest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          seatsToOffer: [],
+          offersOutstanding: [
+            expect.objectContaining({
+              customerName: "Jane Doe",
+              expiresAt,
+            }),
+          ],
+        }),
+      );
+    });
+
+    // The rows a mocked read answers with are whatever the test handed it, so
+    // the only place a narrowed query would show is its WHERE.
+    it("does not filter the digest's classes down to the open ones", async () => {
+      queueRun({});
+
+      await POST(cronRequest());
+
+      // The handler's reads in order (see `queueRun`): three retry sweeps, the
+      // expired offers, then the digest's schedules.
+      const [filter] = selectFilters[4];
+      expect(filter).toEqual(
+        and(
+          gte(schedules.date, expect.any(String)),
+          ne(schedules.status, "cancelled"),
+        ),
       );
     });
 

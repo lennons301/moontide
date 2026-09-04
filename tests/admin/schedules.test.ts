@@ -217,7 +217,7 @@ describe("GET /api/admin/schedules", () => {
           capacity: 8,
           bookedCount: 8,
           location: "Studio 1",
-          status: "full",
+          status: "open",
         },
         classes: {
           id: 1,
@@ -293,7 +293,7 @@ describe("GET /api/admin/schedules", () => {
           capacity: 8,
           bookedCount: 8,
           location: "Studio 1",
-          status: "full",
+          status: "open",
         },
         classes: { id: 1, title: "Prenatal Yoga" },
       },
@@ -840,6 +840,52 @@ describe("PUT /api/admin/schedules", () => {
 
     const response = await PUT(request);
     expect(response.status).toBe(200);
+  });
+
+  it("closes a class to bookings, and reopens it, without touching seats", async () => {
+    // How Gabrielle stops taking bookings now. Unlike the `full` flag it
+    // replaces, every seat-taking path respects it; unlike cancelling, the
+    // class still runs, so nothing happens to the bookings on it.
+    mockUpdateReturning.mockResolvedValue([{ id: 1, status: "closed" }]);
+
+    const closed = await PUT(
+      new Request("http://localhost:3000/api/admin/schedules", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: 1, status: "closed" }),
+      }),
+    );
+    expect(closed.status).toBe(200);
+    expect(mockUpdateSet).toHaveBeenCalledWith({ status: "closed" });
+    expect(mockTransaction).not.toHaveBeenCalled();
+
+    mockUpdateReturning.mockResolvedValue([{ id: 1, status: "open" }]);
+    const reopened = await PUT(
+      new Request("http://localhost:3000/api/admin/schedules", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: 1, status: "open" }),
+      }),
+    );
+    expect(reopened.status).toBe(200);
+    expect(mockUpdateSet).toHaveBeenLastCalledWith({ status: "open" });
+  });
+
+  it("no longer accepts the full status it used to store", async () => {
+    // Fullness is derived from occupancy, so there is nothing to set.
+    const response = await PUT(
+      new Request("http://localhost:3000/api/admin/schedules", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: 1, status: "full" }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Status must be open, closed or cancelled",
+    });
+    expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 
   it("does not touch bookings or occupancy on an ordinary update", async () => {

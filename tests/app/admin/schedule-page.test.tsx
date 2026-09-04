@@ -47,6 +47,17 @@ function stubSchedule(overrides: Record<string, unknown> = {}) {
   });
 }
 
+/** Another class on the same list, differing in the ways a filter reads. */
+function schedule(
+  id: number,
+  fields: { date: string; bookedCount?: number; status?: string },
+) {
+  return {
+    ...SCHEDULE,
+    schedules: { ...SCHEDULE.schedules, id, ...fields },
+  };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -108,6 +119,106 @@ describe("/admin/schedule", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Cannot delete a schedule with bookings",
     );
+  });
+
+  it("filters Full on the seats, not on a status", async () => {
+    // Fullness is derived from occupancy (#87). This filter used to match the
+    // `full` status, which nothing in the application ever wrote, so it
+    // matched nothing at all.
+    stubSchedule({
+      "GET /api/admin/schedules": {
+        json: [
+          schedule(1, { date: "2099-06-09", bookedCount: 5 }),
+          schedule(2, { date: "2099-06-16", bookedCount: 8 }),
+          schedule(3, { date: "2099-06-23", bookedCount: 8, status: "closed" }),
+          schedule(4, {
+            date: "2099-06-30",
+            bookedCount: 8,
+            status: "cancelled",
+          }),
+        ],
+      },
+    });
+    render(<SchedulePage />);
+    await screen.findByRole("cell", { name: "2099-06-09" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Full" }));
+
+    // Every seat taken, on a class that is still going ahead — whether or not
+    // she has also closed it. A cancelled class is not full, it is off.
+    expect(
+      await screen.findByRole("cell", { name: "2099-06-16" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("cell", { name: "2099-06-23" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("cell", { name: "2099-06-09" })).toBeNull();
+    expect(screen.queryByRole("cell", { name: "2099-06-30" })).toBeNull();
+  });
+
+  it("closes a class to bookings, and opens it again", async () => {
+    // The status she sets, and the one the whole system honours: what the
+    // `full` flag was reached for and never did.
+    const fetchMock = stubSchedule({
+      "PUT /api/admin/schedules": { json: { success: true } },
+    });
+    render(<SchedulePage />);
+    await screen.findByRole("cell", { name: "Prenatal Yoga" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/schedules",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ id: 1, status: "closed" }),
+        }),
+      ),
+    );
+  });
+
+  it("offers Reopen for a class already closed, and no Close beside it", async () => {
+    const fetchMock = stubSchedule({
+      "GET /api/admin/schedules": {
+        json: [schedule(1, { date: "2099-06-09", status: "closed" })],
+      },
+      "PUT /api/admin/schedules": { json: { success: true } },
+    });
+    render(<SchedulePage />);
+    await screen.findByRole("cell", { name: "Prenatal Yoga" });
+
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reopen" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/schedules",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ id: 1, status: "open" }),
+        }),
+      ),
+    );
+  });
+
+  it("says on the page why a class could not be closed", async () => {
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
+    stubSchedule({
+      "PUT /api/admin/schedules": {
+        status: 400,
+        json: { error: "Schedule not found" },
+      },
+    });
+    render(<SchedulePage />);
+    await screen.findByRole("cell", { name: "Prenatal Yoga" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Schedule not found",
+    );
+    expect(alert).not.toHaveBeenCalled();
   });
 
   it("says why the form would not save, and re-enables the button", async () => {

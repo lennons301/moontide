@@ -8,6 +8,12 @@
  * so callers get them non-null without re-checking.
  */
 
+import {
+  canTakeBooking,
+  isOpenToBookings,
+  isScheduleFull,
+} from "@/lib/schedules/availability";
+
 export type BookingState = {
   status: string;
   scheduleId: number;
@@ -218,10 +224,11 @@ export function selectRescheduleTargets<S extends RescheduleTarget>(
     .filter(
       (s) =>
         s.classId === source.classId &&
-        s.status !== "cancelled" &&
         s.date >= today &&
         s.id !== source.scheduleId &&
-        s.bookedCount < s.capacity,
+        // Cancelled, closed and full in one question, asked the same way the
+        // seat claim asks it: a date the server would refuse is never offered.
+        canTakeBooking(s),
     )
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
@@ -251,6 +258,11 @@ export function decideReschedule<
   if (target.status === "cancelled") {
     return fail("Target class is cancelled", 400);
   }
+  // A class Gabrielle has closed takes no bookings, and moving one onto it is a
+  // booking. `claimSeat` refuses it regardless; this is what says why.
+  if (!isOpenToBookings(target)) {
+    return fail("Target class is closed to bookings", 400);
+  }
   if (newScheduleId === booking.scheduleId) {
     return fail("Booking is already on that schedule", 400);
   }
@@ -260,7 +272,7 @@ export function decideReschedule<
   if (target.date < today) {
     return fail("Cannot reschedule to a class that has already happened", 400);
   }
-  if (target.bookedCount >= target.capacity) {
+  if (isScheduleFull(target)) {
     return fail("Target class is full", 400);
   }
 

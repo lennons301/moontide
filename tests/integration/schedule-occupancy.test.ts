@@ -58,6 +58,27 @@ describe("claimSeat", () => {
     expect(await bookedCount(schedule.id)).toBe(2);
   });
 
+  it.each([
+    "closed",
+    "cancelled",
+  ] as const)("refuses a %s class, however many seats it has, and takes none", async (status) => {
+    // The other half of the guard, and the bug behind #87: a class Gabrielle
+    // had closed by hand had seats to spare and every booking path took one,
+    // because this only ever looked at capacity. No mock can show it — the
+    // refusal is the UPDATE matching no row.
+    const schedule = await createSchedule({
+      capacity: 8,
+      bookedCount: 1,
+      status,
+    });
+
+    await expect(claimSeat(db, schedule.id)).resolves.toEqual({
+      claimed: false,
+    });
+
+    expect(await bookedCount(schedule.id)).toBe(1);
+  });
+
   it("lets exactly one of several simultaneous claims take the last seat", async () => {
     const schedule = await createSchedule({ capacity: 5, bookedCount: 4 });
 
@@ -88,6 +109,26 @@ describe("forceClaimSeat", () => {
 
   it("leaves the capacity Gabrielle set alone while there is room", async () => {
     const schedule = await createSchedule({ capacity: 8, bookedCount: 2 });
+
+    await expect(forceClaimSeat(db, schedule.id)).resolves.toEqual({
+      capacityRaised: false,
+    });
+
+    expect(await occupancy(schedule.id)).toEqual({
+      bookedCount: 3,
+      capacity: 8,
+    });
+  });
+
+  it("seats a paid customer on a class closed since they started paying", async () => {
+    // The one path that does not ask whether the class is open: the money is
+    // already taken, so the seat is theirs. Capacity is untouched, and no
+    // raise is reported — there was room all along.
+    const schedule = await createSchedule({
+      capacity: 8,
+      bookedCount: 2,
+      status: "closed",
+    });
 
     await expect(forceClaimSeat(db, schedule.id)).resolves.toEqual({
       capacityRaised: false,

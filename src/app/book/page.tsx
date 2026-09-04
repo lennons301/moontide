@@ -16,7 +16,10 @@ export default async function BookPage() {
     .where(
       and(
         gte(schedules.date, today),
-        inArray(schedules.status, ["open", "full"]),
+        // Closed classes are still listed: they take no bookings, and the page
+        // offers the waiting list for them exactly as it does for a full one.
+        // Only a cancelled class disappears.
+        inArray(schedules.status, ["open", "closed"]),
       ),
     )
     .orderBy(schedules.date, schedules.startTime);

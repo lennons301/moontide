@@ -17,6 +17,7 @@ describe("summariseOfferOccupancy", () => {
   it("counts held seats as free, since nobody has paid for them", () => {
     // 8 seats, 8 taken, one of which is an offer nobody has taken up yet.
     const summary = summariseOfferOccupancy({
+      status: "open",
       capacity: 8,
       bookedCount: 8,
       offersOutstanding: 1,
@@ -28,6 +29,7 @@ describe("summariseOfferOccupancy", () => {
 
   it("lets two offers run at once when two seats are free", () => {
     const none = summariseOfferOccupancy({
+      status: "open",
       capacity: 8,
       bookedCount: 6,
       offersOutstanding: 0,
@@ -36,6 +38,7 @@ describe("summariseOfferOccupancy", () => {
     expect(none.seatsWithNobodyOnThem).toBe(2);
 
     const one = summariseOfferOccupancy({
+      status: "open",
       capacity: 8,
       bookedCount: 7,
       offersOutstanding: 1,
@@ -45,6 +48,7 @@ describe("summariseOfferOccupancy", () => {
     expect(one.seatsWithNobodyOnThem).toBe(1);
 
     const two = summariseOfferOccupancy({
+      status: "open",
       capacity: 8,
       bookedCount: 8,
       offersOutstanding: 2,
@@ -55,6 +59,7 @@ describe("summariseOfferOccupancy", () => {
 
   it("refuses a third offer against one free seat and one offer out", () => {
     const summary = summariseOfferOccupancy({
+      status: "open",
       capacity: 8,
       bookedCount: 8,
       offersOutstanding: 1,
@@ -62,8 +67,25 @@ describe("summariseOfferOccupancy", () => {
     expect(summary.canOffer).toBe(false);
   });
 
+  it("cannot offer from a class that is not open to bookings", () => {
+    // Two seats going spare, but holding one is taking one: `claimSeat` would
+    // refuse it, so the admin is not shown a button the server declines.
+    for (const status of ["closed", "cancelled"]) {
+      const summary = summariseOfferOccupancy({
+        status,
+        capacity: 8,
+        bookedCount: 6,
+        offersOutstanding: 0,
+      });
+      expect(summary.canOffer).toBe(false);
+      // The seats are still counted — they are just not hers to hold out.
+      expect(summary.seatsWithNobodyOnThem).toBe(2);
+    }
+  });
+
   it("never reports negative seats when a class is oversold", () => {
     const summary = summariseOfferOccupancy({
+      status: "open",
       capacity: 8,
       bookedCount: 9,
       offersOutstanding: 0,
@@ -157,7 +179,7 @@ const ENTRY = {
 
 const SCHEDULE = {
   id: 42,
-  status: "full",
+  status: "open",
   capacity: 8,
   bookedCount: 7,
 };
@@ -209,6 +231,18 @@ describe("decideMakeOffer", () => {
     expect(decision).toMatchObject({
       ok: false,
       error: "This class is cancelled",
+    });
+  });
+
+  it("refuses to offer a seat on a class closed to bookings", () => {
+    // Holding a seat is taking one, and `claimSeat` would refuse it anyway.
+    const decision = makeOffer({
+      schedule: { ...SCHEDULE, status: "closed" },
+    });
+    expect(decision).toMatchObject({
+      ok: false,
+      error: "This class is closed to bookings — reopen it first",
+      httpStatus: 400,
     });
   });
 
@@ -473,10 +507,12 @@ describe("decideCheckoutSeat", () => {
     });
   });
 
-  it("lets a valid token past a class Gabrielle has flagged as full by hand", () => {
+  it("lets a valid token past a class Gabrielle has closed by hand", () => {
+    // Closing stops new bookings; it does not take back a seat already held
+    // for someone. Withdrawing the offer is how she does that.
     expect(
       decideCheckout({
-        schedule: { status: "full", capacity: 8, bookedCount: 8 },
+        schedule: { status: "closed", capacity: 8, bookedCount: 8 },
       }),
     ).toMatchObject({ ok: true, kind: "held-seat" });
   });
@@ -507,7 +543,7 @@ describe("decideCheckoutSeat", () => {
     expect(
       decideCheckout({
         ...noToken,
-        schedule: { status: "full", capacity: 8, bookedCount: 2 },
+        schedule: { status: "closed", capacity: 8, bookedCount: 2 },
       }),
     ).toMatchObject({ ok: false, error: "Class is not available" });
 

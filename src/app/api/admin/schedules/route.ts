@@ -4,6 +4,7 @@ import { z } from "zod";
 import { holdsAPlace } from "@/lib/bookings/transitions";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
+import { SCHEDULE_STATUSES } from "@/lib/schedules/availability";
 import { voidOffersOnCancellation } from "@/lib/waitlist/cancellation";
 import { ApiError, withAdmin } from "../_lib";
 
@@ -187,9 +188,13 @@ const updateBody = z.object({
   endTime: z.string({ error: "End time must be a time like 10:00" }).nullish(),
   capacity: seatCount.nullish(),
   location: z.string(badLocation).nullable().optional(),
+  // From the one list of statuses, so a value cannot be accepted here that
+  // nothing else knows about. There is no `full`: fullness is derived from
+  // occupancy (`src/lib/schedules/availability.ts`), and `closed` is how she
+  // stops a class taking bookings.
   status: z
-    .enum(["open", "full", "cancelled"], {
-      error: "Status must be open, full or cancelled",
+    .enum(SCHEDULE_STATUSES, {
+      error: "Status must be open, closed or cancelled",
     })
     .nullish(),
   classId: z

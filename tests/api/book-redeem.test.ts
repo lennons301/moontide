@@ -452,6 +452,35 @@ describe("POST /api/book/redeem", () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
+  it("refuses to spend a credit on a class closed to bookings", async () => {
+    // The bug this closes: a class Gabrielle had marked full by hand was still
+    // redeemable, because `claimSeat` only ever looked at capacity. It now
+    // refuses in the same statement that takes the seat, and this read is what
+    // gives the customer the same message the card path gives.
+    mockSelectWhere.mockResolvedValueOnce([
+      { bundleEligible: true, status: "closed" },
+    ]);
+
+    const request = new Request("http://localhost:3000/api/book/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduleId: 1,
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("Class is not available");
+
+    // Nothing written: no booking, no credit spent, no occupancy change.
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
   it("refuses a token for a class that has been cancelled", async () => {
     mockSelectWhere.mockResolvedValueOnce([
       { bundleEligible: true, status: "cancelled" },
@@ -603,7 +632,9 @@ describe("POST /api/book/redeem", () => {
 describe("POST /api/book/redeem with an offer token", () => {
   const SCHEDULE = {
     bundleEligible: true,
-    status: "full",
+    // Closed by hand — the seat being held for this person is why. The token
+    // is exempt from that refusal, as it is on the card path.
+    status: "closed",
     date: "2099-06-20",
     startTime: "10:00:00",
     endTime: "11:00:00",
