@@ -260,7 +260,10 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
 
     it("carries on when one offer fails", async () => {
       mockNotify
-        .mockResolvedValueOnce({ ok: false, error: new Error("Resend is down") })
+        .mockResolvedValueOnce({
+          ok: false,
+          error: new Error("Resend is down"),
+        })
         .mockResolvedValue({ ok: true });
       queueRun({
         expiredOffers: [
@@ -331,14 +334,14 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
         expect.objectContaining({
           type: "daily-digest",
           digest: expect.objectContaining({
-          seatsToOffer: [
-            expect.objectContaining({
-              scheduleId: 42,
-              classTitle: "Prenatal Yoga",
-              freeSeats: 1,
-              waitingCount: 1,
-            }),
-          ],
+            seatsToOffer: [
+              expect.objectContaining({
+                scheduleId: 42,
+                classTitle: "Prenatal Yoga",
+                freeSeats: 1,
+                waitingCount: 1,
+              }),
+            ],
             offersOutstanding: [],
             owedAClass: [],
           }),

@@ -9,12 +9,6 @@ import {
   createSchedule,
 } from "./support/factories";
 
-// Nothing is sent when a booking is cancelled; the route imports the helper, so
-// the module is replaced rather than reaching for a Resend key.
-vi.mock("@/lib/email", () => ({
-  sendRescheduleNotification: vi.fn(),
-}));
-
 // The route checks the session on every request. Who is asking is settled in
 // tests/admin/routes-are-protected.test.ts; here it is Gabrielle, so that the
 // rows are what the test is about.

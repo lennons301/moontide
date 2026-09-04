@@ -7,36 +7,39 @@ vi.mock(
 
 const { selectRows, mockSelectFrom, mockUpdate, mockUpdateSet, mockEq } =
   vi.hoisted(() => {
-  const selectRows: unknown[] = [];
-  const selectWhere = vi.fn(async () => selectRows);
-  const mockInnerJoin = vi.fn();
-  const mockLeftJoin = vi.fn();
-  const mockSelectFrom = vi.fn().mockReturnValue({
-    innerJoin: mockInnerJoin,
-    // The bundle read joins its config straight off `from`.
-    leftJoin: mockLeftJoin,
-  });
-  mockInnerJoin.mockReturnValue({
-    innerJoin: mockInnerJoin,
-    leftJoin: mockLeftJoin,
-    where: selectWhere,
-  });
-  // Two left joins on the booking read: the bundle that funded it, and the
-  // class it was moved off.
-  mockLeftJoin.mockReturnValue({ leftJoin: mockLeftJoin, where: selectWhere });
+    const selectRows: unknown[] = [];
+    const selectWhere = vi.fn(async () => selectRows);
+    const mockInnerJoin = vi.fn();
+    const mockLeftJoin = vi.fn();
+    const mockSelectFrom = vi.fn().mockReturnValue({
+      innerJoin: mockInnerJoin,
+      // The bundle read joins its config straight off `from`.
+      leftJoin: mockLeftJoin,
+    });
+    mockInnerJoin.mockReturnValue({
+      innerJoin: mockInnerJoin,
+      leftJoin: mockLeftJoin,
+      where: selectWhere,
+    });
+    // Two left joins on the booking read: the bundle that funded it, and the
+    // class it was moved off.
+    mockLeftJoin.mockReturnValue({
+      leftJoin: mockLeftJoin,
+      where: selectWhere,
+    });
 
-  const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
-  const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
-  const mockUpdate = vi.fn().mockReturnValue({ set: mockUpdateSet });
+    const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
+    const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
+    const mockUpdate = vi.fn().mockReturnValue({ set: mockUpdateSet });
 
-  return {
-    selectRows,
-    mockSelectFrom,
-    mockUpdate,
-    mockUpdateSet,
-    mockEq: vi.fn((...args: unknown[]) => args),
-  };
-});
+    return {
+      selectRows,
+      mockSelectFrom,
+      mockUpdate,
+      mockUpdateSet,
+      mockEq: vi.fn((...args: unknown[]) => args),
+    };
+  });
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -251,8 +254,12 @@ describe("POST /api/admin/resend-email — a booking", () => {
     expect(inbox.sent[0].subject).toBe(
       "Your booking has been moved — Prenatal Yoga",
     );
-    expect(inbox.sent[0].html).toContain("Saturday, 2 May 2026, 09:00:00–10:00:00");
-    expect(inbox.sent[0].html).toContain("Tuesday, 9 June 2026, 10:00:00–11:00:00");
+    expect(inbox.sent[0].html).toContain(
+      "Saturday, 2 May 2026, 09:00:00–10:00:00",
+    );
+    expect(inbox.sent[0].html).toContain(
+      "Tuesday, 9 June 2026, 10:00:00–11:00:00",
+    );
   });
 
   it("refuses a notification kind it does not know how to send", async () => {

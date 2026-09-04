@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Hoisted mocks
 const {
@@ -17,8 +17,7 @@ const {
   mockDeleteWhere,
   mockDelete,
   mockTransaction,
-  mockSendBookingConfirmation,
-  mockSendBookingNotification,
+
   mockAfter,
   mockFindSpendableBundle,
   mockSpendCredit,
@@ -38,12 +37,6 @@ const {
   const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues });
   const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
   const mockDelete = vi.fn().mockReturnValue({ where: mockDeleteWhere });
-  const mockSendBookingConfirmation = vi
-    .fn()
-    .mockResolvedValue({ success: true });
-  const mockSendBookingNotification = vi
-    .fn()
-    .mockResolvedValue({ success: true });
   const mockAfter = vi.fn((fn: () => Promise<void> | void) => fn());
   // The occupancy claim reads the row back via .returning() — a non-empty array
   // means the guarded UPDATE matched and the seat was taken. The bundle update
@@ -88,8 +81,6 @@ const {
     mockDeleteWhere,
     mockDelete,
     mockTransaction,
-    mockSendBookingConfirmation,
-    mockSendBookingNotification,
     mockAfter,
     mockFindSpendableBundle,
     mockSpendCredit,
@@ -145,11 +136,6 @@ vi.mock("@/lib/db/schema", () => ({
   waitlistEntries: { id: "id", offerToken: "offer_token" },
 }));
 
-vi.mock("@/lib/email", () => ({
-  sendBookingConfirmation: mockSendBookingConfirmation,
-  sendBookingNotification: mockSendBookingNotification,
-}));
-
 vi.mock("next/server", async () => {
   const actual =
     await vi.importActual<typeof import("next/server")>("next/server");
@@ -169,6 +155,25 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 import { POST } from "@/app/api/book/redeem/route";
+import type { InMemoryEmails } from "@/lib/notifications/in-memory-adapter";
+import {
+  givenEmailsCollected,
+  resetEmailAdapter,
+} from "../support/notifications";
+
+/**
+ * A redemption is confirmed at redemption time, so what arrives is part of the
+ * behaviour under test — read back off the in-memory transport.
+ */
+let inbox: InMemoryEmails;
+
+beforeEach(() => {
+  process.env.CONTACT_EMAIL = "gabrielle@example.com";
+  process.env.BETTER_AUTH_URL = "https://gabriellemoontide.co.uk";
+  inbox = givenEmailsCollected();
+});
+
+afterEach(resetEmailAdapter);
 
 const SPENDABLE = {
   id: 10,
@@ -376,22 +381,17 @@ describe("POST /api/book/redeem", () => {
 
     // An ordinary redemption used to send nothing at all: the customer heard
     // from us only if the overnight sweep happened to pick her booking up.
-    expect(mockSendBookingConfirmation).toHaveBeenCalledWith({
-      customerName: "Jane Doe",
-      customerEmail: "jane@example.com",
-      classTitle: "Prenatal Yoga",
-      date: "2099-06-20",
-      startTime: "10:00:00",
-      endTime: "11:00:00",
-      location: "Studio 1, Hove",
-      payment: { method: "credit", creditsRemaining: 3 },
-    });
-    expect(mockSendBookingNotification).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "individual",
-        payment: { method: "credit", creditsRemaining: 3 },
-      }),
+    const [customer, admin] = inbox.sent;
+    expect(customer.to).toBe("jane@example.com");
+    expect(customer.subject).toBe(
+      "Your Prenatal Yoga class is booked — Moontide",
     );
+    expect(customer.html).toContain("Studio 1, Hove");
+    // A credit was spent, so no cash price is quoted to either of them.
+    expect(customer.html).toContain("1 class credit from your bundle");
+    expect(customer.html).toContain("3 classes");
+    expect(customer.html).not.toContain("£");
+    expect(admin.text).toContain("Paid: bundle credit (3 classes left)");
 
     // And it is marked sent, so the sweep does not send it a second time. The
     // sending runs in `after()`, past the response, so let it settle first.
@@ -707,29 +707,22 @@ describe("POST /api/book/redeem with an offer token", () => {
     // she did not pay. Asserted in full: an `objectContaining` that omits the
     // payment is how a cash price went out on a credit booking unnoticed.
     expect(mockDelete).toHaveBeenCalled();
-    expect(mockSendBookingConfirmation).toHaveBeenCalledWith({
-      customerName: "Jane Doe",
-      customerEmail: "jane@example.com",
-      classTitle: "Prenatal Yoga",
-      date: "2099-06-20",
-      startTime: "10:00:00",
-      endTime: "11:00:00",
-      location: "Studio 1, Hove",
-      payment: { method: "credit", creditsRemaining: 3 },
-    });
+    const customer = inbox.to("jane@example.com")[0];
+    expect(customer.subject).toBe(
+      "Your Prenatal Yoga class is booked — Moontide",
+    );
+    expect(customer.html).toContain("1 class credit from your bundle");
+    expect(customer.html).toContain("3 classes");
+    expect(customer.html).not.toContain("£");
   });
 
   it("tells Gabrielle the seat went to a credit, not to a payment", async () => {
     await POST(redeemWithToken());
 
-    expect(mockSendBookingNotification).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "individual",
-        customerEmail: "jane@example.com",
-        classTitle: "Prenatal Yoga",
-        payment: { method: "credit", creditsRemaining: 3 },
-      }),
-    );
+    const admin = inbox.to("gabrielle@example.com")[0];
+    expect(admin.subject).toBe("[Moontide] New booking: Prenatal Yoga");
+    expect(admin.text).toContain("jane@example.com");
+    expect(admin.text).toContain("Paid: bundle credit (3 classes left)");
   });
 
   it("is not refused as already booked because of the seat held for them", async () => {
@@ -858,9 +851,7 @@ describe("POST /api/book/redeem — the address the customer typed", () => {
       expect.anything(),
       expect.objectContaining({ customerEmail: "jane@example.com" }),
     );
-    expect(mockSendBookingConfirmation).toHaveBeenCalledWith(
-      expect.objectContaining({ customerEmail: "jane@example.com" }),
-    );
+    expect(inbox.to("jane@example.com")).toHaveLength(1);
   });
 
   it("refuses an address that is nothing but whitespace", async () => {

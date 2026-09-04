@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockUpdateWhere, mockUpdateSet } = vi.hoisted(() => {
+const { mockUpdateSet } = vi.hoisted(() => {
   const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
-  const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
-  return { mockUpdateWhere, mockUpdateSet };
+  return { mockUpdateSet: vi.fn().mockReturnValue({ where: mockUpdateWhere }) };
 });
 
 // `notify` records what happened on the row that owed the email; the writes
@@ -24,10 +23,13 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 import { notify } from "@/lib/notifications";
-import type { NotificationEvent } from "@/lib/notifications/events";
 import { FROM_ADDRESS } from "@/lib/notifications/adapter";
+import type { NotificationEvent } from "@/lib/notifications/events";
 import type { InMemoryEmails } from "@/lib/notifications/in-memory-adapter";
-import { givenEmailsCollected, resetEmailAdapter } from "../support/notifications";
+import {
+  givenEmailsCollected,
+  resetEmailAdapter,
+} from "../support/notifications";
 
 /** Nothing here owes a row an email; the delivery record has its own describe. */
 const NOT_RECORDED = { notRecorded: "a test" } as const;
@@ -56,7 +58,10 @@ const CLASS = {
   endTime: "10:00",
 };
 
-const CUSTOMER = { customerName: "Jane Doe", customerEmail: "jane@example.com" };
+const CUSTOMER = {
+  customerName: "Jane Doe",
+  customerEmail: "jane@example.com",
+};
 
 describe("who gets told", () => {
   it("sends the customer's copy and Gabrielle's, in that order", async () => {
@@ -134,7 +139,9 @@ describe("who gets told", () => {
     await send({ type: "offer-expired", ...CUSTOMER, ...CLASS });
 
     expect(inbox.sent[0].from).toBe(FROM_ADDRESS);
-    expect(inbox.sent[0].from).toBe("Moontide <noreply@gabriellemoontide.co.uk>");
+    expect(inbox.sent[0].from).toBe(
+      "Moontide <noreply@gabriellemoontide.co.uk>",
+    );
   });
 });
 
@@ -247,9 +254,7 @@ describe("a booking that has been moved", () => {
       newLocation: "Studio 1, Hove",
     });
 
-    expect(sent[0].subject).toBe(
-      "Your booking has been moved — Prenatal Yoga",
-    );
+    expect(sent[0].subject).toBe("Your booking has been moved — Prenatal Yoga");
     expect(sent[0].html).toContain("Tuesday, 9 June 2026, 09:00–10:00");
     expect(sent[0].html).toContain("Tuesday, 16 June 2026, 11:00–12:00");
     expect(sent[0].html).toContain("Studio 1, Hove");
@@ -341,7 +346,9 @@ describe("joining a waiting list", () => {
     const { sent } = await send(JOINED);
 
     expect(sent[0].subject).toBe("You're on the waiting list — Prenatal Yoga");
-    expect(sent[0].html).toContain("You're on the waiting list for Prenatal Yoga.");
+    expect(sent[0].html).toContain(
+      "You're on the waiting list for Prenatal Yoga.",
+    );
     expect(sent[0].html).toContain("Friday, 1 May 2026");
     expect(sent[0].html).toContain("Gabrielle will be in touch by email");
   });
@@ -352,7 +359,9 @@ describe("joining a waiting list", () => {
     expect(sent[1].subject).toBe(
       "[Moontide] New waitlist signup: Prenatal Yoga 2026-05-01",
     );
-    expect(sent[1].text).toContain("There are now 3 people on the waiting list");
+    expect(sent[1].text).toContain(
+      "There are now 3 people on the waiting list",
+    );
     expect(sent[1].text).toContain(
       "https://gabriellemoontide.co.uk/admin/schedule",
     );
@@ -361,7 +370,9 @@ describe("joining a waiting list", () => {
   it("counts one person waiting in the singular", async () => {
     const { sent } = await send({ ...JOINED, waitlistCount: 1 });
 
-    expect(sent[1].text).toContain("There are now 1 person on the waiting list");
+    expect(sent[1].text).toContain(
+      "There are now 1 person on the waiting list",
+    );
   });
 });
 
@@ -394,7 +405,11 @@ describe("a seat being offered", () => {
 
 describe("an offer nobody answered", () => {
   it("tells them the place has gone and they are still on the list", async () => {
-    const { sent } = await send({ type: "offer-expired", ...CUSTOMER, ...CLASS });
+    const { sent } = await send({
+      type: "offer-expired",
+      ...CUSTOMER,
+      ...CLASS,
+    });
 
     expect(sent[0].to).toBe("jane@example.com");
     expect(sent[0].subject).toContain("Prenatal Yoga");
@@ -538,7 +553,10 @@ describe("the delivery record", () => {
     inbox.failWhen(() => true);
 
     await expect(
-      notify({ type: "daily-digest", digest: { ...emptyDigest() } }, NOT_RECORDED),
+      notify(
+        { type: "daily-digest", digest: { ...emptyDigest() } },
+        NOT_RECORDED,
+      ),
     ).resolves.toEqual({ ok: false, error: expect.any(Error) });
   });
 });

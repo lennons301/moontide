@@ -10,40 +10,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { queueSelects, mockSelect, mockUpdateSet, mockRunDailyOfferWork } =
   vi.hoisted(() => {
-  // Each `select()` takes the next queued result, and every step of its chain
-  // resolves to it — so a query that stops at a join reads the same way as one
-  // that goes on to filter or group.
-  const results: unknown[][] = [];
-  const queueSelects = (...rows: unknown[][]) => {
-    results.length = 0;
-    results.push(...rows);
-  };
-  const chain = () => {
-    const rows = results.shift() ?? [];
-    const node: Promise<unknown[]> = Promise.resolve(rows);
-    return Object.assign(node, {
-      innerJoin: vi.fn(() => node),
-      leftJoin: vi.fn(() => node),
-      where: vi.fn(() => node),
-      groupBy: vi.fn(() => node),
-      orderBy: vi.fn(() => node),
-    });
-  };
-  const mockSelect = vi.fn(() => ({ from: vi.fn(() => chain()) }));
+    // Each `select()` takes the next queued result, and every step of its chain
+    // resolves to it — so a query that stops at a join reads the same way as one
+    // that goes on to filter or group.
+    const results: unknown[][] = [];
+    const queueSelects = (...rows: unknown[][]) => {
+      results.length = 0;
+      results.push(...rows);
+    };
+    const chain = () => {
+      const rows = results.shift() ?? [];
+      const node: Promise<unknown[]> = Promise.resolve(rows);
+      return Object.assign(node, {
+        innerJoin: vi.fn(() => node),
+        leftJoin: vi.fn(() => node),
+        where: vi.fn(() => node),
+        groupBy: vi.fn(() => node),
+        orderBy: vi.fn(() => node),
+      });
+    };
+    const mockSelect = vi.fn(() => ({ from: vi.fn(() => chain()) }));
 
-  const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
-  const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
+    const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
+    const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
 
-  return {
-    queueSelects,
-    mockSelect,
-    mockUpdateSet,
-    mockRunDailyOfferWork: vi.fn().mockResolvedValue({
-      expiredOffers: { found: 0, released: 0, emailed: 0, failed: 0 },
-      digest: { sent: false, items: 0 },
-    }),
-  };
-});
+    return {
+      queueSelects,
+      mockSelect,
+      mockUpdateSet,
+      mockRunDailyOfferWork: vi.fn().mockResolvedValue({
+        expiredOffers: { found: 0, released: 0, emailed: 0, failed: 0 },
+        digest: { sent: false, items: 0 },
+      }),
+    };
+  });
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -548,7 +548,9 @@ describe("POST /api/cron/retry-emails", () => {
       expect(customer.subject).toBe(
         "You're on the waiting list — Prenatal Yoga",
       );
-      expect(admin.text).toContain("There are now 3 people on the waiting list");
+      expect(admin.text).toContain(
+        "There are now 3 people on the waiting list",
+      );
       expect(await response.json()).toMatchObject({ succeeded: 1 });
     });
 

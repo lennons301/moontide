@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   mockSelectFrom,
@@ -8,8 +8,6 @@ const {
   mockInsertReturning,
   mockUpdateSet,
   mockUpdateWhere,
-  mockSendWaitlistConfirmation,
-  mockSendWaitlistNotification,
   mockAfter,
 } = vi.hoisted(() => {
   const mockSelectWhere = vi.fn().mockResolvedValue([]);
@@ -21,12 +19,6 @@ const {
     .mockReturnValue({ returning: mockInsertReturning });
   const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
   const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
-  const mockSendWaitlistConfirmation = vi
-    .fn()
-    .mockResolvedValue({ success: true });
-  const mockSendWaitlistNotification = vi
-    .fn()
-    .mockResolvedValue({ success: true });
   const mockAfter = vi.fn((fn: () => Promise<void> | void) => fn());
   return {
     mockSelectFrom,
@@ -36,8 +28,6 @@ const {
     mockInsertReturning,
     mockUpdateSet,
     mockUpdateWhere,
-    mockSendWaitlistConfirmation,
-    mockSendWaitlistNotification,
     mockAfter,
   };
 });
@@ -65,11 +55,6 @@ vi.mock("drizzle-orm", () => ({
   sql: vi.fn(),
 }));
 
-vi.mock("@/lib/email", () => ({
-  sendWaitlistConfirmation: mockSendWaitlistConfirmation,
-  sendWaitlistNotification: mockSendWaitlistNotification,
-}));
-
 vi.mock("next/server", async () => {
   const actual =
     await vi.importActual<typeof import("next/server")>("next/server");
@@ -80,6 +65,22 @@ vi.mock("next/server", async () => {
 });
 
 import { POST } from "@/app/api/book/waitlist/route";
+import type { InMemoryEmails } from "@/lib/notifications/in-memory-adapter";
+import {
+  givenEmailsCollected,
+  resetEmailAdapter,
+} from "../support/notifications";
+
+/** What the signup actually sends, read back off the in-memory transport. */
+let inbox: InMemoryEmails;
+
+beforeEach(() => {
+  process.env.CONTACT_EMAIL = "gabrielle@example.com";
+  process.env.BETTER_AUTH_URL = "https://gabriellemoontide.co.uk";
+  inbox = givenEmailsCollected();
+});
+
+afterEach(resetEmailAdapter);
 
 function makeRequest(body: unknown) {
   return new Request("http://localhost:3000/api/book/waitlist", {
@@ -113,8 +114,6 @@ describe("POST /api/book/waitlist", () => {
     mockInsertReturning.mockResolvedValue([{ id: 1 }]);
     mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
     mockUpdateWhere.mockResolvedValue(undefined);
-    mockSendWaitlistConfirmation.mockResolvedValue({ success: true });
-    mockSendWaitlistNotification.mockResolvedValue({ success: true });
   });
 
   it("returns 400 when fields are missing", async () => {
@@ -209,20 +208,12 @@ describe("POST /api/book/waitlist", () => {
         customerEmail: "jane@example.com",
       }),
     );
-    expect(mockSendWaitlistConfirmation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customerName: "Jane Doe",
-        customerEmail: "jane@example.com",
-        classTitle: "Prenatal Yoga",
-      }),
-    );
-    expect(mockSendWaitlistNotification).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customerName: "Jane Doe",
-        classTitle: "Prenatal Yoga",
-        waitlistCount: 1,
-      }),
-    );
+    const [customer, admin] = inbox.sent;
+    expect(customer.to).toBe("jane@example.com");
+    expect(customer.subject).toBe("You're on the waiting list — Prenatal Yoga");
+    expect(admin.to).toBe("gabrielle@example.com");
+    expect(admin.text).toContain("Jane Doe (jane@example.com)");
+    expect(admin.text).toContain("There are now 1 person on the waiting list");
     expect(mockUpdateSet).toHaveBeenCalledWith(
       expect.objectContaining({ emailSent: true, emailLastError: null }),
     );
@@ -273,8 +264,7 @@ describe("POST /api/book/waitlist", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.ok).toBe(true);
-    expect(mockSendWaitlistConfirmation).not.toHaveBeenCalled();
-    expect(mockSendWaitlistNotification).not.toHaveBeenCalled();
+    expect(inbox.sent).toEqual([]);
     expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 
@@ -282,9 +272,7 @@ describe("POST /api/book/waitlist", () => {
     mockSelectFrom
       .mockReturnValueOnce({ innerJoin: mockInnerJoin })
       .mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 1 }]),
-        }),
+        where: vi.fn().mockResolvedValue([{ count: 1 }]),
       });
 
     const response = await POST(

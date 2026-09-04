@@ -17,14 +17,6 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-vi.mock("@/lib/email", () => ({
-  sendBookingConfirmation: vi.fn(),
-  sendBookingNotification: vi.fn(),
-  sendBundleConfirmation: vi.fn(),
-  sendRescheduleNotification: vi.fn(),
-  sendSeatOffer: vi.fn(),
-}));
-
 import { PUT as bookingsPut } from "@/app/api/admin/bookings/route";
 import { PUT as messagesPut } from "@/app/api/admin/messages/route";
 import { PUT as pricingPut } from "@/app/api/admin/pricing/route";
