@@ -74,6 +74,7 @@ export const GET = withAdmin({ query: listQuery }, async ({ query }) => {
       ? {
           capacity: schedule.capacity,
           ...summariseOfferOccupancy({
+            status: schedule.status,
             capacity: schedule.capacity,
             bookedCount: schedule.bookedCount,
             offersOutstanding: heldSeats.length,

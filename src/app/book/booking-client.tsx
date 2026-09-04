@@ -5,6 +5,12 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  canTakeBooking,
+  isOpenToBookings,
+  type ScheduleStatus,
+  seatsRemaining,
+} from "@/lib/schedules/availability";
 
 type ScheduleRow = {
   schedules: {
@@ -17,7 +23,7 @@ type ScheduleRow = {
     bookedCount: number;
     location: string | null;
     recurringRule: string | null;
-    status: "open" | "full" | "cancelled";
+    status: ScheduleStatus;
   };
   classes: {
     id: number;
@@ -116,8 +122,19 @@ function getTodayString() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
-function isScheduleFull(s: ScheduleRow["schedules"]) {
-  return s.status === "full" || s.bookedCount >= s.capacity;
+/**
+ * Why this class cannot be booked, or null when it can.
+ *
+ * The decision is `canTakeBooking` — the same one the server enforces in the
+ * seat claim — so this page never offers a booking the API would refuse. The
+ * reason is only for the copy: "full" and "bookings closed" are different news
+ * to someone standing in front of the form, and both lead to the waiting list.
+ */
+function unavailableReason(
+  s: ScheduleRow["schedules"],
+): "closed" | "full" | null {
+  if (canTakeBooking(s)) return null;
+  return isOpenToBookings(s) ? "full" : "closed";
 }
 
 type BundleConfig = {
@@ -281,9 +298,11 @@ export function BookingClient({
 
   // Booking form view
   if (selected) {
-    const full = isScheduleFull(selected.schedules);
-    const spotsLeft =
-      selected.schedules.capacity - selected.schedules.bookedCount;
+    const unavailable = unavailableReason(selected.schedules);
+    // Not bookable — full, or closed by Gabrielle. Either way the form takes
+    // them to the waiting list instead.
+    const waitlistOnly = unavailable !== null;
+    const spotsLeft = seatsRemaining(selected.schedules);
 
     return (
       <div>
@@ -312,10 +331,11 @@ export function BookingClient({
               {selected.schedules.location}
             </p>
           )}
-          {full ? (
+          {waitlistOnly ? (
             <p className="text-bright-orange font-medium mt-2">
-              This class is full. Join the waiting list and we'll be in touch if
-              a spot opens up.
+              {unavailable === "closed"
+                ? "Bookings for this class are closed. Join the waiting list and we'll be in touch if a spot opens up."
+                : "This class is full. Join the waiting list and we'll be in touch if a spot opens up."}
             </p>
           ) : (
             <>
@@ -332,7 +352,7 @@ export function BookingClient({
         </div>
 
         <form
-          onSubmit={full ? handleWaitlistSubmit : handleSubmit}
+          onSubmit={waitlistOnly ? handleWaitlistSubmit : handleSubmit}
           className="space-y-5"
         >
           <div className="space-y-2">
@@ -361,13 +381,13 @@ export function BookingClient({
             />
           </div>
 
-          {!full && !selected.classes.bundleEligible && (
+          {!waitlistOnly && !selected.classes.bundleEligible && (
             <p className="text-deep-ocean/70 text-sm">
               This class can't be booked with a class bundle.
             </p>
           )}
 
-          {!full && selected.classes.bundleEligible && (
+          {!waitlistOnly && selected.classes.bundleEligible && (
             <div className="flex items-center gap-3">
               <input
                 id="use-bundle"
@@ -391,7 +411,7 @@ export function BookingClient({
           >
             {loading
               ? "Processing..."
-              : full
+              : waitlistOnly
                 ? "Join waiting list"
                 : "Book This Class"}
           </Button>
@@ -517,9 +537,8 @@ export function BookingClient({
             {formatDate(selectedDate)}
           </h3>
           {classesForSelectedDate.map((item) => {
-            const full = isScheduleFull(item.schedules);
-            const spotsLeft =
-              item.schedules.capacity - item.schedules.bookedCount;
+            const unavailable = unavailableReason(item.schedules);
+            const spotsLeft = seatsRemaining(item.schedules);
             return (
               <button
                 key={item.schedules.id}
@@ -540,13 +559,16 @@ export function BookingClient({
                     </p>
                   </div>
                   <div className="flex items-center gap-4 sm:flex-col sm:items-end sm:gap-1">
-                    {full ? (
+                    {unavailable !== null ? (
                       <>
                         <span className="text-deep-ocean/60 text-sm line-through">
                           {formatPrice(item.classes.priceInPence)}
                         </span>
                         <span className="text-bright-orange text-sm font-medium">
-                          Class full &middot; Join waiting list &rarr;
+                          {unavailable === "closed"
+                            ? "Bookings closed"
+                            : "Class full"}{" "}
+                          &middot; Join waiting list &rarr;
                         </span>
                       </>
                     ) : (

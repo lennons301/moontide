@@ -5,9 +5,10 @@
  * status falls back to grey rather than rendering unstyled.
  */
 const STATUS_COLOURS: Record<string, string> = {
-  // Schedules
+  // Schedules. No "full": fullness is derived from occupancy rather than
+  // stored, so it is read off the Booked column, not off the status.
   open: "bg-seagrass/20 text-seagrass",
-  full: "bg-bright-orange/20 text-bright-orange",
+  closed: "bg-bright-orange/20 text-bright-orange",
   cancelled: "bg-red-100 text-red-700",
   // Bookings
   confirmed: "bg-seagrass/20 text-seagrass",

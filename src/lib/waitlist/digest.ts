@@ -1,3 +1,4 @@
+import { isOpenToBookings, seatsRemaining } from "@/lib/schedules/availability";
 import { londonWallClockToUtc } from "@/lib/time/london";
 import { hasOfferLapsed } from "@/lib/waitlist/offers";
 
@@ -12,6 +13,11 @@ import { hasOfferLapsed } from "@/lib/waitlist/offers";
  * The digest only ever prompts. Nothing here advances a waiting list or sends an
  * offer — she may skip someone for reasons the system cannot know, so every
  * offer stays her decision.
+ *
+ * A class she has closed can still hold an offer nobody has answered — closing
+ * stops new bookings and retires nothing — so it contributes to the outstanding
+ * section but never to the seats one, where the prompt is to make an offer that
+ * a closed class would refuse.
  *
  * Deadlines are read against `now`, never against whether the settling job has
  * run: an offer past its deadline is lapsed, so the seat it holds counts as one
@@ -40,6 +46,12 @@ export type DigestSchedule = {
   /** `HH:MM[:SS]`, London wall clock, as stored. */
   startTime: string;
   endTime: string;
+  /**
+   * `open` or `closed` — cancelled classes never reach here. Decides whether
+   * the class can prompt her to offer a seat; its live offers are reported
+   * either way.
+   */
+  status: string;
   capacity: number;
   /** Every seat taken, held ones included. */
   bookedCount: number;
@@ -110,7 +122,10 @@ export type AdminDigest = {
  * would go with it.
  */
 export function buildAdminDigest(input: {
-  /** Upcoming, uncancelled classes. Ones already started are dropped here. */
+  /**
+   * Upcoming, uncancelled classes — closed ones included, for their offers.
+   * Ones already started are dropped here.
+   */
   schedules: DigestSchedule[];
   released: DigestReleasedBooking[];
   now: Date;
@@ -137,14 +152,22 @@ export function buildAdminDigest(input: {
 
     // A lapsed offer is holding a seat that is on its way back, and the person
     // holding it is waiting again, so both sides count towards the prompt.
-    const freeSeats =
-      Math.max(0, schedule.capacity - schedule.bookedCount) + lapsed;
+    const freeSeats = seatsRemaining(schedule) + lapsed;
     const waitingWithoutOffer = Math.max(
       0,
       schedule.waitingCount - live.length,
     );
 
-    if (freeSeats > 0 && waitingWithoutOffer > 0) {
+    // Only a class open to bookings can prompt her to offer a seat: on a closed
+    // one the offer would be refused, because holding a seat is taking one. Her
+    // outstanding offers on it are reported below all the same — closing stops
+    // new bookings and does not retire an offer already made, so one nobody has
+    // answered still needs her.
+    if (
+      isOpenToBookings(schedule) &&
+      freeSeats > 0 &&
+      waitingWithoutOffer > 0
+    ) {
       seatsToOffer.push({
         scheduleId: schedule.scheduleId,
         classTitle: schedule.classTitle,

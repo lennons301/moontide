@@ -142,14 +142,22 @@ async function readDigestSchedules(now: Date): Promise<DigestSchedule[]> {
       date: schedules.date,
       startTime: schedules.startTime,
       endTime: schedules.endTime,
+      status: schedules.status,
       capacity: schedules.capacity,
       bookedCount: schedules.bookedCount,
     })
     .from(schedules)
     .innerJoin(classes, eq(schedules.classId, classes.id))
-    // A cancelled class needs nothing from her, and a past one cannot be acted
-    // on. The date is a London wall clock, so today is London's today; classes
-    // earlier today are dropped by `buildAdminDigest` against the start time.
+    // Not cancelled, rather than open: cancelling voids a class's offers in the
+    // same transaction, so a cancelled class has none left to report, but
+    // closing deliberately leaves outstanding offers standing. Narrowed to open
+    // here, an offer nobody has answered on a class she closed afterwards would
+    // vanish from the digest — the one prompt telling her it is still hanging.
+    // Which sections a closed class can contribute to is decided by
+    // `buildAdminDigest`, where the difference between the two is a rule rather
+    // than a WHERE clause. A past class cannot be acted on either way. The date
+    // is a London wall clock, so today is London's today; classes earlier today
+    // are dropped by `buildAdminDigest` against the start time.
     .where(
       and(
         gte(schedules.date, londonDateString(now)),

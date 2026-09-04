@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
 import { notifyAfterResponse } from "@/lib/notifications";
 import { claimSeat } from "@/lib/schedule-occupancy";
+import { isOpenToBookings } from "@/lib/schedules/availability";
 import { findOfferByToken } from "@/lib/waitlist/held-seats";
 import { decideRedemptionSeat } from "@/lib/waitlist/offers";
 
@@ -60,9 +61,23 @@ export async function POST(request: Request) {
     );
   }
 
-  // A cancelled class takes no bookings by either payment path. Wording matches
-  // the card path so the customer sees one message however they were booking.
+  // A cancelled class takes no bookings by either payment path, offer or no
+  // offer. Wording matches the card path so the customer sees one message
+  // however they were booking.
   if (schedule.status === "cancelled") {
+    return NextResponse.json(
+      { error: "Class is not available" },
+      { status: 400 },
+    );
+  }
+
+  // Nor does a class Gabrielle has closed. `claimSeat` refuses it in the same
+  // statement that takes the seat, so this read only chooses the wording — but
+  // an offer token is exempt here as it is on the card path
+  // (`decideCheckoutSeat`): closing stops new bookings and does not take back a
+  // seat already held for someone. A held seat never reaches `claimSeat`
+  // anyway; the booking is converted in place, and occupancy does not move.
+  if (!offerToken && !isOpenToBookings(schedule)) {
     return NextResponse.json(
       { error: "Class is not available" },
       { status: 400 },

@@ -12,6 +12,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { SCHEDULE_STATUSES } from "@/lib/schedules/availability";
 
 // Enums
 export const classCategory = pgEnum("class_category", [
@@ -22,11 +23,10 @@ export const classCategory = pgEnum("class_category", [
 
 export const bookingType = pgEnum("booking_type", ["stripe", "contact"]);
 
-export const scheduleStatus = pgEnum("schedule_status", [
-  "open",
-  "full",
-  "cancelled",
-]);
+// Values come from src/lib/schedules/availability.ts: there is no `full` status
+// because fullness is derived from occupancy, and `closed` is Gabrielle's
+// declaration that the class takes no more bookings. See the decision there.
+export const scheduleStatus = pgEnum("schedule_status", SCHEDULE_STATUSES);
 
 export const bookingStatus = pgEnum("booking_status", [
   "confirmed",

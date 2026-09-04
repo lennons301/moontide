@@ -13,7 +13,7 @@ describe("StatusBadge", () => {
     // never collide; a regression that dropped one would show up as grey.
     for (const status of [
       "open",
-      "full",
+      "closed",
       "cancelled",
       "confirmed",
       "held",

@@ -26,11 +26,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { AdminScheduleRow, ClassRow } from "@/lib/admin/rows";
+import {
+  isScheduleFull,
+  type ScheduleStatus,
+} from "@/lib/schedules/availability";
 import { WaitlistPanel } from "./waitlist-panel";
 
 type Schedule = AdminScheduleRow;
 
-type StatusFilter = "all" | "open" | "full" | "cancelled";
+/**
+ * "Full" is not one of the statuses: fullness is derived from occupancy (see
+ * `src/lib/schedules/availability.ts`), so it filters on the seats rather than
+ * on the column. `closed` is the status Gabrielle sets to stop bookings.
+ */
+type StatusFilter = "all" | ScheduleStatus | "full";
 
 const NO_SCHEDULES: Schedule[] = [];
 const NO_CLASSES: ClassRow[] = [];
@@ -74,15 +83,29 @@ export default function SchedulePage() {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("upcoming");
 
   const filters = useMemo(
-    () =>
-      buildAdminTableFilters<Schedule>(
-        { status: statusFilter, classId: classFilter, time: timeFilter },
+    () => ({
+      ...buildAdminTableFilters<Schedule>(
+        {
+          // "Full" is not a status — fullness is derived from occupancy — so it
+          // is not asked for here.
+          status: statusFilter === "full" ? "all" : statusFilter,
+          classId: classFilter,
+          time: timeFilter,
+        },
         {
           status: (row) => row.schedules.status,
           classId: (row) => row.classes.id,
           date: (row) => row.schedules.date,
         },
       ),
+      // A filter of this table's own, spread in beside the shared ones: every
+      // seat taken, on a class that is still going ahead. It used to match the
+      // `full` status, which nothing ever set, so it matched nothing.
+      ...(statusFilter === "full" && {
+        full: (row: Schedule) =>
+          row.schedules.status !== "cancelled" && isScheduleFull(row.schedules),
+      }),
+    }),
     [statusFilter, classFilter, timeFilter],
   );
 
@@ -140,6 +163,28 @@ export default function SchedulePage() {
     const result = await mutateAdmin("/api/admin/schedules", {
       method: "PUT",
       body: { id, status: "cancelled" },
+    });
+    if (!result.ok) {
+      setActionError(result.error);
+      return;
+    }
+    await fetchSchedules();
+  }
+
+  /**
+   * Close a class to bookings, or open it again.
+   *
+   * This is what the old `full` status was reached for, and now the only thing
+   * status says besides cancelled. Unlike marking a class full it is honoured
+   * everywhere: no route will book it, and it is not offered as a reschedule
+   * destination. Existing bookings are untouched — the class still runs.
+   */
+  async function handleToggleClosed(item: Schedule) {
+    const closing = item.schedules.status !== "closed";
+    setActionError(null);
+    const result = await mutateAdmin("/api/admin/schedules", {
+      method: "PUT",
+      body: { id: item.schedules.id, status: closing ? "closed" : "open" },
     });
     if (!result.ok) {
       setActionError(result.error);
@@ -393,6 +438,7 @@ export default function SchedulePage() {
             { value: "all", label: "All" },
             { value: "open", label: "Open" },
             { value: "full", label: "Full" },
+            { value: "closed", label: "Closed" },
             { value: "cancelled", label: "Cancelled" },
           ]}
         />
@@ -478,14 +524,32 @@ export default function SchedulePage() {
                     >
                       Edit
                     </button>
+                    {/* Neither closing nor cancelling means anything to a class
+                        that is already cancelled. */}
                     {item.schedules.status !== "cancelled" && (
-                      <button
-                        type="button"
-                        onClick={() => handleCancelClass(item.schedules.id)}
-                        className="text-bright-orange hover:text-deep-tide-blue text-sm mr-3"
-                      >
-                        Cancel
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleClosed(item)}
+                          className="text-ocean-light-blue hover:text-deep-tide-blue text-sm mr-3"
+                          title={
+                            item.schedules.status === "closed"
+                              ? "Take bookings for this class again"
+                              : "Stop taking bookings for this class. It still runs, and existing bookings are untouched."
+                          }
+                        >
+                          {item.schedules.status === "closed"
+                            ? "Reopen"
+                            : "Close"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCancelClass(item.schedules.id)}
+                          className="text-bright-orange hover:text-deep-tide-blue text-sm mr-3"
+                        >
+                          Cancel
+                        </button>
+                      </>
                     )}
                     <button
                       type="button"
