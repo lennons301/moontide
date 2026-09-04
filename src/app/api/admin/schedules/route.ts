@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, lte, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { holdsAPlace } from "@/lib/bookings/transitions";
@@ -71,15 +71,39 @@ const scheduleId = z.number(missingId).int(missingId).positive(missingId);
 
 /**
  * Zero is accepted, not refused. The capacity box on `/admin/schedule` is not
- * required, so clearing it sends `Number("") === 0`, and both handlers already
- * read that as "use the default" (`capacity || 8`) or "leave it alone"
- * (`...(capacity && …)`). Refusing it here would fail the whole edit — silently,
+ * required, so clearing it sends `Number("") === 0`, and both handlers read
+ * that as an empty box rather than as a class with no seats (see
+ * `requestedCapacity`). Refusing it here would fail the whole edit — silently,
  * because the form only reacts to success.
  */
 const seatCount = z
   .number(badCapacity)
   .int(badCapacity)
   .nonnegative(badCapacity);
+
+/** What a class holds when no capacity was asked for. */
+const DEFAULT_CAPACITY = 8;
+
+/**
+ * What the request asked capacity to be, or `undefined` for "it did not ask".
+ *
+ * The one place zero is interpreted. A cleared capacity box arrives as `0`, and
+ * that is the box being empty — so the create path falls back to the default
+ * and an update leaves the column alone. It used to be read three separate
+ * times as a truthiness check, and the guard's reading disagreed with the
+ * write's: `if (body.capacity)` skipped the occupancy guard for `0` and the
+ * identical falsiness then dropped `capacity` from the UPDATE, so neither half
+ * did what a reader of either would expect.
+ */
+function requestedCapacity(
+  capacity: number | null | undefined,
+): number | undefined {
+  if (capacity === null || capacity === undefined || capacity === 0) {
+    return undefined;
+  }
+  return capacity;
+}
+
 const weekCount = z
   .number(badWeeks)
   .int(badWeeks)
@@ -109,6 +133,8 @@ export const POST = withAdmin({ body: createBody }, async ({ body }) => {
     numberOfWeeks,
   } = body;
 
+  const seats = requestedCapacity(capacity) ?? DEFAULT_CAPACITY;
+
   if (repeatWeekly) {
     const weeks = numberOfWeeks || 1;
     const groupId = crypto.randomUUID();
@@ -123,7 +149,7 @@ export const POST = withAdmin({ body: createBody }, async ({ body }) => {
         date: isoDate,
         startTime,
         endTime,
-        capacity: capacity || 8,
+        capacity: seats,
         location,
         recurringRule,
       };
@@ -140,7 +166,7 @@ export const POST = withAdmin({ body: createBody }, async ({ body }) => {
       date,
       startTime,
       endTime,
-      capacity: capacity || 8,
+      capacity: seats,
       location,
     })
     .returning();
@@ -180,35 +206,66 @@ const updateBody = z.object({
   numberOfWeeks: weekCount.nullish(),
 });
 
+/**
+ * Why a guarded schedule update matched no rows: the class is gone, or its
+ * occupancy stood in the way of the capacity asked for. The decision was made
+ * by the UPDATE's own WHERE clause — this read only chooses the words, so it
+ * can never let a write through that the statement refused.
+ */
+async function unappliedUpdate(
+  id: number,
+  capacity: number | undefined,
+): Promise<ApiError> {
+  const [existing] = await db
+    .select({ bookedCount: schedules.bookedCount })
+    .from(schedules)
+    .where(eq(schedules.id, id));
+
+  if (!existing) return new ApiError(404, "Schedule not found");
+
+  if (capacity !== undefined && capacity < existing.bookedCount) {
+    return new ApiError(
+      400,
+      `This class has ${existing.bookedCount} seats taken, so its capacity cannot go down to ${capacity}. Cancel or release a booking first.`,
+    );
+  }
+
+  // The class is there and its occupancy now fits: a seat was given back
+  // between the refusal and this read. Nothing was written and the same request
+  // would now be applied, so ask for it again rather than naming a number that
+  // is no longer in the way.
+  return new ApiError(
+    409,
+    "This class changed while it was being saved. Please try again.",
+  );
+}
+
 export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
   const { id, location, repeatWeekly, numberOfWeeks } = body;
+  const capacity = requestedCapacity(body.capacity);
 
   const updateFields = {
     ...(body.date && { date: body.date }),
     ...(body.startTime && { startTime: body.startTime }),
     ...(body.endTime && { endTime: body.endTime }),
-    ...(body.capacity && { capacity: body.capacity }),
+    ...(capacity !== undefined && { capacity }),
     ...(location !== undefined && { location }),
     ...(body.status && { status: body.status }),
     ...(body.classId && { classId: body.classId }),
   };
 
-  // Occupancy may not exceed capacity — the database refuses it. Caught here so
-  // the answer names the bookings in the way, rather than being a 500 on the
-  // schedule form: the seats have to be given back before the class shrinks.
-  if (body.capacity) {
-    const [existing] = await db
-      .select({ bookedCount: schedules.bookedCount })
-      .from(schedules)
-      .where(eq(schedules.id, id));
-
-    if (existing && body.capacity < existing.bookedCount) {
-      throw new ApiError(
-        400,
-        `This class has ${existing.bookedCount} seats taken, so its capacity cannot go down to ${body.capacity}. Cancel or release a booking first.`,
-      );
-    }
-  }
+  // Occupancy may not exceed capacity — the database refuses it, and a read
+  // taken beforehand cannot refuse a write a concurrent one has already made: a
+  // booking landing between the read and the UPDATE violated
+  // `schedules_booked_count_within_capacity`, and a constraint violation is not
+  // an `ApiError`, so it reached Gabrielle's schedule form as a 500. So the
+  // comparison is the UPDATE's own WHERE clause, in the style of `claimSeat`: a
+  // lost race matches no rows and is answered by `unappliedUpdate`, naming the
+  // seats in the way. Every write below is aimed with it.
+  const target =
+    capacity === undefined
+      ? eq(schedules.id, id)
+      : and(eq(schedules.id, id), lte(schedules.bookedCount, capacity));
 
   // Cancelling takes the offers outstanding on the class with it: the same
   // transaction, so a class that is cancelled never keeps seats held for a class
@@ -223,7 +280,7 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
       const updated = await tx
         .update(schedules)
         .set(updateFields)
-        .where(eq(schedules.id, id))
+        .where(target)
         .returning();
 
       if (updated.length === 0) return null;
@@ -233,7 +290,7 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
     });
 
     if (!cancelled) {
-      throw new ApiError(404, "Schedule not found");
+      throw await unappliedUpdate(id, capacity);
     }
 
     return NextResponse.json(cancelled);
@@ -249,11 +306,11 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
     const updated = await db
       .update(schedules)
       .set({ ...updateFields, recurringRule })
-      .where(eq(schedules.id, id))
+      .where(target)
       .returning();
 
     if (updated.length === 0) {
-      throw new ApiError(404, "Schedule not found");
+      throw await unappliedUpdate(id, capacity);
     }
 
     const base = updated[0];
@@ -285,11 +342,11 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
   const result = await db
     .update(schedules)
     .set(updateFields)
-    .where(eq(schedules.id, id))
+    .where(target)
     .returning();
 
   if (result.length === 0) {
-    throw new ApiError(404, "Schedule not found");
+    throw await unappliedUpdate(id, capacity);
   }
 
   return NextResponse.json(result[0]);

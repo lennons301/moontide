@@ -131,6 +131,7 @@ vi.mock("drizzle-orm", () => ({
   eq: vi.fn((...args: unknown[]) => args),
   desc: vi.fn((col: unknown) => col),
   lt: vi.fn((...args: unknown[]) => args),
+  lte: vi.fn((...args: unknown[]) => args),
   sql: vi.fn(),
 }));
 
@@ -412,6 +413,29 @@ describe("POST /api/admin/schedules", () => {
     expect(mockInsertValues).toHaveBeenCalledWith(
       expect.objectContaining({ capacity: 8 }),
     );
+  });
+
+  it("reads a cleared box the same way for every week of a recurrence", async () => {
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classId: 1,
+        date: "2026-05-01",
+        startTime: "09:00",
+        endTime: "10:00",
+        capacity: 0,
+        repeatWeekly: true,
+        numberOfWeeks: 2,
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(201);
+    expect(mockInsertValues.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({ capacity: 8 }),
+      expect.objectContaining({ capacity: 8 }),
+    ]);
   });
 
   it("returns 400 when required fields are missing", async () => {
@@ -727,8 +751,10 @@ describe("PUT /api/admin/schedules", () => {
 
   it("refuses a capacity below the seats already taken", async () => {
     // Occupancy may not exceed capacity, so the seats have to be given back
-    // before the class shrinks. Answering with the number in the way beats a
-    // constraint violation surfacing as a 500.
+    // before the class shrinks. The guard is the UPDATE's own WHERE clause, so
+    // the write matches nothing; the row is read afterwards only to name the
+    // number in the way, which beats a constraint violation surfacing as a 500.
+    mockUpdateReturning.mockResolvedValue([]);
     mockSelectRows.mockReturnValue([{ bookedCount: 6 }]);
 
     const request = new Request("http://localhost:3000/api/admin/schedules", {
@@ -741,7 +767,65 @@ describe("PUT /api/admin/schedules", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toContain("6 seats taken");
-    expect(mockUpdateSet).not.toHaveBeenCalled();
+  });
+
+  it("aims the write with the occupancy guard, not at the id alone", async () => {
+    // A booking landing between a read and the write is exactly the window
+    // `claimSeat` closes for seats: the comparison travels with the statement,
+    // so a lost race is no rows rather than a rejected write.
+    mockUpdateReturning.mockResolvedValue([{ id: 1, capacity: 5 }]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: 1, capacity: 5 }),
+    });
+
+    await PUT(request);
+
+    // The mocked `and`, `eq` and `lte` return their arguments.
+    expect(mockUpdateWhere).toHaveBeenCalledWith([
+      ["id", 1],
+      ["booked_count", 5],
+    ]);
+  });
+
+  it("asks again when the seats in the way were freed as it refused", async () => {
+    // The write was refused, so nothing was saved — but by the time the row is
+    // read the capacity fits, so there is no number to name. Reporting one that
+    // is no longer in the way would be a lie, and a 500 is not a refusal.
+    mockUpdateReturning.mockResolvedValue([]);
+    mockSelectRows.mockReturnValue([{ bookedCount: 3 }]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: 1, capacity: 5 }),
+    });
+
+    const response = await PUT(request);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/try again/i);
+  });
+
+  it("leaves a full class alone when the capacity box was cleared", async () => {
+    // Zero means the box was empty, in the guard exactly as in the write: the
+    // rest of the edit is saved and capacity is not touched, so there is
+    // nothing for occupancy to stand in the way of.
+    mockSelectRows.mockReturnValue([{ bookedCount: 6 }]);
+    mockUpdateReturning.mockResolvedValue([{ id: 1, capacity: 6 }]);
+
+    const request = new Request("http://localhost:3000/api/admin/schedules", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: 1, capacity: 0, startTime: "10:00" }),
+    });
+
+    const response = await PUT(request);
+    expect(response.status).toBe(200);
+    expect(mockUpdateSet.mock.calls[0]?.[0]).toEqual({ startTime: "10:00" });
+    // Aimed by id alone: no capacity was asked for, so nothing is guarded.
+    expect(mockUpdateWhere).toHaveBeenCalledWith(["id", 1]);
   });
 
   it("allows a capacity that still covers the seats already taken", async () => {
