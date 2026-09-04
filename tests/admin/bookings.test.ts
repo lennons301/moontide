@@ -11,7 +11,7 @@ const {
   mockTransaction,
   mockTxUpdateSet,
   mockTxUpdateReturning,
-  mockSendRescheduleNotification,
+  mockNotifyAfterResponse,
   mockAfter,
 } = vi.hoisted(() => {
   const mockSelectWhere = vi.fn();
@@ -31,9 +31,7 @@ const {
     };
     await cb(tx);
   });
-  const mockSendRescheduleNotification = vi
-    .fn()
-    .mockResolvedValue({ success: true });
+  const mockNotifyAfterResponse = vi.fn();
   const mockAfter = vi.fn((fn: () => Promise<void> | void) => fn());
   return {
     mockSelectFrom,
@@ -41,7 +39,7 @@ const {
     mockTransaction,
     mockTxUpdateSet,
     mockTxUpdateReturning,
-    mockSendRescheduleNotification,
+    mockNotifyAfterResponse,
     mockAfter,
   };
 });
@@ -87,8 +85,8 @@ vi.mock("drizzle-orm", () => ({
   ),
 }));
 
-vi.mock("@/lib/email", () => ({
-  sendRescheduleNotification: mockSendRescheduleNotification,
+vi.mock("@/lib/notifications", () => ({
+  notifyAfterResponse: mockNotifyAfterResponse,
 }));
 
 vi.mock("next/server", async () => {
@@ -377,7 +375,7 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
     );
     // No seat moved, and no email telling her the class is on a date gone by.
     expect(mockTransaction).not.toHaveBeenCalled();
-    expect(mockSendRescheduleNotification).not.toHaveBeenCalled();
+    expect(mockNotifyAfterResponse).not.toHaveBeenCalled();
   });
 
   it("moves a booking onto a class later today", async () => {
@@ -390,7 +388,7 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
     const response = await PUT(makeRequest({ id: 1, newScheduleId: 20 }));
 
     expect(response.status).toBe(200);
-    expect(mockSendRescheduleNotification).toHaveBeenCalled();
+    expect(mockNotifyAfterResponse).toHaveBeenCalled();
   });
 
   it("returns 200 on first reschedule, sets originalScheduleId, sends email", async () => {
@@ -408,14 +406,17 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
       originalScheduleId: 10,
     });
     expect(bookingUpdateCall.rescheduledAt).toBeInstanceOf(Date);
-    expect(mockSendRescheduleNotification).toHaveBeenCalledWith(
+    expect(mockNotifyAfterResponse).toHaveBeenCalledWith(
       expect.objectContaining({
+        type: "booking-rescheduled",
         customerName: "Jane Doe",
         customerEmail: "jane@example.com",
         classTitle: "Prenatal Yoga",
         oldDate: "2026-06-09",
         newDate: "2026-06-16",
       }),
+      // The row owes the note until it goes out, so the sweep can find it.
+      { on: expect.anything(), row: 1 },
     );
     expect(mockTxUpdateSet).toHaveBeenCalledTimes(3);
   });
@@ -449,7 +450,7 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe("Target class is full");
-    expect(mockSendRescheduleNotification).not.toHaveBeenCalled();
+    expect(mockNotifyAfterResponse).not.toHaveBeenCalled();
   });
 
   it("preserves originalScheduleId on second reschedule", async () => {

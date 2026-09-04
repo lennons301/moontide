@@ -22,7 +22,7 @@ const {
   mockTransaction,
   mockClaimSeat,
   mockReleaseSeat,
-  mockSendSeatOffer,
+  mockNotifyAfterResponse,
   mockAfter,
 } = vi.hoisted(() => {
   // Each `select()` chain resolves to the next queued result, whether it ends
@@ -69,7 +69,7 @@ const {
 
   const mockClaimSeat = vi.fn().mockResolvedValue({ claimed: true });
   const mockReleaseSeat = vi.fn().mockResolvedValue(undefined);
-  const mockSendSeatOffer = vi.fn().mockResolvedValue({ success: true });
+  const mockNotifyAfterResponse = vi.fn();
   const mockAfter = vi.fn((fn: () => Promise<void> | void) => fn());
 
   return {
@@ -83,7 +83,7 @@ const {
     mockTransaction,
     mockClaimSeat,
     mockReleaseSeat,
-    mockSendSeatOffer,
+    mockNotifyAfterResponse,
     mockAfter,
   };
 });
@@ -110,7 +110,9 @@ vi.mock("@/lib/schedule-occupancy", () => ({
   releaseSeat: mockReleaseSeat,
 }));
 
-vi.mock("@/lib/email", () => ({ sendSeatOffer: mockSendSeatOffer }));
+vi.mock("@/lib/notifications", () => ({
+  notifyAfterResponse: mockNotifyAfterResponse,
+}));
 
 vi.mock("next/server", async () => {
   const actual =
@@ -198,12 +200,16 @@ describe("POST /api/admin/waitlist/offer", () => {
     expect(offerState.offerToken.length).toBeGreaterThan(20);
     expect(offerState.offerExpiresAt.toISOString()).toBe(body.expiresAt);
 
-    const email = mockSendSeatOffer.mock.calls[0][0];
-    expect(email.customerEmail).toBe("jane@example.com");
-    expect(email.classTitle).toBe("Prenatal Yoga");
-    expect(email.date).toBe("2099-06-20");
-    expect(email.offerUrl).toContain(offerState.offerToken);
-    expect(email.expiresAt).toEqual(offerState.offerExpiresAt);
+    const [event, record] = mockNotifyAfterResponse.mock.calls[0];
+    expect(event.type).toBe("seat-offered");
+    expect(event.customerEmail).toBe("jane@example.com");
+    expect(event.classTitle).toBe("Prenatal Yoga");
+    expect(event.date).toBe("2099-06-20");
+    // The link in the email is the offer that was just written down.
+    expect(event.offerToken).toBe(offerState.offerToken);
+    expect(event.expiresAt).toEqual(offerState.offerExpiresAt);
+    // A hold with a deadline is never retried overnight.
+    expect(record).toEqual({ notRecorded: expect.any(String) });
   });
 
   it("refuses when the seat is taken between the read and the claim", async () => {
@@ -215,7 +221,7 @@ describe("POST /api/admin/waitlist/offer", () => {
     expect(body.error).toBe("There is no free seat to offer on this class");
 
     // No offer recorded and nobody emailed a link to a seat that is gone.
-    expect(mockSendSeatOffer).not.toHaveBeenCalled();
+    expect(mockNotifyAfterResponse).not.toHaveBeenCalled();
   });
 
   it("refuses when the class is already full", async () => {
@@ -261,7 +267,7 @@ describe("DELETE /api/admin/waitlist/offer", () => {
     // The waiting-list entry itself is untouched — removing them is a separate
     // action, and nothing is sent to the customer.
     expect(mockDeleteWhere).toHaveBeenCalledOnce();
-    expect(mockSendSeatOffer).not.toHaveBeenCalled();
+    expect(mockNotifyAfterResponse).not.toHaveBeenCalled();
   });
 
   it("does not give a seat back when the offer was taken up first", async () => {
