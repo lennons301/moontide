@@ -139,6 +139,12 @@ export const POST = withAdmin({ body: offerBody }, async ({ body }) => {
         offerUrl: `${process.env.BETTER_AUTH_URL}/book/offer/${token}`,
       });
     } catch (e) {
+      // Deliberately not retried, and so carries no delivery state. An offer is
+      // a hold with a deadline on it: a copy sent overnight could arrive after
+      // the seat has already gone back, inviting someone to take a place that
+      // is not there. Re-offering the same person overwrites the offer and
+      // sends it again, which is Gabrielle's move to make, and the daily digest
+      // lists every outstanding offer so an unanswered one still reaches her.
       console.error("Seat offer email send failed", e);
     }
   });

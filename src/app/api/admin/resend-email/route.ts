@@ -1,19 +1,19 @@
 import { eq } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  describeBundleProduct,
+  selectBundlesWithConfig,
+} from "@/lib/bundles/with-config";
 import { db } from "@/lib/db";
+import { bookings, bundles, classes, schedules } from "@/lib/db/schema";
+import { sendBookingNotification, sendBundleConfirmation } from "@/lib/email";
 import {
-  bookings,
-  bundleConfig,
-  bundles,
-  classes,
-  schedules,
-} from "@/lib/db/schema";
-import {
-  sendBookingConfirmation,
-  sendBookingNotification,
-  sendBundleConfirmation,
-} from "@/lib/email";
+  recognisedKind,
+  sendBookingEmail,
+} from "@/lib/notifications/booking-emails";
+import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
 import { ApiError, withAdmin } from "../_lib";
 
 const missingId = { error: "Missing id" };
@@ -23,10 +23,41 @@ const resendBody = z.object({
   id: z.number(missingId).int(missingId).positive(missingId),
 });
 
+/**
+ * Send, and record what happened either way.
+ *
+ * The flag is never consulted before sending: Gabrielle resends because a
+ * customer told her nothing arrived, and "we recorded that it went" is exactly
+ * the state she is disputing. A row whose flag is stuck true used to have no
+ * button at all.
+ */
+async function resend(
+  table: Parameters<typeof markEmailSent>[0],
+  id: number,
+  send: () => Promise<void>,
+) {
+  try {
+    await send();
+  } catch (error) {
+    await markEmailFailed(table, id, error);
+    console.error(
+      `Resend failed for ${table === bookings ? "booking" : "bundle"} ${id}:`,
+      error,
+    );
+    throw new ApiError(
+      502,
+      "The email could not be sent. It has been recorded as unsent and the overnight retry will try again.",
+    );
+  }
+  await markEmailSent(table, id);
+}
+
 export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
   const { type, id } = body;
 
   if (type === "booking") {
+    const originalSchedules = alias(schedules, "original_schedules");
+
     const result = await db
       .select()
       .from(bookings)
@@ -35,6 +66,12 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       // The bundle the booking was funded from, when there is one — a resend
       // has to know a credit was spent, or it quotes a price nobody paid.
       .leftJoin(bundles, eq(bookings.bundleId, bundles.id))
+      // The class it was moved off, for a booking whose pending notification is
+      // the moved-date note rather than a confirmation.
+      .leftJoin(
+        originalSchedules,
+        eq(bookings.originalScheduleId, originalSchedules.id),
+      )
       .where(eq(bookings.id, id));
 
     if (result.length === 0) {
@@ -49,82 +86,53 @@ export const POST = withAdmin({ body: resendBody }, async ({ body }) => {
       throw new ApiError(400, "This seat is being held, not booked");
     }
 
-    const payment = row.bundles
-      ? ({
-          method: "credit",
-          creditsRemaining: row.bundles.creditsRemaining,
-        } as const)
-      : ({
-          method: "card",
-          priceInPence: row.classes.priceInPence,
-        } as const);
+    // Which email this booking is owed is the row's to say, not this route's.
+    // Sending a confirmation to someone owed a moved-date note — and then
+    // marking the row settled — took the note out of the sweep and it was never
+    // sent by anything, which is the drift this whole change is about.
+    const kind = recognisedKind(row.bookings.emailKind);
+    if (kind === null) {
+      throw new ApiError(
+        400,
+        `This booking is owed a "${row.bookings.emailKind}" email, which is not one this can send`,
+      );
+    }
 
-    await sendBookingConfirmation({
-      customerName: row.bookings.customerName,
-      customerEmail: row.bookings.customerEmail,
-      classTitle: row.classes.title,
-      date: row.schedules.date,
-      startTime: row.schedules.startTime,
-      endTime: row.schedules.endTime,
-      location: row.schedules.location,
-      payment,
-    });
-
-    await sendBookingNotification({
-      type: "individual",
-      customerName: row.bookings.customerName,
-      customerEmail: row.bookings.customerEmail,
-      classTitle: row.classes.title,
-      date: row.schedules.date,
-      startTime: row.schedules.startTime,
-      endTime: row.schedules.endTime,
-      location: row.schedules.location,
-      payment,
-    });
-
-    await db
-      .update(bookings)
-      .set({ emailSent: true })
-      .where(eq(bookings.id, id));
+    await resend(bookings, id, () => sendBookingEmail(row, kind));
 
     return NextResponse.json({ success: true });
   }
 
-  // Joined on the config the purchase actually recorded. It used to be joined
-  // on `creditsTotal = credits` — a guess that names the wrong product the
-  // moment two configs sell the same number of classes.
-  const result = await db
-    .select()
-    .from(bundles)
-    .innerJoin(bundleConfig, eq(bundles.bundleConfigId, bundleConfig.id))
-    .where(eq(bundles.id, id));
+  const result = await selectBundlesWithConfig().where(eq(bundles.id, id));
 
   if (result.length === 0) {
     throw new ApiError(404, "Bundle not found");
   }
 
-  const row = result[0];
-  const expiryDate = new Date(row.bundles.expiresAt).toLocaleDateString(
-    "en-GB",
-    { day: "numeric", month: "short", year: "numeric" },
-  );
+  // Named from the config the purchase recorded, through the join the overnight
+  // retry uses — one definition, so the two paths cannot name different products
+  // for the same bundle.
+  const product = describeBundleProduct(result[0]);
+  if (!product.ok) {
+    throw new ApiError(400, product.error);
+  }
 
-  await sendBundleConfirmation({
-    customerEmail: row.bundles.customerEmail,
-    bundleName: row.bundle_config.name,
-    credits: row.bundle_config.credits,
-    expiryDate,
+  await resend(bundles, id, async () => {
+    await sendBundleConfirmation({
+      customerEmail: product.customerEmail,
+      bundleName: product.bundleName,
+      credits: product.credits,
+      expiryDate: product.expiryDate,
+    });
+
+    await sendBookingNotification({
+      type: "bundle",
+      customerEmail: product.customerEmail,
+      bundleName: product.bundleName,
+      credits: product.credits,
+      expiryDate: product.expiryDate,
+    });
   });
-
-  await sendBookingNotification({
-    type: "bundle",
-    customerEmail: row.bundles.customerEmail,
-    bundleName: row.bundle_config.name,
-    credits: row.bundle_config.credits,
-    expiryDate,
-  });
-
-  await db.update(bundles).set({ emailSent: true }).where(eq(bundles.id, id));
 
   return NextResponse.json({ success: true });
 });

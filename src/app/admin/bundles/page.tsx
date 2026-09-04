@@ -6,6 +6,7 @@ import { mutateAdmin, useAdminResource } from "@/components/admin/admin-fetch";
 import { AdminTableToolbar } from "@/components/admin/admin-table-toolbar";
 import { formatDate } from "@/components/admin/format-date";
 import { PillGroup } from "@/components/admin/pill-group";
+import { ResendEmailButton } from "@/components/admin/resend-email-button";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { buildAdminTableFilters } from "@/components/admin/table-filters";
 import {
@@ -156,15 +157,10 @@ export default function BundlesPage() {
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={bundle.status} />
-                    {!bundle.emailSent && (
-                      <button
-                        type="button"
-                        onClick={() => handleResendEmail(bundle.id)}
-                        className="ml-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-bright-orange/20 text-bright-orange hover:bg-bright-orange/30 transition-colors cursor-pointer"
-                      >
-                        resend email
-                      </button>
-                    )}
+                    <ResendEmailButton
+                      delivery={bundle}
+                      onResend={() => handleResendEmail(bundle.id)}
+                    />
                   </td>
                 </tr>
               ))

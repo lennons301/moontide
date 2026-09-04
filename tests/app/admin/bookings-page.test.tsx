@@ -111,11 +111,49 @@ describe("/admin/bookings", () => {
     render(<BookingsPage />);
 
     fireEvent.click(
-      await screen.findByRole("button", { name: "resend email" }),
+      await screen.findByRole("button", { name: "email not sent — resend" }),
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Booking not found",
+    );
+  });
+
+  it("offers a resend for a booking already marked sent", async () => {
+    // The button used to be rendered only while the flag was false, so a row
+    // whose flag was stuck true could not be resent from here at all — which is
+    // exactly the row a customer rings up about.
+    const fetchMock = stubBookings({
+      "GET /api/admin/bookings": {
+        json: [
+          {
+            ...BOOKING,
+            bookings: {
+              ...BOOKING.bookings,
+              emailSent: true,
+              emailAttempts: 2,
+              emailSentAt: "2026-05-01T08:00:00.000Z",
+              emailLastError: null,
+            },
+          },
+        ],
+      },
+      "POST /api/admin/resend-email": { json: { success: true } },
+    });
+    render(<BookingsPage />);
+
+    const button = await screen.findByRole("button", { name: "resend email" });
+    expect(button.getAttribute("title")).toContain("2 attempts");
+
+    fireEvent.click(button);
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([path, init]) =>
+            path === "/api/admin/resend-email" && init?.method === "POST",
+        ),
+      ).toBe(true),
     );
   });
 
