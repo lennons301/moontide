@@ -131,8 +131,15 @@
     {
       "idx": 18,
       "version": "7",
-      "when": 1788421268502,
-      "tag": "0018_schedule_closed_status",
+      "when": 1788469856871,
+      "tag": "0018_email_delivery_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788498014481,
+      "tag": "0019_schedule_closed_status",
       "breakpoints": true
     }
   ]

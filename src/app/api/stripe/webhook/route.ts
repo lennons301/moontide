@@ -22,6 +22,7 @@ import {
   sendBundleConfigMissingAlert,
   sendBundleConfirmation,
 } from "@/lib/email";
+import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
 import { forceClaimSeat } from "@/lib/schedule-occupancy";
 import { getStripe } from "@/lib/stripe";
 import { findOfferByToken } from "@/lib/waitlist/held-seats";
@@ -180,13 +181,20 @@ export async function POST(request: Request) {
               payment,
             });
 
-            await db
-              .update(bookings)
-              .set({ emailSent: true })
-              .where(eq(bookings.stripePaymentId, session.id));
+            await markEmailSent(
+              bookings,
+              eq(bookings.stripePaymentId, session.id),
+            );
           }
         } catch (error) {
           console.error("Failed to send booking confirmation email:", error);
+          // Written down where the sweep will find it: the row keeps its unsent
+          // flag, and now carries why the first attempt failed.
+          await markEmailFailed(
+            bookings,
+            eq(bookings.stripePaymentId, session.id),
+            error,
+          );
         }
       });
     } else if (metadata?.type === "bundle") {
@@ -220,6 +228,10 @@ export async function POST(request: Request) {
               granted,
             });
           } catch (error) {
+            // Deliberately not retried, and so carries no delivery state: this
+            // is an alert about a condition, not a record of anything, and the
+            // condition itself is on the bundle row — `bundleConfigId` null,
+            // which the bundle sweep reports every run for as long as it holds.
             console.error("Failed to send bundle config alert:", error);
           }
         });
@@ -294,12 +306,14 @@ export async function POST(request: Request) {
             expiryDate: expiryDateFormatted,
           });
 
-          await db
-            .update(bundles)
-            .set({ emailSent: true })
-            .where(eq(bundles.stripePaymentId, session.id));
+          await markEmailSent(bundles, eq(bundles.stripePaymentId, session.id));
         } catch (error) {
           console.error("Failed to send bundle confirmation email:", error);
+          await markEmailFailed(
+            bundles,
+            eq(bundles.stripePaymentId, session.id),
+            error,
+          );
         }
       });
     }

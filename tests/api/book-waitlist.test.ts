@@ -223,7 +223,9 @@ describe("POST /api/book/waitlist", () => {
         waitlistCount: 1,
       }),
     );
-    expect(mockUpdateSet).toHaveBeenCalledWith({ emailSent: true });
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ emailSent: true, emailLastError: null }),
+    );
   });
 
   it("inserts for a class closed to bookings though seats remain", async () => {

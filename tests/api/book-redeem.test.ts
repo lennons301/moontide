@@ -396,7 +396,9 @@ describe("POST /api/book/redeem", () => {
     // And it is marked sent, so the sweep does not send it a second time. The
     // sending runs in `after()`, past the response, so let it settle first.
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(mockUpdateSet).toHaveBeenCalledWith({ emailSent: true });
+    expect(mockUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ emailSent: true, emailLastError: null }),
+    );
   });
 
   it("returns 409 when customer already has a booking for this schedule", async () => {

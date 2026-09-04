@@ -1,6 +1,6 @@
 {
-  "id": "2e564122-6c9b-4819-999c-4bc97373d7d0",
-  "prevId": "bedcd749-0bc0-41b0-89f0-cadd1db12694",
+  "id": "6fedf862-2766-458b-87bf-3a78a0f637cd",
+  "prevId": "2e564122-6c9b-4819-999c-4bc97373d7d0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1102,7 +1102,7 @@
     "public.schedule_status": {
       "name": "schedule_status",
       "schema": "public",
-      "values": ["open", "full", "cancelled"]
+      "values": ["open", "closed", "cancelled"]
     }
   },
   "schemas": {},

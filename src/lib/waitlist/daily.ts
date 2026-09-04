@@ -230,6 +230,11 @@ async function readReleasedBookings(): Promise<DigestReleasedBooking[]> {
  *
  * The suppression is the point: an email from this job always means something is
  * waiting, so it keeps meaning something when it arrives.
+ *
+ * No delivery state and no retry, deliberately: the digest is rebuilt from live
+ * state every run, so a failed one is not resent — it is superseded tomorrow by
+ * a digest saying whatever is true then. Retrying yesterday's would be sending
+ * her a list that has already moved on.
  */
 export async function sendDigestIfAnythingNeedsHer(
   now: Date,

@@ -7,6 +7,7 @@ import {
   sendWaitlistConfirmation,
   sendWaitlistNotification,
 } from "@/lib/email";
+import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
 import { canTakeBooking } from "@/lib/schedules/availability";
 
 export async function POST(request: Request) {
@@ -106,13 +107,17 @@ export async function POST(request: Request) {
           waitlistCount,
         });
         if (insertedId !== null) {
-          await db
-            .update(waitlistEntries)
-            .set({ emailSent: true })
-            .where(eq(waitlistEntries.id, insertedId));
+          await markEmailSent(waitlistEntries, insertedId);
         }
       } catch (e) {
         console.error("Waitlist email send failed", e);
+        // The entry keeps its unsent flag and now carries the reason. That flag
+        // used to be written once and read by nothing, so a waiting-list
+        // confirmation that failed was lost with nobody able to see it; the
+        // daily sweep retries these now.
+        if (insertedId !== null) {
+          await markEmailFailed(waitlistEntries, insertedId, e);
+        }
       }
     });
   }

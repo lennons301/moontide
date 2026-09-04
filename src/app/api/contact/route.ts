@@ -59,7 +59,11 @@ export async function POST(request: Request) {
   try {
     await sendContactEmail({ name, email, subject, message });
   } catch {
-    // Email forwarding failure is non-critical — submission is already saved in DB
+    // Deliberately fire-and-forget, with no delivery state and no retry: the
+    // submission is already a row, and every one of them is listed at
+    // /admin/messages with its unread flag. The email is a nudge towards a
+    // message Gabrielle can read either way, so there is nothing here that a
+    // failed send loses.
   }
 
   return NextResponse.json({ success: true });
