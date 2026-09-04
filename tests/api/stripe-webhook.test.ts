@@ -13,10 +13,7 @@ const {
   mockBundleConfigWhere,
   mockBundleConfigFrom,
   mockBundleConfigSelect,
-  mockSendBookingConfirmation,
-  mockSendBundleConfirmation,
-  mockSendBookingNotification,
-  mockSendBundleConfigMissingAlert,
+  mockNotifyAfterResponse,
   mockDelete,
   mockDeleteWhere,
   mockFindOfferByToken,
@@ -57,20 +54,9 @@ const {
   const mockBundleConfigSelect = vi
     .fn()
     .mockReturnValue({ from: mockBundleConfigFrom });
-  const mockSendBookingConfirmation = vi
-    .fn()
-    .mockResolvedValue({ success: true });
-  const mockSendBundleConfirmation = vi
-    .fn()
-    .mockResolvedValue({ success: true });
-  const mockSendBookingNotification = vi
-    .fn()
-    .mockResolvedValue({ success: true });
-  const mockSendBundleConfigMissingAlert = vi
-    .fn()
-    .mockResolvedValue({ success: true });
+  const mockNotifyAfterResponse = vi.fn();
   return {
-    mockSendBundleConfigMissingAlert,
+    mockNotifyAfterResponse,
     mockInsertValues,
     mockInsertReturning,
     mockInsert,
@@ -82,21 +68,22 @@ const {
     mockBundleConfigWhere,
     mockBundleConfigFrom,
     mockBundleConfigSelect,
-    mockSendBookingConfirmation,
-    mockSendBundleConfirmation,
-    mockSendBookingNotification,
     mockDelete,
     mockDeleteWhere,
     mockFindOfferByToken,
   };
 });
 
-vi.mock("@/lib/email", () => ({
-  sendBookingConfirmation: mockSendBookingConfirmation,
-  sendBundleConfirmation: mockSendBundleConfirmation,
-  sendBookingNotification: mockSendBookingNotification,
-  sendBundleConfigMissingAlert: mockSendBundleConfigMissingAlert,
+vi.mock("@/lib/notifications", () => ({
+  notifyAfterResponse: mockNotifyAfterResponse,
 }));
+
+/** The events of one kind this delivery raised. */
+function raised(type: string) {
+  return mockNotifyAfterResponse.mock.calls.filter(
+    ([event]) => event.type === type,
+  );
+}
 
 vi.mock("next/server", async () => {
   const actual =
@@ -186,10 +173,6 @@ describe("POST /api/stripe/webhook", () => {
     // test that returns early leaves one behind for the next one to trip on.
     mockBundleConfigSelect.mockReset();
     mockBundleConfigSelect.mockReturnValue({ from: mockBundleConfigFrom });
-    mockSendBookingConfirmation.mockResolvedValue({ success: true });
-    mockSendBundleConfirmation.mockResolvedValue({ success: true });
-    mockSendBookingNotification.mockResolvedValue({ success: true });
-    mockSendBundleConfigMissingAlert.mockResolvedValue({ success: true });
   });
 
   it("returns 400 when stripe-signature header is missing", async () => {
@@ -290,19 +273,18 @@ describe("POST /api/stripe/webhook", () => {
     // Verify schedule bookedCount was incremented
     expect(mockUpdate).toHaveBeenCalled();
 
-    // Verify email functions were called
-    expect(mockSendBookingConfirmation).toHaveBeenCalledWith(
+    // The customer and Gabrielle are both told, and the row that owes it is
+    // named so the overnight sweep can find it if this does not get through.
+    expect(mockNotifyAfterResponse).toHaveBeenCalledWith(
       expect.objectContaining({
+        type: "booking-confirmed",
         customerName: "Jane Doe",
         customerEmail: "jane@example.com",
         classTitle: "Prenatal Yoga",
+        // A card payment, always: this is the only path Stripe reaches.
+        payment: { method: "card", priceInPence: 1250 },
       }),
-    );
-    expect(mockSendBookingNotification).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "individual",
-        customerName: "Jane Doe",
-      }),
+      expect.objectContaining({ on: expect.anything() }),
     );
   });
 
@@ -342,7 +324,7 @@ describe("POST /api/stripe/webhook", () => {
     // No second booking created, no seat counted, no email fired
     expect(mockTransaction).not.toHaveBeenCalled();
     expect(mockInsert).not.toHaveBeenCalled();
-    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+    expect(mockNotifyAfterResponse).not.toHaveBeenCalled();
   });
 
   describe("a payment for a seat held by an offer", () => {
@@ -441,15 +423,14 @@ describe("POST /api/stripe/webhook", () => {
       expect(mockDelete).toHaveBeenCalledWith(waitlistEntries);
 
       // The existing confirmation and admin notification, unchanged.
-      expect(mockSendBookingConfirmation).toHaveBeenCalledWith(
+      expect(mockNotifyAfterResponse).toHaveBeenCalledWith(
         expect.objectContaining({
+          type: "booking-confirmed",
           customerName: "Jane Doe",
           customerEmail: "jane@example.com",
           classTitle: "Prenatal Yoga",
         }),
-      );
-      expect(mockSendBookingNotification).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "individual" }),
+        expect.anything(),
       );
     });
 
@@ -468,8 +449,7 @@ describe("POST /api/stripe/webhook", () => {
       expect(mockTransaction).not.toHaveBeenCalled();
       expect(mockInsert).not.toHaveBeenCalled();
       expect(mockDelete).not.toHaveBeenCalled();
-      expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
-      expect(mockSendBookingNotification).not.toHaveBeenCalled();
+      expect(mockNotifyAfterResponse).not.toHaveBeenCalled();
     });
 
     it("writes and sends nothing further when the seat is no longer held", async () => {
@@ -486,7 +466,7 @@ describe("POST /api/stripe/webhook", () => {
 
       expect(mockInsert).not.toHaveBeenCalled();
       expect(mockDelete).not.toHaveBeenCalled();
-      expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+      expect(mockNotifyAfterResponse).not.toHaveBeenCalled();
     });
 
     it("books a customer whose hold was withdrawn under them", async () => {
@@ -508,7 +488,7 @@ describe("POST /api/stripe/webhook", () => {
           stripePaymentId: "cs_offer",
         }),
       );
-      expect(mockSendBookingConfirmation).toHaveBeenCalled();
+      expect(raised("booking-confirmed")).toHaveLength(1);
     });
 
     it("does not convert a held seat the token is not bound to", async () => {
@@ -623,20 +603,16 @@ describe("POST /api/stripe/webhook", () => {
       // 90 days from when she paid, not from whenever this ran.
       expect(insertedExpiry().toISOString()).toBe("2026-04-10T12:00:00.000Z");
 
-      expect(mockSendBundleConfirmation).toHaveBeenCalledWith(
+      expect(mockNotifyAfterResponse).toHaveBeenCalledWith(
         expect.objectContaining({
+          type: "bundle-purchased",
           customerEmail: "jane@example.com",
           bundleName: "6-Class Bundle",
           credits: 6,
         }),
+        expect.objectContaining({ on: expect.anything() }),
       );
-      expect(mockSendBookingNotification).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "bundle",
-          customerEmail: "jane@example.com",
-        }),
-      );
-      expect(mockSendBundleConfigMissingAlert).not.toHaveBeenCalled();
+      expect(raised("bundle-product-missing")).toEqual([]);
     });
 
     it("grants the terms she was sold, not the config as edited since", async () => {
@@ -653,8 +629,9 @@ describe("POST /api/stripe/webhook", () => {
         expect.objectContaining({ creditsTotal: 6, creditsRemaining: 6 }),
       );
       expect(insertedExpiry().toISOString()).toBe("2026-04-10T12:00:00.000Z");
-      expect(mockSendBundleConfirmation).toHaveBeenCalledWith(
+      expect(mockNotifyAfterResponse).toHaveBeenCalledWith(
         expect.objectContaining({ bundleName: "6-Class Bundle", credits: 6 }),
+        expect.anything(),
       );
     });
 
@@ -688,9 +665,7 @@ describe("POST /api/stripe/webhook", () => {
       // 200, not an error: the first delivery did the work, so there is nothing
       // for Stripe to retry.
       expect(response.status).toBe(200);
-      expect(mockSendBundleConfirmation).not.toHaveBeenCalled();
-      expect(mockSendBookingNotification).not.toHaveBeenCalled();
-      expect(mockSendBundleConfigMissingAlert).not.toHaveBeenCalled();
+      expect(mockNotifyAfterResponse).not.toHaveBeenCalled();
     });
 
     it("grants the bundle from the session when the config has gone", async () => {
@@ -708,14 +683,17 @@ describe("POST /api/stripe/webhook", () => {
           bundleConfigId: null,
         }),
       );
-      expect(mockSendBundleConfirmation).toHaveBeenCalled();
+      expect(raised("bundle-purchased")).toHaveLength(1);
       // She has her credits, but a product a sale referenced has disappeared.
-      expect(mockSendBundleConfigMissingAlert).toHaveBeenCalledWith(
+      expect(mockNotifyAfterResponse).toHaveBeenCalledWith(
         expect.objectContaining({
+          type: "bundle-product-missing",
           customerEmail: "jane@example.com",
           configReference: "1",
           granted: { credits: 6, expiryDate: "10 Apr 2026" },
         }),
+        // An alert about a condition the bundle row still carries.
+        { notRecorded: expect.any(String) },
       );
     });
 
@@ -738,14 +716,18 @@ describe("POST /api/stripe/webhook", () => {
       expect(await response.json()).toEqual({ received: true });
       expect(mockInsert).not.toHaveBeenCalled();
 
-      expect(mockSendBundleConfigMissingAlert).toHaveBeenCalledWith({
-        customerEmail: "jane@example.com",
-        sessionId: "cs_test_bundle_missing",
-        configReference: "999",
-        // Nobody got anything: someone has paid for nothing.
-        granted: null,
-      });
-      expect(mockSendBundleConfirmation).not.toHaveBeenCalled();
+      expect(mockNotifyAfterResponse).toHaveBeenCalledWith(
+        {
+          type: "bundle-product-missing",
+          customerEmail: "jane@example.com",
+          sessionId: "cs_test_bundle_missing",
+          configReference: "999",
+          // Nobody got anything: someone has paid for nothing.
+          granted: null,
+        },
+        { notRecorded: expect.any(String) },
+      );
+      expect(raised("bundle-purchased")).toEqual([]);
       expect(consoleError).toHaveBeenCalledWith(
         expect.stringContaining("cs_test_bundle_missing"),
       );
@@ -763,8 +745,13 @@ describe("POST /api/stripe/webhook", () => {
       // `Number.parseInt("")` is NaN, which is not an id to go looking for.
       expect(response.status).toBe(200);
       expect(mockBundleConfigSelect).not.toHaveBeenCalled();
-      expect(mockSendBundleConfigMissingAlert).toHaveBeenCalledWith(
-        expect.objectContaining({ configReference: "none", granted: null }),
+      expect(mockNotifyAfterResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "bundle-product-missing",
+          configReference: "none",
+          granted: null,
+        }),
+        expect.anything(),
       );
       consoleError.mockRestore();
     });
@@ -830,10 +817,6 @@ describe("POST /api/stripe/webhook — an address that came back capitalised", (
     mockBundleConfigFrom.mockReturnValue({ where: mockBundleConfigWhere });
     mockBundleConfigSelect.mockReset();
     mockBundleConfigSelect.mockReturnValue({ from: mockBundleConfigFrom });
-    mockSendBookingConfirmation.mockResolvedValue({ success: true });
-    mockSendBundleConfirmation.mockResolvedValue({ success: true });
-    mockSendBookingNotification.mockResolvedValue({ success: true });
-    mockSendBundleConfigMissingAlert.mockResolvedValue({ success: true });
   });
 
   it("books the customer under the normalised address", async () => {
@@ -888,8 +871,12 @@ describe("POST /api/stripe/webhook — an address that came back capitalised", (
     expect(mockInsertValues).toHaveBeenCalledWith(
       expect.objectContaining({ customerEmail: "jane@example.com" }),
     );
-    expect(mockSendBookingConfirmation).toHaveBeenCalledWith(
-      expect.objectContaining({ customerEmail: "jane@example.com" }),
+    expect(mockNotifyAfterResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "booking-confirmed",
+        customerEmail: "jane@example.com",
+      }),
+      expect.anything(),
     );
   });
 
@@ -929,8 +916,12 @@ describe("POST /api/stripe/webhook — an address that came back capitalised", (
     expect(mockInsertValues).toHaveBeenCalledWith(
       expect.objectContaining({ customerEmail: "jane@example.com" }),
     );
-    expect(mockSendBundleConfirmation).toHaveBeenCalledWith(
-      expect.objectContaining({ customerEmail: "jane@example.com" }),
+    expect(mockNotifyAfterResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "bundle-purchased",
+        customerEmail: "jane@example.com",
+      }),
+      expect.anything(),
     );
   });
 });

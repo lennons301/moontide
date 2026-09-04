@@ -16,8 +16,7 @@ const {
   mockDeleteReturning,
   mockDeleteWhere,
   mockReleaseSeat,
-  mockSendOfferExpired,
-  mockSendOfferDigest,
+  mockNotify,
 } = vi.hoisted(() => {
   // Each `select()` takes the next queued result, and every step of its chain
   // resolves to it — so a query that stops at a join reads the same way as one
@@ -65,8 +64,7 @@ const {
   );
 
   const mockReleaseSeat = vi.fn().mockResolvedValue(undefined);
-  const mockSendOfferExpired = vi.fn().mockResolvedValue({ success: true });
-  const mockSendOfferDigest = vi.fn().mockResolvedValue({ success: true });
+  const mockNotify = vi.fn().mockResolvedValue({ ok: true });
 
   return {
     queueSelects,
@@ -77,8 +75,7 @@ const {
     mockDeleteReturning,
     mockDeleteWhere,
     mockReleaseSeat,
-    mockSendOfferExpired,
-    mockSendOfferDigest,
+    mockNotify,
   };
 });
 
@@ -148,16 +145,12 @@ vi.mock("@/lib/schedule-occupancy", () => ({
   releaseSeats: vi.fn(),
 }));
 
-vi.mock("@/lib/email", () => ({
-  sendBookingConfirmation: vi.fn().mockResolvedValue({ success: true }),
-  sendBundleConfirmation: vi.fn().mockResolvedValue({ success: true }),
-  sendBookingNotification: vi.fn().mockResolvedValue({ success: true }),
-  sendRescheduleNotification: vi.fn().mockResolvedValue({ success: true }),
-  sendWaitlistConfirmation: vi.fn().mockResolvedValue({ success: true }),
-  sendWaitlistNotification: vi.fn().mockResolvedValue({ success: true }),
-  sendOfferExpired: mockSendOfferExpired,
-  sendOfferDigest: mockSendOfferDigest,
-}));
+vi.mock("@/lib/notifications", () => ({ notify: mockNotify }));
+
+/** The events of one kind this run raised, most recent last. */
+function raised(type: string) {
+  return mockNotify.mock.calls.filter(([event]) => event.type === type);
+}
 
 import { and, gte, ne } from "drizzle-orm";
 import { POST } from "@/app/api/cron/retry-emails/route";
@@ -216,8 +209,7 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
     vi.clearAllMocks();
     process.env.CRON_SECRET = "test-secret";
     mockDeleteReturning.mockResolvedValue([{ id: 900 }]);
-    mockSendOfferExpired.mockResolvedValue({ success: true });
-    mockSendOfferDigest.mockResolvedValue({ success: true });
+    mockNotify.mockResolvedValue({ ok: true });
     queueRun({});
   });
 
@@ -233,14 +225,21 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
 
       expect(mockReleaseSeat).toHaveBeenCalledOnce();
       expect(mockReleaseSeat.mock.calls[0][1]).toBe(42);
-      expect(mockSendOfferExpired).toHaveBeenCalledWith({
-        customerName: "Jane Doe",
-        customerEmail: "jane@example.com",
-        classTitle: "Prenatal Yoga",
-        date: EXPIRED_OFFER.date,
-        startTime: "10:00:00",
-        endTime: "11:00:00",
-      });
+      expect(raised("offer-expired")).toEqual([
+        [
+          {
+            type: "offer-expired",
+            customerName: "Jane Doe",
+            customerEmail: "jane@example.com",
+            classTitle: "Prenatal Yoga",
+            date: EXPIRED_OFFER.date,
+            startTime: "10:00:00",
+            endTime: "11:00:00",
+          },
+          // The offer is gone, so nothing is left for a retry to be true to.
+          { notRecorded: expect.any(String) },
+        ],
+      ]);
     });
 
     it("leaves the person on the waiting list, minus the offer", async () => {
@@ -270,13 +269,16 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
         expiredOffers: { found: 1, released: 0, emailed: 0, failed: 0 },
       });
       expect(mockReleaseSeat).not.toHaveBeenCalled();
-      expect(mockSendOfferExpired).not.toHaveBeenCalled();
+      expect(raised("offer-expired")).toEqual([]);
     });
 
     it("carries on when one offer fails", async () => {
-      mockSendOfferExpired
-        .mockRejectedValueOnce(new Error("Resend is down"))
-        .mockResolvedValue({ success: true });
+      mockNotify
+        .mockResolvedValueOnce({
+          ok: false,
+          error: new Error("Resend is down"),
+        })
+        .mockResolvedValue({ ok: true });
       queueRun({
         expiredOffers: [
           EXPIRED_OFFER,
@@ -298,8 +300,7 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
 
       expect(response.status).toBe(401);
       expect(mockReleaseSeat).not.toHaveBeenCalled();
-      expect(mockSendOfferExpired).not.toHaveBeenCalled();
-      expect(mockSendOfferDigest).not.toHaveBeenCalled();
+      expect(mockNotify).not.toHaveBeenCalled();
     });
   });
 
@@ -307,7 +308,7 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
     it("is not sent when nothing needs her", async () => {
       const response = await POST(cronRequest());
 
-      expect(mockSendOfferDigest).not.toHaveBeenCalled();
+      expect(raised("daily-digest")).toEqual([]);
       expect(await response.json()).toMatchObject({
         digest: { sent: false, items: 0 },
       });
@@ -344,19 +345,23 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
       expect(await response.json()).toMatchObject({
         digest: { sent: true, items: 1 },
       });
-      expect(mockSendOfferDigest).toHaveBeenCalledWith(
+      expect(mockNotify).toHaveBeenCalledWith(
         expect.objectContaining({
-          seatsToOffer: [
-            expect.objectContaining({
-              scheduleId: 42,
-              classTitle: "Prenatal Yoga",
-              freeSeats: 1,
-              waitingCount: 1,
-            }),
-          ],
-          offersOutstanding: [],
-          owedAClass: [],
+          type: "daily-digest",
+          digest: expect.objectContaining({
+            seatsToOffer: [
+              expect.objectContaining({
+                scheduleId: 42,
+                classTitle: "Prenatal Yoga",
+                freeSeats: 1,
+                waitingCount: 1,
+              }),
+            ],
+            offersOutstanding: [],
+            owedAClass: [],
+          }),
         }),
+        expect.anything(),
       );
     });
 
@@ -389,17 +394,21 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
 
       await POST(cronRequest());
 
-      expect(mockSendOfferDigest).toHaveBeenCalledWith(
+      expect(mockNotify).toHaveBeenCalledWith(
         expect.objectContaining({
-          seatsToOffer: [],
-          offersOutstanding: [
-            expect.objectContaining({
-              customerName: "Jane Doe",
-              customerEmail: "jane@example.com",
-              expiresAt,
-            }),
-          ],
+          type: "daily-digest",
+          digest: expect.objectContaining({
+            seatsToOffer: [],
+            offersOutstanding: [
+              expect.objectContaining({
+                customerName: "Jane Doe",
+                customerEmail: "jane@example.com",
+                expiresAt,
+              }),
+            ],
+          }),
         }),
+        expect.anything(),
       );
     });
 
@@ -445,16 +454,20 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
 
       await POST(cronRequest());
 
-      expect(mockSendOfferDigest).toHaveBeenCalledWith(
+      expect(mockNotify).toHaveBeenCalledWith(
         expect.objectContaining({
-          seatsToOffer: [],
-          offersOutstanding: [
-            expect.objectContaining({
-              customerName: "Jane Doe",
-              expiresAt,
-            }),
-          ],
+          type: "daily-digest",
+          digest: expect.objectContaining({
+            seatsToOffer: [],
+            offersOutstanding: [
+              expect.objectContaining({
+                customerName: "Jane Doe",
+                expiresAt,
+              }),
+            ],
+          }),
         }),
+        expect.anything(),
       );
     });
 
@@ -492,17 +505,24 @@ describe("daily offer work in POST /api/cron/retry-emails", () => {
 
       await POST(cronRequest());
 
-      expect(mockSendOfferDigest).toHaveBeenCalledWith(
+      expect(mockNotify).toHaveBeenCalledWith(
         expect.objectContaining({
-          owedAClass: [
-            expect.objectContaining({ bookingId: 7, daysSince: 30 }),
-          ],
+          type: "daily-digest",
+          digest: expect.objectContaining({
+            owedAClass: [
+              expect.objectContaining({ bookingId: 7, daysSince: 30 }),
+            ],
+          }),
         }),
+        expect.anything(),
       );
     });
 
     it("does not take the handler down when the send fails", async () => {
-      mockSendOfferDigest.mockRejectedValue(new Error("Resend is down"));
+      mockNotify.mockResolvedValue({
+        ok: false,
+        error: new Error("Resend is down"),
+      });
       queueRun({
         released: [
           {

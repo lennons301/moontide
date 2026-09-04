@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bundleConfig, bundles } from "@/lib/db/schema";
+import { formatBundleExpiry } from "@/lib/notifications/format";
 
 /**
  * The one join from a bundle to the product it was sold as, and the one way to
@@ -67,10 +68,6 @@ export function describeBundleProduct(row: BundleWithConfig): BundleProduct {
     customerEmail: row.bundles.customerEmail,
     bundleName: row.bundle_config.name,
     credits: row.bundle_config.credits,
-    expiryDate: new Date(row.bundles.expiresAt).toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    }),
+    expiryDate: formatBundleExpiry(new Date(row.bundles.expiresAt)),
   };
 }

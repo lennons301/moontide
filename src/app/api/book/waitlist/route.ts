@@ -1,13 +1,9 @@
 import { eq, sql } from "drizzle-orm";
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { normaliseEmail } from "@/lib/customers/email";
 import { db } from "@/lib/db";
 import { classes, schedules, waitlistEntries } from "@/lib/db/schema";
-import {
-  sendWaitlistConfirmation,
-  sendWaitlistNotification,
-} from "@/lib/email";
-import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
+import { notifyAfterResponse } from "@/lib/notifications";
 import { canTakeBooking } from "@/lib/schedules/availability";
 
 export async function POST(request: Request) {
@@ -80,46 +76,31 @@ export async function POST(request: Request) {
   }
 
   if (isNewSignup) {
-    after(async () => {
-      try {
-        const countRows = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(waitlistEntries)
-          .where(eq(waitlistEntries.scheduleId, scheduleId));
-        const waitlistCount = countRows[0]?.count ?? 0;
+    const countRows = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(waitlistEntries)
+      .where(eq(waitlistEntries.scheduleId, scheduleId));
 
-        await sendWaitlistConfirmation({
-          customerName: normalisedName,
-          customerEmail: normalisedEmail,
-          classTitle: classInfo.title,
-          date: schedule.date,
-          startTime: schedule.startTime,
-          endTime: schedule.endTime,
-          location: schedule.location,
-        });
-        await sendWaitlistNotification({
-          customerName: normalisedName,
-          customerEmail: normalisedEmail,
-          classTitle: classInfo.title,
-          date: schedule.date,
-          startTime: schedule.startTime,
-          endTime: schedule.endTime,
-          waitlistCount,
-        });
-        if (insertedId !== null) {
-          await markEmailSent(waitlistEntries, insertedId);
-        }
-      } catch (e) {
-        console.error("Waitlist email send failed", e);
-        // The entry keeps its unsent flag and now carries the reason. That flag
-        // used to be written once and read by nothing, so a waiting-list
-        // confirmation that failed was lost with nobody able to see it; the
-        // daily sweep retries these now.
-        if (insertedId !== null) {
-          await markEmailFailed(waitlistEntries, insertedId, e);
-        }
-      }
-    });
+    // The entry keeps its unsent flag if this does not get through, and now
+    // carries the reason. That flag used to be written once and read by
+    // nothing, so a waiting-list confirmation that failed was lost with nobody
+    // able to see it; the daily sweep retries these.
+    notifyAfterResponse(
+      {
+        type: "waitlist-joined",
+        customerName: normalisedName,
+        customerEmail: normalisedEmail,
+        classTitle: classInfo.title,
+        date: schedule.date,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        location: schedule.location,
+        waitlistCount: countRows[0]?.count ?? 0,
+      },
+      insertedId === null
+        ? { notRecorded: "the insert returned no id to record against" }
+        : { on: waitlistEntries, row: insertedId },
+    );
   }
 
   return NextResponse.json({ ok: true });

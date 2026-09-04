@@ -27,16 +27,6 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-// Resend wants an API key the moment @/lib/email is imported, and no email is
-// sent on any path this file exercises.
-vi.mock("@/lib/email", () => ({
-  sendBookingConfirmation: vi.fn(),
-  sendBookingNotification: vi.fn(),
-  sendBundleConfirmation: vi.fn(),
-  sendRescheduleNotification: vi.fn(),
-  sendSeatOffer: vi.fn(),
-}));
-
 import {
   signedInAsAdmin,
   signedInAsNonAdmin,

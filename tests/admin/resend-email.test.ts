@@ -1,57 +1,45 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock(
   "@/lib/auth",
   async () => (await import("../support/admin-session")).authModuleMock,
 );
 
-const {
-  selectRows,
-  mockSelectFrom,
-  mockUpdate,
-  mockUpdateSet,
-  mockSendBookingConfirmation,
-  mockSendBookingNotification,
-  mockSendBundleConfirmation,
-  mockSendRescheduleNotification,
-  mockEq,
-} = vi.hoisted(() => {
-  const selectRows: unknown[] = [];
-  const selectWhere = vi.fn(async () => selectRows);
-  const mockInnerJoin = vi.fn();
-  const mockLeftJoin = vi.fn();
-  const mockSelectFrom = vi.fn().mockReturnValue({
-    innerJoin: mockInnerJoin,
-    // The bundle read joins its config straight off `from`.
-    leftJoin: mockLeftJoin,
-  });
-  mockInnerJoin.mockReturnValue({
-    innerJoin: mockInnerJoin,
-    leftJoin: mockLeftJoin,
-    where: selectWhere,
-  });
-  // Two left joins on the booking read: the bundle that funded it, and the
-  // class it was moved off.
-  mockLeftJoin.mockReturnValue({ leftJoin: mockLeftJoin, where: selectWhere });
+const { selectRows, mockSelectFrom, mockUpdate, mockUpdateSet, mockEq } =
+  vi.hoisted(() => {
+    const selectRows: unknown[] = [];
+    const selectWhere = vi.fn(async () => selectRows);
+    const mockInnerJoin = vi.fn();
+    const mockLeftJoin = vi.fn();
+    const mockSelectFrom = vi.fn().mockReturnValue({
+      innerJoin: mockInnerJoin,
+      // The bundle read joins its config straight off `from`.
+      leftJoin: mockLeftJoin,
+    });
+    mockInnerJoin.mockReturnValue({
+      innerJoin: mockInnerJoin,
+      leftJoin: mockLeftJoin,
+      where: selectWhere,
+    });
+    // Two left joins on the booking read: the bundle that funded it, and the
+    // class it was moved off.
+    mockLeftJoin.mockReturnValue({
+      leftJoin: mockLeftJoin,
+      where: selectWhere,
+    });
 
-  const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
-  const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
-  const mockUpdate = vi.fn().mockReturnValue({ set: mockUpdateSet });
+    const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
+    const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
+    const mockUpdate = vi.fn().mockReturnValue({ set: mockUpdateSet });
 
-  return {
-    selectRows,
-    mockSelectFrom,
-    mockUpdate,
-    mockUpdateSet,
-    mockSendBookingConfirmation: vi.fn().mockResolvedValue({ success: true }),
-    mockSendBookingNotification: vi.fn().mockResolvedValue({ success: true }),
-    mockSendBundleConfirmation: vi.fn().mockResolvedValue({ success: true }),
-    mockSendRescheduleNotification: vi
-      .fn()
-      .mockResolvedValue({ success: true }),
-    mockEq: vi.fn((...args: unknown[]) => args),
-  };
-});
+    return {
+      selectRows,
+      mockSelectFrom,
+      mockUpdate,
+      mockUpdateSet,
+      mockEq: vi.fn((...args: unknown[]) => args),
+    };
+  });
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -61,8 +49,16 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("@/lib/db/schema", () => ({
-  bookings: { id: "bookings.id", scheduleId: "bookings.schedule_id" },
-  bundles: { id: "bundles.id", bundleConfigId: "bundles.bundle_config_id" },
+  bookings: {
+    id: "bookings.id",
+    scheduleId: "bookings.schedule_id",
+    emailAttempts: "bookings.email_attempts",
+  },
+  bundles: {
+    id: "bundles.id",
+    bundleConfigId: "bundles.bundle_config_id",
+    emailAttempts: "bundles.email_attempts",
+  },
   bundleConfig: { id: "bundle_config.id", credits: "bundle_config.credits" },
   classes: { id: "classes.id" },
   schedules: { id: "schedules.id", classId: "schedules.class_id" },
@@ -77,19 +73,30 @@ vi.mock("drizzle-orm", () => ({
   sql: vi.fn((...args: unknown[]) => args),
 }));
 
-vi.mock("@/lib/email", () => ({
-  sendBookingConfirmation: mockSendBookingConfirmation,
-  sendBookingNotification: mockSendBookingNotification,
-  sendBundleConfirmation: mockSendBundleConfirmation,
-  sendRescheduleNotification: mockSendRescheduleNotification,
-}));
-
 import { POST } from "@/app/api/admin/resend-email/route";
+import type { InMemoryEmails } from "@/lib/notifications/in-memory-adapter";
 import {
   signedInAsAdmin,
   signedInAsNonAdmin,
   signedOut,
 } from "../support/admin-session";
+import {
+  givenEmailsCollected,
+  resetEmailAdapter,
+} from "../support/notifications";
+
+/**
+ * The route is exercised through the real notification module, against the
+ * in-memory transport: what Gabrielle presses resend for is an email arriving,
+ * and the delivery record it leaves behind is half the behaviour under test.
+ */
+let inbox: InMemoryEmails;
+
+beforeEach(() => {
+  inbox = givenEmailsCollected();
+});
+
+afterEach(resetEmailAdapter);
 
 function queue(...rows: unknown[]) {
   selectRows.length = 0;
@@ -174,7 +181,7 @@ describe("POST /api/admin/resend-email — validation", () => {
     const response = await POST(request({ type: "booking", id: 12 }));
 
     expect(response.status).toBe(401);
-    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+    expect(inbox.sent).toEqual([]);
   });
 
   it("returns 403 for a signed-in caller who is not the admin", async () => {
@@ -183,7 +190,7 @@ describe("POST /api/admin/resend-email — validation", () => {
     const response = await POST(request({ type: "booking", id: 12 }));
 
     expect(response.status).toBe(403);
-    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+    expect(inbox.sent).toEqual([]);
   });
 });
 
@@ -200,22 +207,14 @@ describe("POST /api/admin/resend-email — a booking", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true });
 
-    expect(mockSendBookingConfirmation).toHaveBeenCalledWith({
-      customerName: "Jane Doe",
-      customerEmail: "jane@example.com",
-      classTitle: "Prenatal Yoga",
-      date: "2026-06-09",
-      startTime: "10:00:00",
-      endTime: "11:00:00",
-      location: "Studio 1, Hove",
-      payment: { method: "card", priceInPence: 1500 },
-    });
-    expect(mockSendBookingNotification).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "individual",
-        classTitle: "Prenatal Yoga",
-      }),
-    );
+    const [customer, admin] = inbox.sent;
+    expect(customer.to).toBe("jane@example.com");
+    expect(customer.html).toContain("Your class is booked!");
+    expect(customer.html).toContain("Tuesday, 9 June 2026");
+    expect(customer.html).toContain("Studio 1, Hove");
+    expect(customer.html).toContain("£15.00");
+    expect(admin.subject).toBe("[Moontide] New booking: Prenatal Yoga");
+    expect(admin.text).toContain("Paid: £15.00");
     expect(mockUpdateSet).toHaveBeenCalledWith(
       expect.objectContaining({ emailSent: true, emailLastError: null }),
     );
@@ -227,21 +226,11 @@ describe("POST /api/admin/resend-email — a booking", () => {
     const response = await POST(request({ type: "booking", id: 12 }));
 
     expect(response.status).toBe(200);
-    expect(mockSendBookingConfirmation).toHaveBeenCalledWith({
-      customerName: "Jane Doe",
-      customerEmail: "jane@example.com",
-      classTitle: "Prenatal Yoga",
-      date: "2026-06-09",
-      startTime: "10:00:00",
-      endTime: "11:00:00",
-      location: "Studio 1, Hove",
-      payment: { method: "credit", creditsRemaining: 2 },
-    });
-    expect(mockSendBookingNotification).toHaveBeenCalledWith(
-      expect.objectContaining({
-        payment: { method: "credit", creditsRemaining: 2 },
-      }),
-    );
+    const [customer, admin] = inbox.sent;
+    expect(customer.html).toContain("1 class credit from your bundle");
+    expect(customer.html).toContain("2 classes");
+    expect(customer.html).not.toContain("£");
+    expect(admin.text).toContain("Paid: bundle credit (2 classes left)");
   });
 
   it("resends the moved-date note to a booking that owes one", async () => {
@@ -260,19 +249,17 @@ describe("POST /api/admin/resend-email — a booking", () => {
     const response = await POST(request({ type: "booking", id: 12 }));
 
     expect(response.status).toBe(200);
-    expect(mockSendRescheduleNotification).toHaveBeenCalledWith({
-      customerName: "Jane Doe",
-      customerEmail: "jane@example.com",
-      classTitle: "Prenatal Yoga",
-      oldDate: "2026-05-02",
-      oldStartTime: "09:00:00",
-      oldEndTime: "10:00:00",
-      newDate: "2026-06-09",
-      newStartTime: "10:00:00",
-      newEndTime: "11:00:00",
-      newLocation: "Studio 1, Hove",
-    });
-    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+    // The moved-date note, and only that: no plain confirmation beside it.
+    expect(inbox.sent).toHaveLength(1);
+    expect(inbox.sent[0].subject).toBe(
+      "Your booking has been moved — Prenatal Yoga",
+    );
+    expect(inbox.sent[0].html).toContain(
+      "Saturday, 2 May 2026, 09:00:00–10:00:00",
+    );
+    expect(inbox.sent[0].html).toContain(
+      "Tuesday, 9 June 2026, 10:00:00–11:00:00",
+    );
   });
 
   it("refuses a notification kind it does not know how to send", async () => {
@@ -288,7 +275,7 @@ describe("POST /api/admin/resend-email — a booking", () => {
       error:
         'This booking is owed a "postcard" email, which is not one this can send',
     });
-    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+    expect(inbox.sent).toEqual([]);
     expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 
@@ -299,7 +286,7 @@ describe("POST /api/admin/resend-email — a booking", () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "Booking not found" });
-    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+    expect(inbox.sent).toEqual([]);
   });
 
   it("resends a booking whose flag already says it was sent", async () => {
@@ -313,13 +300,11 @@ describe("POST /api/admin/resend-email — a booking", () => {
     const response = await POST(request({ type: "booking", id: 12 }));
 
     expect(response.status).toBe(200);
-    expect(mockSendBookingConfirmation).toHaveBeenCalledOnce();
+    expect(inbox.to("jane@example.com")).toHaveLength(1);
   });
 
   it("records the failure and says so when the send throws", async () => {
-    mockSendBookingConfirmation.mockRejectedValueOnce(
-      new Error("Resend is down"),
-    );
+    inbox.failWhen((message) => message.to === "jane@example.com");
 
     const response = await POST(request({ type: "booking", id: 12 }));
 
@@ -330,7 +315,9 @@ describe("POST /api/admin/resend-email — a booking", () => {
     });
     // The attempt is counted and the reason kept, and the row is not marked sent.
     expect(mockUpdateSet).toHaveBeenCalledWith(
-      expect.objectContaining({ emailLastError: "Resend is down" }),
+      expect.objectContaining({
+        emailLastError: "Refused to send to jane@example.com",
+      }),
     );
     expect(mockUpdateSet).not.toHaveBeenCalledWith(
       expect.objectContaining({ emailSent: true }),
@@ -349,7 +336,7 @@ describe("POST /api/admin/resend-email — a booking", () => {
     expect(await response.json()).toEqual({
       error: "This seat is being held, not booked",
     });
-    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+    expect(inbox.sent).toEqual([]);
     expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 });
@@ -371,15 +358,12 @@ describe("POST /api/admin/resend-email — a bundle", () => {
       "bundles.bundle_config_id",
       "bundle_config.id",
     );
-    expect(mockSendBundleConfirmation).toHaveBeenCalledWith({
-      customerEmail: "jane@example.com",
-      bundleName: "6-Class Bundle",
-      credits: 6,
-      expiryDate: "1 Dec 2026",
-    });
-    expect(mockSendBookingNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "bundle", bundleName: "6-Class Bundle" }),
-    );
+    const [customer, admin] = inbox.sent;
+    expect(customer.to).toBe("jane@example.com");
+    expect(customer.subject).toBe("Your 6-Class Bundle is ready — Moontide");
+    expect(customer.html).toContain("1 Dec 2026");
+    expect(admin.subject).toBe("[Moontide] New bundle purchase");
+    expect(admin.text).toContain("Bundle: 6-Class Bundle");
     expect(mockUpdateSet).toHaveBeenCalledWith(
       expect.objectContaining({ emailSent: true, emailLastError: null }),
     );
@@ -398,7 +382,7 @@ describe("POST /api/admin/resend-email — a bundle", () => {
       error:
         "This bundle's product has been deleted, so there is nothing to name in the confirmation",
     });
-    expect(mockSendBundleConfirmation).not.toHaveBeenCalled();
+    expect(inbox.sent).toEqual([]);
   });
 
   it("returns 404 when the bundle is gone", async () => {
@@ -408,6 +392,6 @@ describe("POST /api/admin/resend-email — a bundle", () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "Bundle not found" });
-    expect(mockSendBundleConfirmation).not.toHaveBeenCalled();
+    expect(inbox.sent).toEqual([]);
   });
 });

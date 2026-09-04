@@ -1,5 +1,5 @@
 import { and, eq, ne } from "drizzle-orm";
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import {
   bundleConfigIdFromSession,
   bundleExpiry,
@@ -16,13 +16,8 @@ import {
   schedules,
   waitlistEntries,
 } from "@/lib/db/schema";
-import {
-  sendBookingConfirmation,
-  sendBookingNotification,
-  sendBundleConfigMissingAlert,
-  sendBundleConfirmation,
-} from "@/lib/email";
-import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
+import { notifyAfterResponse } from "@/lib/notifications";
+import { formatBundleExpiry } from "@/lib/notifications/format";
 import { forceClaimSeat } from "@/lib/schedule-occupancy";
 import { getStripe } from "@/lib/stripe";
 import { findOfferByToken } from "@/lib/waitlist/held-seats";
@@ -141,62 +136,37 @@ export async function POST(request: Request) {
         });
       }
 
-      after(async () => {
-        try {
-          const result = await db
-            .select()
-            .from(schedules)
-            .innerJoin(classes, eq(schedules.classId, classes.id))
-            .where(eq(schedules.id, scheduleId));
+      // The class the confirmation describes. Read here rather than inside the
+      // notification because a row that has gone is not a send that failed:
+      // there is nothing to confirm and nothing to record against.
+      const result = await db
+        .select()
+        .from(schedules)
+        .innerJoin(classes, eq(schedules.classId, classes.id))
+        .where(eq(schedules.id, scheduleId));
 
-          if (result.length > 0) {
-            const schedule = result[0].schedules;
-            const classInfo = result[0].classes;
+      if (result.length > 0) {
+        const schedule = result[0].schedules;
+        const classInfo = result[0].classes;
+
+        notifyAfterResponse(
+          {
+            type: "booking-confirmed",
+            customerName: metadata.customerName,
+            customerEmail,
+            classTitle: classInfo.title,
+            date: schedule.date,
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            location: schedule.location,
             // This path is only ever reached by a Stripe payment.
-            const payment = {
-              method: "card",
-              priceInPence: classInfo.priceInPence,
-            } as const;
-
-            await sendBookingConfirmation({
-              customerName: metadata.customerName,
-              customerEmail,
-              classTitle: classInfo.title,
-              date: schedule.date,
-              startTime: schedule.startTime,
-              endTime: schedule.endTime,
-              location: schedule.location,
-              payment,
-            });
-
-            await sendBookingNotification({
-              type: "individual",
-              customerName: metadata.customerName,
-              customerEmail,
-              classTitle: classInfo.title,
-              date: schedule.date,
-              startTime: schedule.startTime,
-              endTime: schedule.endTime,
-              location: schedule.location,
-              payment,
-            });
-
-            await markEmailSent(
-              bookings,
-              eq(bookings.stripePaymentId, session.id),
-            );
-          }
-        } catch (error) {
-          console.error("Failed to send booking confirmation email:", error);
-          // Written down where the sweep will find it: the row keeps its unsent
-          // flag, and now carries why the first attempt failed.
-          await markEmailFailed(
-            bookings,
-            eq(bookings.stripePaymentId, session.id),
-            error,
-          );
-        }
-      });
+            payment: { method: "card", priceInPence: classInfo.priceInPence },
+          },
+          // The row's id is not known here — the insert was guarded and may have
+          // conflicted — but the session it was written with is.
+          { on: bookings, row: eq(bookings.stripePaymentId, session.id) },
+        );
+      }
     } else if (metadata?.type === "bundle") {
       const configId = bundleConfigIdFromSession(metadata);
       const configs = configId
@@ -219,22 +189,23 @@ export async function POST(request: Request) {
       const raiseMissingConfig = (
         granted: { credits: number; expiryDate: string } | null,
       ) => {
-        after(async () => {
-          try {
-            await sendBundleConfigMissingAlert({
-              customerEmail,
-              sessionId: session.id,
-              configReference: metadata.bundleConfigId || "none",
-              granted,
-            });
-          } catch (error) {
-            // Deliberately not retried, and so carries no delivery state: this
-            // is an alert about a condition, not a record of anything, and the
-            // condition itself is on the bundle row — `bundleConfigId` null,
-            // which the bundle sweep reports every run for as long as it holds.
-            console.error("Failed to send bundle config alert:", error);
-          }
-        });
+        notifyAfterResponse(
+          {
+            type: "bundle-product-missing",
+            customerEmail,
+            sessionId: session.id,
+            configReference: metadata.bundleConfigId || "none",
+            granted,
+          },
+          {
+            // Deliberately not retried: this is an alert about a condition, not
+            // a record of anything, and the condition itself is on the bundle
+            // row — `bundleConfigId` null, which the bundle sweep reports every
+            // run for as long as it holds.
+            notRecorded:
+              "an alert about a condition the bundle row still carries",
+          },
+        );
       };
 
       // Nothing left to grant from. The condition is permanent — the row is
@@ -277,11 +248,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ received: true });
       }
 
-      const expiryDateFormatted = expiresAt.toLocaleDateString("en-GB", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
+      const expiryDateFormatted = formatBundleExpiry(expiresAt);
 
       // Granted in full from what she was sold, but the product it points at
       // has gone: worth a word, because nothing else records that.
@@ -289,33 +256,16 @@ export async function POST(request: Request) {
         raiseMissingConfig({ credits, expiryDate: expiryDateFormatted });
       }
 
-      after(async () => {
-        try {
-          await sendBundleConfirmation({
-            customerEmail,
-            bundleName: name,
-            credits,
-            expiryDate: expiryDateFormatted,
-          });
-
-          await sendBookingNotification({
-            type: "bundle",
-            customerEmail,
-            bundleName: name,
-            credits,
-            expiryDate: expiryDateFormatted,
-          });
-
-          await markEmailSent(bundles, eq(bundles.stripePaymentId, session.id));
-        } catch (error) {
-          console.error("Failed to send bundle confirmation email:", error);
-          await markEmailFailed(
-            bundles,
-            eq(bundles.stripePaymentId, session.id),
-            error,
-          );
-        }
-      });
+      notifyAfterResponse(
+        {
+          type: "bundle-purchased",
+          customerEmail,
+          bundleName: name,
+          credits,
+          expiryDate: expiryDateFormatted,
+        },
+        { on: bundles, row: eq(bundles.stripePaymentId, session.id) },
+      );
     }
   }
 

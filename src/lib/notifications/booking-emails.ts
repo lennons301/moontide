@@ -1,12 +1,7 @@
-import type { BookingPayment } from "@/lib/email";
-import {
-  sendBookingConfirmation,
-  sendBookingNotification,
-  sendRescheduleNotification,
-} from "@/lib/email";
+import type { BookingPayment, NotificationEvent } from "./events";
 
 /**
- * What a booking's pending notification actually is, and how it is sent.
+ * What a booking's pending notification actually is.
  *
  * Both paths that send a booking email — the overnight sweep and the admin's
  * resend button — go through here. They are the two paths the ticket found had
@@ -15,6 +10,9 @@ import {
  * that was owed a moved-date note, and marked the row settled, so the note was
  * never sent by anything. One definition of which email a row owes is what
  * stops that happening a third time.
+ *
+ * This decides which event the row is owed and hands it back; `notify` is what
+ * delivers it.
  */
 
 /** The notifications a booking can owe its customer. */
@@ -68,7 +66,7 @@ export function bookingPayment(
 }
 
 /**
- * Send the notification this booking owes, customer copy and Gabrielle's.
+ * The notification this booking owes its customer.
  *
  * A reschedule note names the class the booking started on
  * (`originalScheduleId`), which after a chain of moves is where the customer
@@ -79,12 +77,13 @@ export function bookingPayment(
  * useful, and it means a retry stops failing nightly for ever on a class that
  * no longer exists.
  */
-export async function sendBookingEmail(
+export function bookingNotificationFor(
   row: BookingEmailRow,
   kind: BookingNotificationKind,
-): Promise<void> {
+): NotificationEvent {
   if (kind === "reschedule" && row.original_schedules) {
-    await sendRescheduleNotification({
+    return {
+      type: "booking-rescheduled",
       customerName: row.bookings.customerName,
       customerEmail: row.bookings.customerEmail,
       classTitle: row.classes.title,
@@ -95,11 +94,11 @@ export async function sendBookingEmail(
       newStartTime: row.schedules.startTime,
       newEndTime: row.schedules.endTime,
       newLocation: row.schedules.location,
-    });
-    return;
+    };
   }
 
-  const details = {
+  return {
+    type: "booking-confirmed",
     customerName: row.bookings.customerName,
     customerEmail: row.bookings.customerEmail,
     classTitle: row.classes.title,
@@ -109,7 +108,4 @@ export async function sendBookingEmail(
     location: row.schedules.location,
     payment: bookingPayment(row),
   };
-
-  await sendBookingConfirmation(details);
-  await sendBookingNotification({ type: "individual", ...details });
 }

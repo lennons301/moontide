@@ -1,11 +1,10 @@
 import { and, eq, ne } from "drizzle-orm";
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { findSpendableBundle, spendCredit } from "@/lib/bundles/credits";
 import { emailMatches, normaliseEmail } from "@/lib/customers/email";
 import { db } from "@/lib/db";
 import { bookings, classes, schedules, waitlistEntries } from "@/lib/db/schema";
-import { sendBookingConfirmation, sendBookingNotification } from "@/lib/email";
-import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
+import { notifyAfterResponse } from "@/lib/notifications";
 import { claimSeat } from "@/lib/schedule-occupancy";
 import { isOpenToBookings } from "@/lib/schedules/availability";
 import { findOfferByToken } from "@/lib/waitlist/held-seats";
@@ -216,54 +215,32 @@ export async function POST(request: Request) {
   }
 
   const bookingId = outcome.bookingId;
-  // A credit was spent, so that is what both emails say — the class list price
-  // is money this customer never paid. `creditsRemaining` is the balance the
-  // guarded debit actually wrote, not one computed here.
-  const payment = {
-    method: "credit",
-    creditsRemaining: outcome.creditsRemaining,
-  } as const;
 
   // Every redemption is confirmed here, whether it came from an offer or
   // straight off the booking page: an ordinary redemption used to send nothing
   // and leave the customer to hope the overnight retry swept her booking up.
-  after(async () => {
-    try {
-      await sendBookingConfirmation({
-        customerName,
-        customerEmail,
-        classTitle: schedule.classTitle,
-        date: schedule.date,
-        startTime: schedule.startTime,
-        endTime: schedule.endTime,
-        location: schedule.location,
-        payment,
-      });
-
-      await sendBookingNotification({
-        type: "individual",
-        customerName,
-        customerEmail,
-        classTitle: schedule.classTitle,
-        date: schedule.date,
-        startTime: schedule.startTime,
-        endTime: schedule.endTime,
-        location: schedule.location,
-        payment,
-      });
-
-      if (bookingId !== undefined) {
-        await markEmailSent(bookings, bookingId);
-      }
-    } catch (e) {
-      console.error("Redemption email send failed", e);
-      // The booking keeps its unsent flag, so the overnight sweep will try
-      // again; this records why the first attempt did not get through.
-      if (bookingId !== undefined) {
-        await markEmailFailed(bookings, bookingId, e);
-      }
-    }
-  });
+  notifyAfterResponse(
+    {
+      type: "booking-confirmed",
+      customerName,
+      customerEmail,
+      classTitle: schedule.classTitle,
+      date: schedule.date,
+      startTime: schedule.startTime,
+      endTime: schedule.endTime,
+      location: schedule.location,
+      // A credit was spent, so that is what both copies say — the class list
+      // price is money this customer never paid. `creditsRemaining` is the
+      // balance the guarded debit actually wrote, not one computed here.
+      payment: {
+        method: "credit",
+        creditsRemaining: outcome.creditsRemaining,
+      },
+    },
+    bookingId === undefined
+      ? { notRecorded: "the insert returned no id to record against" }
+      : { on: bookings, row: bookingId },
+  );
 
   return NextResponse.json({
     success: true,

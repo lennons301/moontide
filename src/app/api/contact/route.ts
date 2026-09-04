@@ -3,7 +3,7 @@ import { z } from "zod";
 import { normaliseEmail } from "@/lib/customers/email";
 import { db } from "@/lib/db";
 import { contactSubmissions } from "@/lib/db/schema";
-import { sendContactEmail } from "@/lib/email";
+import { notify } from "@/lib/notifications";
 
 /**
  * The one endpoint anyone on the internet can write rows with, and until now
@@ -56,15 +56,17 @@ export async function POST(request: Request) {
 
   await db.insert(contactSubmissions).values({ name, email, subject, message });
 
-  try {
-    await sendContactEmail({ name, email, subject, message });
-  } catch {
-    // Deliberately fire-and-forget, with no delivery state and no retry: the
-    // submission is already a row, and every one of them is listed at
-    // /admin/messages with its unread flag. The email is a nudge towards a
-    // message Gabrielle can read either way, so there is nothing here that a
-    // failed send loses.
-  }
+  await notify(
+    { type: "contact-message", name, email, subject, message },
+    {
+      // Deliberately fire-and-forget, with no delivery state and no retry: the
+      // submission is already a row, and every one of them is listed at
+      // /admin/messages with its unread flag. The email is a nudge towards a
+      // message Gabrielle can read either way, so there is nothing here that a
+      // failed send loses.
+      notRecorded: "the submission is a row in /admin/messages either way",
+    },
+  );
 
   return NextResponse.json({ success: true });
 }

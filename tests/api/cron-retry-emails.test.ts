@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The retry sweep as the cron handler runs it. What it is defending against:
@@ -8,60 +8,42 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * of the run with it.
  */
 
-const {
-  queueSelects,
-  mockSelect,
-  mockUpdateSet,
-  mockSendBookingConfirmation,
-  mockSendBundleConfirmation,
-  mockSendBookingNotification,
-  mockSendRescheduleNotification,
-  mockSendWaitlistConfirmation,
-  mockSendWaitlistNotification,
-  mockRunDailyOfferWork,
-} = vi.hoisted(() => {
-  // Each `select()` takes the next queued result, and every step of its chain
-  // resolves to it — so a query that stops at a join reads the same way as one
-  // that goes on to filter or group.
-  const results: unknown[][] = [];
-  const queueSelects = (...rows: unknown[][]) => {
-    results.length = 0;
-    results.push(...rows);
-  };
-  const chain = () => {
-    const rows = results.shift() ?? [];
-    const node: Promise<unknown[]> = Promise.resolve(rows);
-    return Object.assign(node, {
-      innerJoin: vi.fn(() => node),
-      leftJoin: vi.fn(() => node),
-      where: vi.fn(() => node),
-      groupBy: vi.fn(() => node),
-      orderBy: vi.fn(() => node),
-    });
-  };
-  const mockSelect = vi.fn(() => ({ from: vi.fn(() => chain()) }));
+const { queueSelects, mockSelect, mockUpdateSet, mockRunDailyOfferWork } =
+  vi.hoisted(() => {
+    // Each `select()` takes the next queued result, and every step of its chain
+    // resolves to it — so a query that stops at a join reads the same way as one
+    // that goes on to filter or group.
+    const results: unknown[][] = [];
+    const queueSelects = (...rows: unknown[][]) => {
+      results.length = 0;
+      results.push(...rows);
+    };
+    const chain = () => {
+      const rows = results.shift() ?? [];
+      const node: Promise<unknown[]> = Promise.resolve(rows);
+      return Object.assign(node, {
+        innerJoin: vi.fn(() => node),
+        leftJoin: vi.fn(() => node),
+        where: vi.fn(() => node),
+        groupBy: vi.fn(() => node),
+        orderBy: vi.fn(() => node),
+      });
+    };
+    const mockSelect = vi.fn(() => ({ from: vi.fn(() => chain()) }));
 
-  const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
-  const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
+    const mockUpdateWhere = vi.fn().mockResolvedValue(undefined);
+    const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
 
-  return {
-    queueSelects,
-    mockSelect,
-    mockUpdateSet,
-    mockSendBookingConfirmation: vi.fn().mockResolvedValue({ success: true }),
-    mockSendBundleConfirmation: vi.fn().mockResolvedValue({ success: true }),
-    mockSendBookingNotification: vi.fn().mockResolvedValue({ success: true }),
-    mockSendRescheduleNotification: vi
-      .fn()
-      .mockResolvedValue({ success: true }),
-    mockSendWaitlistConfirmation: vi.fn().mockResolvedValue({ success: true }),
-    mockSendWaitlistNotification: vi.fn().mockResolvedValue({ success: true }),
-    mockRunDailyOfferWork: vi.fn().mockResolvedValue({
-      expiredOffers: { found: 0, released: 0, emailed: 0, failed: 0 },
-      digest: { sent: false, items: 0 },
-    }),
-  };
-});
+    return {
+      queueSelects,
+      mockSelect,
+      mockUpdateSet,
+      mockRunDailyOfferWork: vi.fn().mockResolvedValue({
+        expiredOffers: { found: 0, released: 0, emailed: 0, failed: 0 },
+        digest: { sent: false, items: 0 },
+      }),
+    };
+  });
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -113,15 +95,6 @@ vi.mock("drizzle-orm/pg-core", () => ({
   alias: vi.fn((table: unknown) => table),
 }));
 
-vi.mock("@/lib/email", () => ({
-  sendBookingConfirmation: mockSendBookingConfirmation,
-  sendBundleConfirmation: mockSendBundleConfirmation,
-  sendBookingNotification: mockSendBookingNotification,
-  sendRescheduleNotification: mockSendRescheduleNotification,
-  sendWaitlistConfirmation: mockSendWaitlistConfirmation,
-  sendWaitlistNotification: mockSendWaitlistNotification,
-}));
-
 // The daily offer work is folded into this handler; what it does is covered in
 // tests/api/cron-offer-sweep.test.ts. Here it is only wiring.
 vi.mock("@/lib/waitlist/daily", () => ({
@@ -130,6 +103,18 @@ vi.mock("@/lib/waitlist/daily", () => ({
 
 import { gte, ne } from "drizzle-orm";
 import { POST } from "@/app/api/cron/retry-emails/route";
+import type { InMemoryEmails } from "@/lib/notifications/in-memory-adapter";
+import {
+  givenEmailsCollected,
+  resetEmailAdapter,
+} from "../support/notifications";
+
+/**
+ * The sweep sends through the real notification module, against the in-memory
+ * transport — what a retry is for is the email arriving, so that is what these
+ * read back.
+ */
+let inbox: InMemoryEmails;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -213,11 +198,14 @@ describe("POST /api/cron/retry-emails", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.CRON_SECRET = "test-secret";
+    process.env.CONTACT_EMAIL = "gabrielle@example.com";
+    process.env.BETTER_AUTH_URL = "https://gabriellemoontide.co.uk";
     queueSweep({});
-    mockSendBookingConfirmation.mockResolvedValue({ success: true });
-    mockSendBundleConfirmation.mockResolvedValue({ success: true });
+    inbox = givenEmailsCollected();
     mockUpdateSet.mockReturnValue({ where: vi.fn().mockResolvedValue([]) });
   });
+
+  afterEach(resetEmailAdapter);
 
   it("returns 401 without valid authorization", async () => {
     const request = new Request("http://localhost:3000/api/cron/retry-emails", {
@@ -265,22 +253,15 @@ describe("POST /api/cron/retry-emails", () => {
       const response = await POST(authorized());
       expect(response.status).toBe(200);
 
-      expect(mockSendBookingConfirmation).toHaveBeenCalledWith({
-        customerName: "Jane Doe",
-        customerEmail: "jane@example.com",
-        classTitle: "Prenatal Yoga",
-        date: isoDate(7),
-        startTime: "09:00",
-        endTime: "10:00",
-        location: "Studio 1",
-        payment: { method: "card", priceInPence: 1250 },
-      });
-      expect(mockSendBookingNotification).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "individual",
-          payment: { method: "card", priceInPence: 1250 },
-        }),
+      const [customer, admin] = inbox.sent;
+      expect(customer.to).toBe("jane@example.com");
+      expect(customer.subject).toBe(
+        "Your Prenatal Yoga class is booked — Moontide",
       );
+      expect(customer.html).toContain("Studio 1");
+      expect(customer.html).toContain("£12.50");
+      expect(admin.to).toBe("gabrielle@example.com");
+      expect(admin.text).toContain("Paid: £12.50");
       expect(mockUpdateSet).toHaveBeenCalledWith(
         expect.objectContaining({ emailSent: true, emailLastError: null }),
       );
@@ -304,7 +285,7 @@ describe("POST /api/cron/retry-emails", () => {
 
       const response = await POST(authorized());
 
-      expect(mockSendBookingConfirmation).toHaveBeenCalledOnce();
+      expect(inbox.to("jane@example.com")).toHaveLength(1);
       expect(await response.json()).toMatchObject({ succeeded: 1 });
       // And no filter on when the row was created — of any kind.
       expect(vi.mocked(gte)).not.toHaveBeenCalled();
@@ -324,15 +305,19 @@ describe("POST /api/cron/retry-emails", () => {
 
       const response = await POST(authorized());
 
-      expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+      expect(inbox.sent).toEqual([]);
       expect(mockUpdateSet).not.toHaveBeenCalled();
       expect(await response.json()).toMatchObject({ succeeded: 0, skipped: 1 });
     });
 
     it("carries on when one row's send fails, and records why", async () => {
-      mockSendBookingConfirmation
-        .mockRejectedValueOnce(new Error("Resend is down"))
-        .mockResolvedValue({ success: true });
+      // The first row the sweep reaches, and only that one.
+      let firstSend = true;
+      inbox.failWhen(() => {
+        const fail = firstSend;
+        firstSend = false;
+        return fail;
+      });
       queueSweep({
         bookings: [
           pendingBooking(),
@@ -345,9 +330,11 @@ describe("POST /api/cron/retry-emails", () => {
       const response = await POST(authorized());
 
       // The second row is still sent, and the first carries its reason.
-      expect(mockSendBookingConfirmation).toHaveBeenCalledTimes(2);
+      expect(inbox.to("jane@example.com")).toHaveLength(1);
       expect(mockUpdateSet).toHaveBeenCalledWith(
-        expect.objectContaining({ emailLastError: "Resend is down" }),
+        expect.objectContaining({
+          emailLastError: "Refused to send to jane@example.com",
+        }),
       );
       expect(await response.json()).toMatchObject({ succeeded: 1, failed: 1 });
     });
@@ -361,16 +348,11 @@ describe("POST /api/cron/retry-emails", () => {
 
       await POST(authorized());
 
-      expect(mockSendBookingConfirmation).toHaveBeenCalledWith(
-        expect.objectContaining({
-          payment: { method: "credit", creditsRemaining: 2 },
-        }),
-      );
-      expect(mockSendBookingNotification).toHaveBeenCalledWith(
-        expect.objectContaining({
-          payment: { method: "credit", creditsRemaining: 2 },
-        }),
-      );
+      const [customer, admin] = inbox.sent;
+      expect(customer.html).toContain("1 class credit from your bundle");
+      expect(customer.html).toContain("2 classes");
+      expect(customer.html).not.toContain("£");
+      expect(admin.text).toContain("Paid: bundle credit (2 classes left)");
     });
 
     it("leaves out the bookings the email would no longer be true of", async () => {
@@ -400,7 +382,7 @@ describe("POST /api/cron/retry-emails", () => {
 
     const response = await POST(authorized());
 
-    expect(mockSendBookingConfirmation).not.toHaveBeenCalled();
+    expect(inbox.sent).toEqual([]);
     expect(await response.json()).toMatchObject({
       skipped: 1,
       retries: { unrecognised: { skipped: 1 } },
@@ -413,16 +395,11 @@ describe("POST /api/cron/retry-emails", () => {
 
       const response = await POST(authorized());
 
-      expect(mockSendBundleConfirmation).toHaveBeenCalledWith(
-        expect.objectContaining({
-          customerEmail: "jane@example.com",
-          bundleName: "6× Prenatal",
-          credits: 6,
-        }),
-      );
-      expect(mockSendBookingNotification).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "bundle", bundleName: "6× Prenatal" }),
-      );
+      const [customer, admin] = inbox.sent;
+      expect(customer.to).toBe("jane@example.com");
+      expect(customer.subject).toBe("Your 6× Prenatal is ready — Moontide");
+      expect(customer.html).toContain("6 classes");
+      expect(admin.text).toContain("Bundle: 6× Prenatal");
       expect(await response.json()).toMatchObject({ succeeded: 1 });
     });
 
@@ -433,7 +410,7 @@ describe("POST /api/cron/retry-emails", () => {
 
       const response = await POST(authorized());
 
-      expect(mockSendBundleConfirmation).not.toHaveBeenCalled();
+      expect(inbox.sent).toEqual([]);
       expect(await response.json()).toMatchObject({ skipped: 1 });
     });
 
@@ -451,14 +428,17 @@ describe("POST /api/cron/retry-emails", () => {
 
       const response = await POST(authorized());
 
-      expect(mockSendBundleConfirmation).not.toHaveBeenCalled();
+      expect(inbox.sent).toEqual([]);
       expect(await response.json()).toMatchObject({ skipped: 1 });
     });
 
     it("carries on when one bundle's send fails", async () => {
-      mockSendBundleConfirmation.mockRejectedValueOnce(
-        new Error("Resend is down"),
-      );
+      let firstSend = true;
+      inbox.failWhen(() => {
+        const fail = firstSend;
+        firstSend = false;
+        return fail;
+      });
       queueSweep({
         bundles: [
           pendingBundle(),
@@ -468,9 +448,11 @@ describe("POST /api/cron/retry-emails", () => {
 
       const response = await POST(authorized());
 
-      expect(mockSendBundleConfirmation).toHaveBeenCalledTimes(2);
+      expect(inbox.to("jane@example.com")).toHaveLength(1);
       expect(mockUpdateSet).toHaveBeenCalledWith(
-        expect.objectContaining({ emailLastError: "Resend is down" }),
+        expect.objectContaining({
+          emailLastError: "Refused to send to jane@example.com",
+        }),
       );
       expect(await response.json()).toMatchObject({ succeeded: 1, failed: 1 });
     });
@@ -506,18 +488,14 @@ describe("POST /api/cron/retry-emails", () => {
 
       const response = await POST(authorized());
 
-      expect(mockSendRescheduleNotification).toHaveBeenCalledWith({
-        customerName: "Jane Doe",
-        customerEmail: "jane@example.com",
-        classTitle: "Prenatal Yoga",
-        oldDate: isoDate(2),
-        oldStartTime: "09:00",
-        oldEndTime: "10:00",
-        newDate: isoDate(9),
-        newStartTime: "18:00",
-        newEndTime: "19:00",
-        newLocation: "Studio 2",
-      });
+      // The note, and only the note: no confirmation, and nothing to Gabrielle.
+      expect(inbox.sent).toHaveLength(1);
+      expect(inbox.sent[0].to).toBe("jane@example.com");
+      expect(inbox.sent[0].subject).toBe(
+        "Your booking has been moved — Prenatal Yoga",
+      );
+      expect(inbox.sent[0].html).toContain("18:00–19:00");
+      expect(inbox.sent[0].html).toContain("09:00–10:00");
       expect(await response.json()).toMatchObject({ succeeded: 1 });
     });
 
@@ -530,13 +508,10 @@ describe("POST /api/cron/retry-emails", () => {
 
       const response = await POST(authorized());
 
-      expect(mockSendRescheduleNotification).not.toHaveBeenCalled();
-      expect(mockSendBookingConfirmation).toHaveBeenCalledWith(
-        expect.objectContaining({
-          date: isoDate(9),
-          classTitle: "Prenatal Yoga",
-        }),
+      expect(inbox.sent[0].subject).toBe(
+        "Your Prenatal Yoga class is booked — Moontide",
       );
+      expect(inbox.sent[0].html).not.toContain("has been moved");
       expect(await response.json()).toMatchObject({ succeeded: 1 });
     });
   });
@@ -568,17 +543,13 @@ describe("POST /api/cron/retry-emails", () => {
 
       const response = await POST(authorized());
 
-      expect(mockSendWaitlistConfirmation).toHaveBeenCalledWith({
-        customerName: "Ada Fields",
-        customerEmail: "ada@example.com",
-        classTitle: "Prenatal Yoga",
-        date: isoDate(4),
-        startTime: "09:00",
-        endTime: "10:00",
-        location: "Studio 1",
-      });
-      expect(mockSendWaitlistNotification).toHaveBeenCalledWith(
-        expect.objectContaining({ waitlistCount: 3 }),
+      const [customer, admin] = inbox.sent;
+      expect(customer.to).toBe("ada@example.com");
+      expect(customer.subject).toBe(
+        "You're on the waiting list — Prenatal Yoga",
+      );
+      expect(admin.text).toContain(
+        "There are now 3 people on the waiting list",
       );
       expect(await response.json()).toMatchObject({ succeeded: 1 });
     });
@@ -596,7 +567,7 @@ describe("POST /api/cron/retry-emails", () => {
 
       const response = await POST(authorized());
 
-      expect(mockSendWaitlistConfirmation).not.toHaveBeenCalled();
+      expect(inbox.sent).toEqual([]);
       expect(await response.json()).toMatchObject({ skipped: 1 });
     });
   });

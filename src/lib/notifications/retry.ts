@@ -12,17 +12,13 @@ import {
   schedules,
   waitlistEntries,
 } from "@/lib/db/schema";
+import { notify } from "@/lib/notifications";
 import {
-  sendBookingNotification,
-  sendBundleConfirmation,
-  sendWaitlistConfirmation,
-  sendWaitlistNotification,
-} from "@/lib/email";
-import {
+  bookingNotificationFor,
   recognisedKind,
-  sendBookingEmail,
 } from "@/lib/notifications/booking-emails";
-import { markEmailFailed, markEmailSent } from "@/lib/notifications/delivery";
+import type { DeliveryTable } from "@/lib/notifications/delivery";
+import type { NotificationEvent } from "@/lib/notifications/events";
 import { londonDateString } from "@/lib/time/london";
 
 /**
@@ -64,24 +60,24 @@ export type RetrySweep = {
 const nothing = (): RetryOutcome => ({ sent: 0, failed: 0, skipped: 0 });
 
 /**
- * One attempt, with both outcomes recorded. A failure never stops the sweep:
- * the row keeps its flag and its error, and the next run tries it again.
+ * One attempt, counted. Both outcomes are recorded on the row by `notify`, and
+ * a failure never stops the sweep: the row keeps its flag and its error, and
+ * the next run tries it again.
  */
 async function attempt(
   outcome: RetryOutcome,
-  table: Parameters<typeof markEmailSent>[0],
+  table: DeliveryTable,
   id: number,
   description: string,
-  send: () => Promise<void>,
+  event: NotificationEvent,
 ): Promise<void> {
-  try {
-    await send();
-    await markEmailSent(table, id);
+  const result = await notify(event, { on: table, row: id });
+  if (result.ok) {
     outcome.sent++;
-  } catch (error) {
-    console.error(`Failed to retry ${description}:`, error);
+  } else {
+    // `notify` has already logged the reason; this names the row it was for.
+    console.error(`Failed to retry ${description}`);
     outcome.failed++;
-    await markEmailFailed(table, id, error);
   }
 }
 
@@ -187,8 +183,12 @@ async function retryBookingNotifications(today: string): Promise<{
       continue;
     }
 
-    await attempt(outcome, bookings, row.bookings.id, description, () =>
-      sendBookingEmail(row, kind),
+    await attempt(
+      outcome,
+      bookings,
+      row.bookings.id,
+      description,
+      bookingNotificationFor(row, kind),
     );
   }
 
@@ -219,20 +219,12 @@ async function retryBundleConfirmations(now: Date): Promise<RetryOutcome> {
       continue;
     }
 
-    await attempt(outcome, bundles, row.bundles.id, description, async () => {
-      await sendBundleConfirmation({
-        customerEmail: product.customerEmail,
-        bundleName: product.bundleName,
-        credits: product.credits,
-        expiryDate: product.expiryDate,
-      });
-      await sendBookingNotification({
-        type: "bundle",
-        customerEmail: product.customerEmail,
-        bundleName: product.bundleName,
-        credits: product.credits,
-        expiryDate: product.expiryDate,
-      });
+    await attempt(outcome, bundles, row.bundles.id, description, {
+      type: "bundle-purchased",
+      customerEmail: product.customerEmail,
+      bundleName: product.bundleName,
+      credits: product.credits,
+      expiryDate: product.expiryDate,
     });
   }
 
@@ -284,25 +276,16 @@ async function retryWaitlistConfirmations(
     }
 
     const entry = row.waitlist_entries;
-    await attempt(outcome, waitlistEntries, entry.id, description, async () => {
-      await sendWaitlistConfirmation({
-        customerName: entry.customerName,
-        customerEmail: entry.customerEmail,
-        classTitle: row.classes.title,
-        date: row.schedules.date,
-        startTime: row.schedules.startTime,
-        endTime: row.schedules.endTime,
-        location: row.schedules.location,
-      });
-      await sendWaitlistNotification({
-        customerName: entry.customerName,
-        customerEmail: entry.customerEmail,
-        classTitle: row.classes.title,
-        date: row.schedules.date,
-        startTime: row.schedules.startTime,
-        endTime: row.schedules.endTime,
-        waitlistCount: waitingByScheduleId.get(entry.scheduleId) ?? 1,
-      });
+    await attempt(outcome, waitlistEntries, entry.id, description, {
+      type: "waitlist-joined",
+      customerName: entry.customerName,
+      customerEmail: entry.customerEmail,
+      classTitle: row.classes.title,
+      date: row.schedules.date,
+      startTime: row.schedules.startTime,
+      endTime: row.schedules.endTime,
+      location: row.schedules.location,
+      waitlistCount: waitingByScheduleId.get(entry.scheduleId) ?? 1,
     });
   }
 

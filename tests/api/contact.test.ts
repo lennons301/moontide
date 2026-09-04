@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/email", () => ({
-  sendContactEmail: vi.fn().mockResolvedValue({ success: true }),
+vi.mock("@/lib/notifications", () => ({
+  notify: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -102,7 +102,7 @@ describe("POST /api/contact validation", () => {
 
   it("stores and forwards the trimmed, normalised submission", async () => {
     const { db } = await import("@/lib/db");
-    const { sendContactEmail } = await import("@/lib/email");
+    const { notify } = await import("@/lib/notifications");
     const values = vi.fn().mockResolvedValue([]);
     vi.mocked(db.insert).mockReturnValue({ values } as never);
 
@@ -120,11 +120,15 @@ describe("POST /api/contact validation", () => {
       subject: "Enquiry",
       message: "Hello!",
     });
-    expect(sendContactEmail).toHaveBeenCalledWith({
-      name: "Jane Doe",
-      email: "jane@example.com",
-      subject: "Enquiry",
-      message: "Hello!",
-    });
+    expect(notify).toHaveBeenCalledWith(
+      {
+        type: "contact-message",
+        name: "Jane Doe",
+        email: "jane@example.com",
+        subject: "Enquiry",
+        message: "Hello!",
+      },
+      expect.objectContaining({ notRecorded: expect.any(String) }),
+    );
   });
 });
