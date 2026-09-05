@@ -16,6 +16,8 @@ import type { Service, Trainer } from "@/lib/sanity/types";
 import {
   givenClassCatalogueHolds,
   givenClassCatalogueIsEmpty,
+  givenClassCatalogueUnreachable,
+  mockSelect,
 } from "../support/classes";
 import {
   CMS_IMAGE,
@@ -189,6 +191,28 @@ describe("getService", () => {
       unknownServiceFallback.descriptionParagraphs,
     );
   });
+
+  it("falls back to the module's own copy when Postgres cannot be reached", async () => {
+    givenClassCatalogueUnreachable();
+    givenCmsUnreachable();
+
+    const service = await getService("prenatal");
+
+    expect(service.title).toBe("Prenatal Yoga");
+    expect(service.descriptionParagraphs[0]).toContain("Gentle movement");
+  });
+
+  it("never asks Postgres about coaching, community or private", async () => {
+    givenCmsUnreachable();
+    mockSelect.mockClear();
+
+    for (const slug of ["coaching", "community", "private"]) {
+      const service = await getService(slug);
+      expect(service.title).not.toBe(unknownServiceFallback.title);
+    }
+
+    expect(mockSelect).not.toHaveBeenCalled();
+  });
 });
 
 describe("getClassCatalogue", () => {
@@ -208,6 +232,12 @@ describe("getClassCatalogue", () => {
     givenClassCatalogueIsEmpty();
 
     expect(await getClassCatalogue()).toEqual([]);
+  });
+
+  it("degrades to nothing rather than throw when Postgres cannot be reached", async () => {
+    givenClassCatalogueUnreachable();
+
+    await expect(getClassCatalogue()).resolves.toEqual([]);
   });
 });
 

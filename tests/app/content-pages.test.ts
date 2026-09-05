@@ -4,6 +4,7 @@ import type { Service } from "@/lib/sanity/types";
 import {
   givenClassCatalogueHolds,
   givenClassCatalogueIsEmpty,
+  givenClassCatalogueUnreachable,
 } from "../support/classes";
 import {
   CMS_IMAGE,
@@ -148,6 +149,16 @@ describe("with Sanity unreachable", () => {
     const html = await renderClassPage("moon-bathing");
 
     expect(html).toContain("Class details coming soon.");
+  });
+
+  it("still renders a class page when Postgres cannot be reached, from the module's own copy", async () => {
+    givenClassCatalogueUnreachable();
+    givenCmsUnreachable();
+
+    const html = await renderClassPage("prenatal");
+
+    expect(html).toContain(">Prenatal Yoga<");
+    expect(html).toContain("Gentle movement and breath work");
   });
 });
 

@@ -15,8 +15,10 @@ import { vi } from "vitest";
  * ```
  *
  * The mock does not interpret the query's `where`/`orderBy` — it always
- * resolves with whatever rows the test installed, in that order, which is
- * why `getClassCatalogue()` is the only shape this module needs to support.
+ * resolves (or rejects) with whatever the test installed, which is why
+ * `getClassCatalogue()` is the only shape this module needs to support.
+ * `mockSelect` is exported so a test can assert Postgres was never asked at
+ * all — the guard in `getService` for `coaching`/`community`/`private`.
  */
 export interface CatalogueRow {
   slug: string;
@@ -27,7 +29,7 @@ export interface CatalogueRow {
 const mockOrderBy = vi.fn();
 const mockWhere = vi.fn(() => ({ orderBy: mockOrderBy }));
 const mockFrom = vi.fn(() => ({ where: mockWhere }));
-const mockSelect = vi.fn(() => ({ from: mockFrom }));
+export const mockSelect = vi.fn(() => ({ from: mockFrom }));
 
 export const dbModuleMock = {
   db: { select: mockSelect },
@@ -41,4 +43,13 @@ export function givenClassCatalogueHolds(rows: CatalogueRow[]): void {
 /** No active classes — the catalogue is empty. */
 export function givenClassCatalogueIsEmpty(): void {
   givenClassCatalogueHolds([]);
+}
+
+/**
+ * Postgres cannot be reached. `getClassCatalogue` must degrade to no classes
+ * rather than let the failure propagate — the root layout wraps every route,
+ * so an uncaught throw here would take down more than the class pages.
+ */
+export function givenClassCatalogueUnreachable(): void {
+  mockOrderBy.mockRejectedValue(new Error("classes table unreachable"));
 }

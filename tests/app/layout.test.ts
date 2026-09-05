@@ -1,7 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { givenClassCatalogueHolds } from "../support/classes";
+import {
+  givenClassCatalogueHolds,
+  givenClassCatalogueUnreachable,
+} from "../support/classes";
 import {
   givenCmsHolds,
   givenCmsUnreachable,
@@ -84,5 +87,19 @@ describe("RootLayout", () => {
 
     expect(html).toContain("https://instagram.com/moontide");
     expect(html).toContain("Instagram");
+  });
+
+  it("renders every page when Postgres cannot be reached, with no classes listed", async () => {
+    givenClassCatalogueUnreachable();
+
+    const html = await renderLayout();
+
+    // /book has no dependency of its own on the classes table and must keep
+    // taking bookings through a Postgres outage or a Neon cold-start blip.
+    expect(html).toContain("Book a Class");
+    // Nav and footer still render — minus the one thing Postgres was asked
+    // for, the same degradation Sanity's own outage gets.
+    expect(html).toContain("Privacy");
+    expect(html).not.toContain("/classes/");
   });
 });

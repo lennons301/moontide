@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { givenClassCatalogueHolds } from "../support/classes";
+import {
+  givenClassCatalogueHolds,
+  givenClassCatalogueUnreachable,
+} from "../support/classes";
 
 const mockRevalidatePath = vi.fn();
 
@@ -99,6 +102,21 @@ describe("POST /api/revalidate", () => {
       "/private",
     ]);
     expect(mockRevalidatePath).toHaveBeenCalledTimes(5);
+  });
+
+  it("revalidates the fixed pages, minus any class path, when Postgres cannot be reached", async () => {
+    givenClassCatalogueUnreachable();
+
+    const res = await POST(makeRequest({ _type: "service" }, "test-secret"));
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.revalidated).toEqual([
+      "/",
+      "/coaching",
+      "/community",
+      "/private",
+    ]);
   });
 
   it("revalidates trainer paths when a trainer is published", async () => {

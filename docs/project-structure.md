@@ -183,7 +183,7 @@ tests/
   components/class-catalogue-navigation.test.tsx # A catalogue class is reachable from nav, footer and /about alike
   app/homepage.test.ts    # Homepage renders with the CMS up and with it down
   app/content-pages.test.ts # /about, /coaching, /private, /community, /classes/[slug]
-  app/layout.test.ts      # Root layout renders every page when Sanity throws
+  app/layout.test.ts      # Root layout renders every page when Sanity or the classes table throws
   integration/            # Runs against a real Postgres, not mocks
     support/database-url.ts # Which server, and the throwaway database on it
     support/global-setup.ts # Drop, create and migrate that database, once per run
