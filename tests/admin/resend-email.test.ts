@@ -118,6 +118,7 @@ const BOOKING_ROW = {
     customerEmail: "jane@example.com",
     status: "confirmed",
     emailKind: "confirmation",
+    classTitle: "Prenatal Yoga",
   },
   schedules: {
     id: 42,

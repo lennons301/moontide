@@ -146,6 +146,7 @@ export default function ClassesPage() {
 
     const fields = {
       title: formData.title,
+      slug: formData.slug,
       category: formData.category,
       bookingType: formData.bookingType,
       priceInPence: poundsToPence(formData.priceInPence),
@@ -155,12 +156,7 @@ export default function ClassesPage() {
 
     const result = await mutateAdmin("/api/admin/classes", {
       method: isEditing ? "PUT" : "POST",
-      // Slug is only ever sent on create — the API does not accept it on an
-      // update, because changing one after launch needs a redirect this
-      // surface does not build yet.
-      body: isEditing
-        ? { id: editingId, ...fields }
-        : { slug: formData.slug, ...fields },
+      body: isEditing ? { id: editingId, ...fields } : fields,
     });
 
     if (result.ok) {
@@ -216,22 +212,22 @@ export default function ClassesPage() {
             </div>
             <div>
               <Label htmlFor="slug">Slug</Label>
-              {editingId ? (
-                <p className="mt-1 flex h-8 items-center text-sm text-deep-ocean/60">
-                  {formData.slug} (fixed at creation)
+              <Input
+                id="slug"
+                type="text"
+                value={formData.slug}
+                onChange={(e) =>
+                  setFormData({ ...formData, slug: e.target.value })
+                }
+                placeholder="e.g. prenatal-yoga"
+                className="mt-1"
+                required
+              />
+              {editingId && (
+                <p className="mt-1 text-xs text-deep-ocean/60">
+                  Changing this keeps the old link working — it will redirect
+                  here.
                 </p>
-              ) : (
-                <Input
-                  id="slug"
-                  type="text"
-                  value={formData.slug}
-                  onChange={(e) =>
-                    setFormData({ ...formData, slug: e.target.value })
-                  }
-                  placeholder="e.g. prenatal-yoga"
-                  className="mt-1"
-                  required
-                />
               )}
             </div>
             <div>

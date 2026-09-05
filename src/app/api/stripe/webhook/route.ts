@@ -85,6 +85,27 @@ export async function POST(request: Request) {
         return NextResponse.json({ received: true });
       }
 
+      // The class this booking is on, read once and reused for both the
+      // snapshot a fresh insert takes and the confirmation it is followed by.
+      // A schedule this session named that has since gone is a permanent
+      // condition a retry cannot fix, so it is answered the same way the
+      // missing-bundle-product case is: received, not retried forever.
+      const scheduleResult = await db
+        .select()
+        .from(schedules)
+        .innerJoin(classes, eq(schedules.classId, classes.id))
+        .where(eq(schedules.id, scheduleId));
+
+      if (scheduleResult.length === 0) {
+        console.error(
+          `Schedule ${scheduleId} not found for checkout session ${session.id}`,
+        );
+        return NextResponse.json({ received: true });
+      }
+
+      const schedule = scheduleResult[0].schedules;
+      const classInfo = scheduleResult[0].classes;
+
       if (seat.kind === "convert-held-seat") {
         const converted = await db.transaction(async (tx) => {
           // Converted in place, and occupancy deliberately untouched: the offer
@@ -121,6 +142,7 @@ export async function POST(request: Request) {
             customerName: metadata.customerName,
             customerEmail,
             stripePaymentId: session.id,
+            classTitle: classInfo.title,
           });
           // The customer has already paid, so the seat is taken regardless of
           // capacity: refusing someone who has been charged is the wrong
@@ -136,37 +158,23 @@ export async function POST(request: Request) {
         });
       }
 
-      // The class the confirmation describes. Read here rather than inside the
-      // notification because a row that has gone is not a send that failed:
-      // there is nothing to confirm and nothing to record against.
-      const result = await db
-        .select()
-        .from(schedules)
-        .innerJoin(classes, eq(schedules.classId, classes.id))
-        .where(eq(schedules.id, scheduleId));
-
-      if (result.length > 0) {
-        const schedule = result[0].schedules;
-        const classInfo = result[0].classes;
-
-        notifyAfterResponse(
-          {
-            type: "booking-confirmed",
-            customerName: metadata.customerName,
-            customerEmail,
-            classTitle: classInfo.title,
-            date: schedule.date,
-            startTime: schedule.startTime,
-            endTime: schedule.endTime,
-            location: schedule.location,
-            // This path is only ever reached by a Stripe payment.
-            payment: { method: "card", priceInPence: classInfo.priceInPence },
-          },
-          // The row's id is not known here — the insert was guarded and may have
-          // conflicted — but the session it was written with is.
-          { on: bookings, row: eq(bookings.stripePaymentId, session.id) },
-        );
-      }
+      notifyAfterResponse(
+        {
+          type: "booking-confirmed",
+          customerName: metadata.customerName,
+          customerEmail,
+          classTitle: classInfo.title,
+          date: schedule.date,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          location: schedule.location,
+          // This path is only ever reached by a Stripe payment.
+          payment: { method: "card", priceInPence: classInfo.priceInPence },
+        },
+        // The row's id is not known here — the insert was guarded and may have
+        // conflicted — but the session it was written with is.
+        { on: bookings, row: eq(bookings.stripePaymentId, session.id) },
+      );
     } else if (metadata?.type === "bundle") {
       const configId = bundleConfigIdFromSession(metadata);
       const configs = configId

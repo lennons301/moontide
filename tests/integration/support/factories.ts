@@ -80,6 +80,7 @@ export async function createBooking(
     .values({
       customerName: "Test Customer",
       customerEmail: `${unique("customer")}@example.com`,
+      classTitle: "Test Class",
       ...overrides,
       scheduleId,
     })

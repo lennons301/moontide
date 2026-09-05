@@ -104,6 +104,7 @@ export const POST = withAdmin({ body: offerBody }, async ({ body }) => {
           customerName: decision.entry.customerName,
           customerEmail: decision.entry.customerEmail,
           status: "held",
+          classTitle: classInfo.title,
         })
         .returning({ id: bookings.id });
       heldBookingId = inserted[0].id;
