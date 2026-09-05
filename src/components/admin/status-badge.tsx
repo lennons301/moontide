@@ -19,6 +19,9 @@ const STATUS_COLOURS: Record<string, string> = {
   active: "bg-seagrass/20 text-seagrass",
   expired: "bg-red-100 text-red-700",
   exhausted: "bg-ocean-light-blue/20 text-ocean-light-blue",
+  // Classes: soft-deleted rather than deleted, so "inactive" is a status of
+  // its own rather than the row disappearing.
+  inactive: "bg-red-100 text-red-700",
 };
 
 export function statusBadgeClass(status: string): string {

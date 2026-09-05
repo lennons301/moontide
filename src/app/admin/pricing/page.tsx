@@ -13,10 +13,9 @@ import {
 } from "@/lib/admin/pricing-changes";
 import type { AdminPricingResponse } from "@/lib/admin/rows";
 
-type ClassPrice = AdminPricingResponse["classes"][number];
 type BundleConfigRow = AdminPricingResponse["bundleConfigs"][number];
 
-const NO_PRICING: AdminPricingResponse = { classes: [], bundleConfigs: [] };
+const NO_PRICING: AdminPricingResponse = { bundleConfigs: [] };
 
 export default function PricingPage() {
   const {
@@ -25,11 +24,7 @@ export default function PricingPage() {
     error: loadError,
     refetch,
   } = useAdminResource<AdminPricingResponse>("/api/admin/pricing", NO_PRICING);
-  const { classes, bundleConfigs } = pricing;
-  const [classEdits, setClassEdits] = useState<Record<number, string>>({});
-  const [eligibilityEdits, setEligibilityEdits] = useState<
-    Record<number, boolean>
-  >({});
+  const { bundleConfigs } = pricing;
   const [bundleEdits, setBundleEdits] = useState<
     Record<
       number,
@@ -40,18 +35,8 @@ export default function PricingPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   async function reloadPricing() {
-    setClassEdits({});
-    setEligibilityEdits({});
     setBundleEdits({});
     await refetch();
-  }
-
-  function getClassDisplayPrice(c: ClassPrice) {
-    return classEdits[c.id] ?? penceToPounds(c.priceInPence);
-  }
-
-  function getClassBundleEligible(c: ClassPrice) {
-    return eligibilityEdits[c.id] ?? c.bundleEligible;
   }
 
   function getBundleDisplayValue(
@@ -64,12 +49,8 @@ export default function PricingPage() {
     return String(bc[field]);
   }
 
-  const rows = { classes, bundleConfigs };
-  const edits = {
-    classPrices: classEdits,
-    classEligibility: eligibilityEdits,
-    bundles: bundleEdits,
-  };
+  const rows = { bundleConfigs };
+  const edits = { bundles: bundleEdits };
 
   const changes = buildChangeSummary(rows, edits);
   const hasChanges = changes.length > 0;
@@ -112,69 +93,6 @@ export default function PricingPage() {
       {loading && (
         <p className="mb-4 text-sm text-soft-moonstone">Loading...</p>
       )}
-
-      {/* Class Prices */}
-      <div className="overflow-x-auto rounded-lg border border-soft-moonstone/30 bg-white shadow-sm mb-6">
-        <div className="px-5 py-3 border-b border-soft-moonstone/20 bg-dawn-light">
-          <h2 className="text-xs uppercase tracking-wider text-deep-ocean font-medium">
-            Class Prices
-          </h2>
-        </div>
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-soft-moonstone/20 text-xs uppercase tracking-wider text-deep-ocean">
-            <tr>
-              <th className="px-5 py-3">Class</th>
-              <th className="px-5 py-3 w-36">Price</th>
-              <th className="px-5 py-3 w-40">Bundle Eligible</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-soft-moonstone/10">
-            {classes.map((c) => (
-              <tr key={c.id} className="hover:bg-ocean-light-blue/10">
-                <td className="px-5 py-3 font-medium text-deep-tide-blue">
-                  {c.title}
-                </td>
-                <td className="px-5 py-3">
-                  <div className="flex items-center gap-1">
-                    <span className="text-deep-ocean text-sm">£</span>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      value={getClassDisplayPrice(c)}
-                      onChange={(e) =>
-                        setClassEdits({ ...classEdits, [c.id]: e.target.value })
-                      }
-                      className="w-24 h-8"
-                    />
-                  </div>
-                </td>
-                <td className="px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      id={`class-bundle-eligible-${c.id}`}
-                      type="checkbox"
-                      checked={getClassBundleEligible(c)}
-                      onChange={(e) =>
-                        setEligibilityEdits({
-                          ...eligibilityEdits,
-                          [c.id]: e.target.checked,
-                        })
-                      }
-                      className="h-4 w-4 rounded border-soft-moonstone text-bright-orange focus:ring-bright-orange"
-                    />
-                    <Label
-                      htmlFor={`class-bundle-eligible-${c.id}`}
-                      className="cursor-pointer text-deep-ocean/70 text-xs font-normal"
-                    >
-                      Bookable with a bundle
-                    </Label>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
 
       {/* Bundle Configuration */}
       {bundleConfigs.map((bc) => (

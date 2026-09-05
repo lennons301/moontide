@@ -5,50 +5,38 @@ vi.mock(
   async () => (await import("../support/admin-session")).authModuleMock,
 );
 
-const {
-  mockSelectFrom,
-  mockWhere,
-  mockUpdateSet,
-  mockUpdateWhere,
-  mockTxUpdateSet,
-  mockTransaction,
-} = vi.hoisted(() => {
-  const mockWhere = vi.fn().mockResolvedValue([]);
-  const mockSelectFrom = vi.fn().mockReturnValue({ where: mockWhere });
-  const mockUpdateWhere = vi.fn().mockResolvedValue([]);
-  const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
-  const mockTxUpdateWhere = vi.fn().mockResolvedValue([]);
-  const mockTxUpdateSet = vi.fn().mockReturnValue({ where: mockTxUpdateWhere });
-  const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
-    const tx = {
-      update: vi.fn().mockReturnValue({ set: mockTxUpdateSet }),
+const { mockSelectFrom, mockWhere, mockTxUpdateSet, mockTransaction } =
+  vi.hoisted(() => {
+    const mockWhere = vi.fn().mockResolvedValue([]);
+    const mockSelectFrom = vi.fn().mockReturnValue({ where: mockWhere });
+    const mockTxUpdateWhere = vi.fn().mockResolvedValue([]);
+    const mockTxUpdateSet = vi
+      .fn()
+      .mockReturnValue({ where: mockTxUpdateWhere });
+    const mockTransaction = vi.fn(
+      async (fn: (tx: unknown) => Promise<void>) => {
+        const tx = {
+          update: vi.fn().mockReturnValue({ set: mockTxUpdateSet }),
+        };
+        await fn(tx);
+      },
+    );
+    return {
+      mockSelectFrom,
+      mockWhere,
+      mockTxUpdateSet,
+      mockTransaction,
     };
-    await fn(tx);
   });
-  return {
-    mockSelectFrom,
-    mockWhere,
-    mockUpdateSet,
-    mockUpdateWhere,
-    mockTxUpdateSet,
-    mockTransaction,
-  };
-});
 
 vi.mock("@/lib/db", () => ({
   db: {
     select: vi.fn().mockReturnValue({ from: mockSelectFrom }),
-    update: vi.fn().mockReturnValue({ set: mockUpdateSet }),
     transaction: mockTransaction,
   },
 }));
 
 vi.mock("@/lib/db/schema", () => ({
-  classes: {
-    id: "id",
-    priceInPence: "price_in_pence",
-    bundleEligible: "bundle_eligible",
-  },
   bundleConfig: { id: "id", active: "active" },
 }));
 
@@ -65,16 +53,7 @@ describe("GET /api/admin/pricing", () => {
     mockWhere.mockResolvedValue([]);
   });
 
-  it("returns classes and bundle configs", async () => {
-    const mockClasses = [
-      {
-        id: 1,
-        title: "Prenatal Yoga",
-        slug: "prenatal",
-        priceInPence: 1250,
-        bundleEligible: true,
-      },
-    ];
+  it("returns bundle configs", async () => {
     const mockBundleConfigs = [
       {
         id: 1,
@@ -86,12 +65,9 @@ describe("GET /api/admin/pricing", () => {
       },
     ];
 
-    // First call returns classes (no where clause), second returns bundle configs (with where)
-    mockSelectFrom
-      .mockReturnValueOnce({ where: vi.fn().mockResolvedValue(mockClasses) })
-      .mockReturnValueOnce({
-        where: vi.fn().mockResolvedValue(mockBundleConfigs),
-      });
+    mockSelectFrom.mockReturnValue({
+      where: vi.fn().mockResolvedValue(mockBundleConfigs),
+    });
 
     const response = await GET(
       new Request("http://localhost:3000/api/admin/pricing"),
@@ -99,16 +75,14 @@ describe("GET /api/admin/pricing", () => {
     expect(response.status).toBe(200);
 
     const body = await response.json();
-    expect(body.classes).toEqual(mockClasses);
     expect(body.bundleConfigs).toEqual(mockBundleConfigs);
+    expect(body.classes).toBeUndefined();
   });
 });
 
 describe("PUT /api/admin/pricing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUpdateSet.mockReturnValue({ where: mockUpdateWhere });
-    mockUpdateWhere.mockResolvedValue([]);
     mockTxUpdateSet.mockReturnValue({
       where: vi.fn().mockResolvedValue([]),
     });
@@ -135,19 +109,6 @@ describe("PUT /api/admin/pricing", () => {
     expect(body.error).toBe("No updates provided");
   });
 
-  it("returns 400 for negative class price", async () => {
-    const request = new Request("http://localhost:3000/api/admin/pricing", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ classes: [{ id: 1, priceInPence: -100 }] }),
-    });
-
-    const response = await PUT(request);
-    expect(response.status).toBe(400);
-    const body = await response.json();
-    expect(body.error).toBe("Class prices must be greater than 0");
-  });
-
   it("returns 400 for zero bundle credits", async () => {
     const request = new Request("http://localhost:3000/api/admin/pricing", {
       method: "PUT",
@@ -172,63 +133,6 @@ describe("PUT /api/admin/pricing", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe("Bundle expiry days must be greater than 0");
-  });
-
-  it("updates class prices via transaction", async () => {
-    const request = new Request("http://localhost:3000/api/admin/pricing", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ classes: [{ id: 1, priceInPence: 1400 }] }),
-    });
-
-    const response = await PUT(request);
-    expect(response.status).toBe(200);
-    expect(mockTransaction).toHaveBeenCalledOnce();
-  });
-
-  it("persists bundle eligibility without a price change", async () => {
-    const request = new Request("http://localhost:3000/api/admin/pricing", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ classes: [{ id: 1, bundleEligible: false }] }),
-    });
-
-    const response = await PUT(request);
-    expect(response.status).toBe(200);
-    expect(mockTxUpdateSet).toHaveBeenCalledWith({ bundleEligible: false });
-  });
-
-  it("persists price and bundle eligibility together", async () => {
-    const request = new Request("http://localhost:3000/api/admin/pricing", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        classes: [{ id: 1, priceInPence: 1400, bundleEligible: true }],
-      }),
-    });
-
-    const response = await PUT(request);
-    expect(response.status).toBe(200);
-    expect(mockTxUpdateSet).toHaveBeenCalledWith({
-      priceInPence: 1400,
-      bundleEligible: true,
-    });
-  });
-
-  it("returns 400 when a class update changes nothing", async () => {
-    const request = new Request("http://localhost:3000/api/admin/pricing", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ classes: [{ id: 1 }] }),
-    });
-
-    const response = await PUT(request);
-    expect(response.status).toBe(400);
-    const body = await response.json();
-    expect(body.error).toBe(
-      "Class updates must include a price or bundle eligibility",
-    );
-    expect(mockTransaction).not.toHaveBeenCalled();
   });
 
   it("updates bundle config via transaction", async () => {

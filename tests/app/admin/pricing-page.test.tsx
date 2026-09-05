@@ -9,16 +9,16 @@ vi.mock("@/lib/admin/navigate", () => ({
 }));
 
 const PRICING = {
-  classes: [
+  bundleConfigs: [
     {
-      id: 4,
-      title: "Prenatal Yoga",
-      slug: "prenatal-yoga",
-      priceInPence: 1500,
-      bundleEligible: true,
+      id: 7,
+      name: "Six-Class Bundle",
+      priceInPence: 6600,
+      credits: 6,
+      expiryDays: 90,
+      active: true,
     },
   ],
-  bundleConfigs: [],
 };
 
 function stubPricing(save: StubRoute) {
@@ -28,9 +28,9 @@ function stubPricing(save: StubRoute) {
   });
 }
 
-async function typeANewPrice() {
-  const price = await screen.findByDisplayValue("15.00");
-  fireEvent.change(price, { target: { value: "18.00" } });
+async function typeANewBundlePrice() {
+  const price = await screen.findByDisplayValue("66.00");
+  fireEvent.change(price, { target: { value: "72.00" } });
 }
 
 afterEach(() => {
@@ -45,7 +45,7 @@ describe("/admin/pricing", () => {
     stubPricing({ status: 502, html: "<html>Bad gateway</html>" });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<PricingPage />);
-    await typeANewPrice();
+    await typeANewBundlePrice();
 
     const save = screen.getByRole("button", { name: "Save Changes" });
     fireEvent.click(save);
@@ -59,28 +59,28 @@ describe("/admin/pricing", () => {
   it("shows the server's refusal", async () => {
     stubPricing({
       status: 400,
-      json: { error: "Class prices must be greater than 0" },
+      json: { error: "Bundle price must be greater than 0" },
     });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<PricingPage />);
-    await typeANewPrice();
+    await typeANewBundlePrice();
 
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Class prices must be greater than 0",
+      "Bundle price must be greater than 0",
     );
   });
 
   it("reloads the prices after a save", async () => {
-    const fetchMock = stubPricing({ json: { updated: true } });
+    const fetchMock = stubPricing({ json: { success: true } });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<PricingPage />);
-    await typeANewPrice();
+    await typeANewBundlePrice();
 
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
-    await screen.findByDisplayValue("15.00");
+    await screen.findByDisplayValue("66.00");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(
       fetchMock.mock.calls.filter(([url]) => url === "/api/admin/pricing"),

@@ -8,9 +8,10 @@ describe("StatusBadge", () => {
     expect(screen.getByText("waitlisted")).toBeInTheDocument();
   });
 
-  it("colours each of the three status vocabularies", () => {
-    // Schedules, bookings and bundles share one map because their statuses
-    // never collide; a regression that dropped one would show up as grey.
+  it("colours each of the four status vocabularies", () => {
+    // Schedules, bookings, bundles and classes share one map because their
+    // statuses never collide; a regression that dropped one would show up as
+    // grey.
     for (const status of [
       "open",
       "closed",
@@ -22,6 +23,7 @@ describe("StatusBadge", () => {
       "active",
       "expired",
       "exhausted",
+      "inactive",
     ]) {
       expect(statusBadgeClass(status)).not.toBe("bg-gray-100 text-gray-600");
     }
