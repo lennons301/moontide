@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { givenClassCatalogueHolds } from "../support/classes";
 import {
   givenCmsHolds,
   givenCmsUnreachable,
@@ -10,6 +11,17 @@ import {
 vi.mock(
   "@/lib/sanity/client",
   async () => (await import("../support/sanity-client")).sanityModuleMock,
+);
+
+vi.mock(
+  "@/lib/db",
+  async () => (await import("../support/classes")).dbModuleMock,
+);
+
+beforeEach(() =>
+  givenClassCatalogueHolds([
+    { slug: "prenatal", title: "Prenatal Yoga", category: "class" },
+  ]),
 );
 
 // next/font/google is a build-time loader; the layout only uses the variables.

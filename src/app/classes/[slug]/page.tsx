@@ -2,15 +2,19 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { PortableText } from "next-sanity";
-import { getService } from "@/lib/content/services";
+import { getClassCatalogue, getService } from "@/lib/content/services";
 import { urlFor } from "@/lib/sanity/client";
 
 export const revalidate = 3600;
 
-const knownSlugs = ["prenatal", "postnatal", "baby-yoga", "vinyasa"];
-
+/**
+ * Pre-warms every active class at build time. `dynamicParams` stays at its
+ * default (true), so a class created after the last deploy still renders on
+ * first request and is cached from then on.
+ */
 export async function generateStaticParams() {
-  return knownSlugs.map((slug) => ({ slug }));
+  const catalogue = await getClassCatalogue();
+  return catalogue.map(({ slug }) => ({ slug }));
 }
 
 export async function generateMetadata({

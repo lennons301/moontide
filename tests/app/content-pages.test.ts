@@ -1,6 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Service } from "@/lib/sanity/types";
+import {
+  givenClassCatalogueHolds,
+  givenClassCatalogueIsEmpty,
+} from "../support/classes";
 import {
   CMS_IMAGE,
   givenCmsHolds,
@@ -14,7 +18,32 @@ vi.mock(
   async () => (await import("../support/sanity-client")).sanityModuleMock,
 );
 
-afterEach(resetContentSource);
+vi.mock(
+  "@/lib/db",
+  async () => (await import("../support/classes")).dbModuleMock,
+);
+
+/** The four bookable classes, as Postgres — the catalogue's owner — has them. */
+const CATALOGUE = [
+  { slug: "prenatal", title: "Prenatal Yoga", category: "class" as const },
+  { slug: "postnatal", title: "Postnatal Yoga", category: "class" as const },
+  {
+    slug: "baby-yoga",
+    title: "Baby Yoga & Massage",
+    category: "class" as const,
+  },
+  {
+    slug: "vinyasa",
+    title: "Autumn Equinox Yin",
+    category: "class" as const,
+  },
+];
+
+beforeEach(() => givenClassCatalogueHolds(CATALOGUE));
+afterEach(() => {
+  resetContentSource();
+  givenClassCatalogueIsEmpty();
+});
 
 /** next/image URL-encodes the src it was given. */
 const encodedImageUrl = encodeURIComponent(IMAGE_URL);
@@ -144,27 +173,43 @@ describe("with Sanity answering", () => {
     expect(html).not.toContain("Everyone comes to the mat");
   });
 
-  it("renders the published class copy and title", async () => {
+  it("renders the published class prose, but titles the page from Postgres", async () => {
+    // ADR-0001: Postgres owns a class's title, even when Sanity names it
+    // differently — the two used to disagree, which is the drift this fixes.
     givenCmsHolds({ services: [published("prenatal", "Prenatal Yoga (CMS)")] });
 
     const html = await renderClassPage("prenatal");
 
-    expect(html).toContain("Prenatal Yoga (CMS)");
+    expect(html).toContain("<h1");
+    expect(html).toContain(">Prenatal Yoga<");
     expect(html).toContain("Prenatal Yoga (CMS), published.");
   });
 
-  it("titles a class page from the CMS, and falls back when it cannot", async () => {
+  it("titles a class page from Postgres, whatever the CMS says or whether it can be reached", async () => {
     const { generateMetadata } = await import("@/app/classes/[slug]/page");
 
     givenCmsHolds({ services: [published("prenatal", "Prenatal Yoga (CMS)")] });
     await expect(
       generateMetadata({ params: Promise.resolve({ slug: "prenatal" }) }),
-    ).resolves.toEqual({ title: "Prenatal Yoga (CMS) — Moontide" });
+    ).resolves.toEqual({ title: "Prenatal Yoga — Moontide" });
 
     givenCmsUnreachable();
     await expect(
       generateMetadata({ params: Promise.resolve({ slug: "prenatal" }) }),
     ).resolves.toEqual({ title: "Prenatal Yoga — Moontide" });
+  });
+
+  it("still renders a catalogue class with no matching Sanity doc: title correct, description coming soon", async () => {
+    givenClassCatalogueHolds([
+      ...CATALOGUE,
+      { slug: "evening-flow", title: "Evening Flow", category: "class" },
+    ]);
+    givenCmsHolds({ services: [] });
+
+    const html = await renderClassPage("evening-flow");
+
+    expect(html).toContain("Evening Flow");
+    expect(html).toContain("Class details coming soon.");
   });
 
   it("renders the published community gatherings", async () => {

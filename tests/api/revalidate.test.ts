@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { givenClassCatalogueHolds } from "../support/classes";
 
 const mockRevalidatePath = vi.fn();
 
@@ -6,10 +7,35 @@ vi.mock("next/cache", () => ({
   revalidatePath: (...args: unknown[]) => mockRevalidatePath(...args),
 }));
 
+vi.mock(
+  "@/lib/db",
+  async () => (await import("../support/classes")).dbModuleMock,
+);
+
+vi.mock(
+  "@/lib/sanity/client",
+  async () => (await import("../support/sanity-client")).sanityModuleMock,
+);
+
 // Set env before importing route
 vi.stubEnv("SANITY_WEBHOOK_SECRET", "test-secret");
 
 import { POST } from "@/app/api/revalidate/route";
+
+const CATALOGUE = [
+  { slug: "prenatal", title: "Prenatal Yoga", category: "class" as const },
+  { slug: "postnatal", title: "Postnatal Yoga", category: "class" as const },
+  {
+    slug: "baby-yoga",
+    title: "Baby Yoga & Massage",
+    category: "class" as const,
+  },
+  {
+    slug: "vinyasa",
+    title: "Autumn Equinox Yin",
+    category: "class" as const,
+  },
+];
 
 function makeRequest(body: object, secret?: string) {
   return new Request("http://localhost:3000/api/revalidate", {
@@ -25,6 +51,7 @@ function makeRequest(body: object, secret?: string) {
 describe("POST /api/revalidate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    givenClassCatalogueHolds(CATALOGUE);
   });
 
   it("returns 401 if secret is missing", async () => {
@@ -53,6 +80,25 @@ describe("POST /api/revalidate", () => {
     expect(json.revalidated).toContain("/community");
     expect(json.revalidated).toContain("/private");
     expect(mockRevalidatePath).toHaveBeenCalledTimes(8);
+  });
+
+  it("revalidates whatever the catalogue holds, not a fixed list", async () => {
+    givenClassCatalogueHolds([
+      { slug: "evening-flow", title: "Evening Flow", category: "class" },
+    ]);
+
+    const res = await POST(makeRequest({ _type: "service" }, "test-secret"));
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.revalidated).toEqual([
+      "/",
+      "/classes/evening-flow",
+      "/coaching",
+      "/community",
+      "/private",
+    ]);
+    expect(mockRevalidatePath).toHaveBeenCalledTimes(5);
   });
 
   it("revalidates trainer paths when a trainer is published", async () => {

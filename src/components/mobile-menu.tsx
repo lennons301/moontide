@@ -2,35 +2,35 @@
 
 import Link from "next/link";
 import { useState } from "react";
-
-const menuLinks = [
-  { label: "Home", href: "/" },
-  { label: "About", href: "/about" },
-  {
-    label: "Classes",
-    children: [
-      { label: "Prenatal Yoga", href: "/classes/prenatal" },
-      { label: "Postnatal Yoga", href: "/classes/postnatal" },
-      { label: "Baby Yoga & Massage", href: "/classes/baby-yoga" },
-      { label: "Autumn Equinox Yin", href: "/classes/vinyasa" },
-    ],
-  },
-  { label: "Coaching", href: "/coaching" },
-  { label: "Community", href: "/community" },
-  { label: "Private Classes", href: "/private" },
-  { label: "Book a Class", href: "/book" },
-  { label: "Contact", href: "/contact" },
-];
+import type { CatalogueClass } from "@/lib/content/services";
 
 interface MobileMenuProps {
   open: boolean;
   onClose: () => void;
+  classes: CatalogueClass[];
 }
 
-export function MobileMenu({ open, onClose }: MobileMenuProps) {
+export function MobileMenu({ open, onClose, classes }: MobileMenuProps) {
   const [classesOpen, setClassesOpen] = useState(false);
 
   if (!open) return null;
+
+  const menuLinks = [
+    { label: "Home", href: "/" },
+    { label: "About", href: "/about" },
+    {
+      label: "Classes",
+      children: classes.map(({ slug, title }) => ({
+        label: title,
+        href: `/classes/${slug}`,
+      })),
+    },
+    { label: "Coaching", href: "/coaching" },
+    { label: "Community", href: "/community" },
+    { label: "Private Classes", href: "/private" },
+    { label: "Book a Class", href: "/book" },
+    { label: "Contact", href: "/contact" },
+  ];
 
   return (
     <div className="fixed inset-0 z-50 bg-soft-moonstone">

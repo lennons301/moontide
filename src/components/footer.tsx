@@ -1,15 +1,27 @@
 import Link from "next/link";
+import type { CatalogueClass } from "@/lib/content/services";
 
-const footerLinks = [
-  { label: "Prenatal", href: "/classes/prenatal" },
-  { label: "Postnatal", href: "/classes/postnatal" },
-  { label: "Baby Massage", href: "/classes/baby-yoga" },
+const fixedFooterLinks = [
   { label: "Private", href: "/private" },
   { label: "T&Cs", href: "/terms" },
   { label: "Privacy", href: "/privacy" },
 ];
 
-export function Footer({ instagramUrl }: { instagramUrl?: string }) {
+export function Footer({
+  instagramUrl,
+  classes,
+}: {
+  instagramUrl?: string;
+  classes: CatalogueClass[];
+}) {
+  const footerLinks = [
+    ...classes.map(({ slug, title }) => ({
+      label: title,
+      href: `/classes/${slug}`,
+    })),
+    ...fixedFooterLinks,
+  ];
+
   return (
     <footer className="border-t border-soft-moonstone bg-white py-8 px-6">
       <div className="max-w-6xl mx-auto text-center">

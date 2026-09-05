@@ -6,6 +6,7 @@ import {
 } from "next/font/google";
 import { Footer } from "@/components/footer";
 import { Nav } from "@/components/nav";
+import { getClassCatalogue } from "@/lib/content/services";
 import { getSiteSettings } from "@/lib/content/site-settings";
 import "./globals.css";
 
@@ -46,7 +47,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const siteSettings = await getSiteSettings();
+  const [siteSettings, classCatalogue] = await Promise.all([
+    getSiteSettings(),
+    getClassCatalogue(),
+  ]);
 
   return (
     <html
@@ -54,9 +58,12 @@ export default async function RootLayout({
       className={`${playfair.variable} ${sourceSans.variable} ${cormorant.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <Nav />
+        <Nav classes={classCatalogue} />
         <main className="flex-1">{children}</main>
-        <Footer instagramUrl={siteSettings.instagramUrl} />
+        <Footer
+          instagramUrl={siteSettings.instagramUrl}
+          classes={classCatalogue}
+        />
       </body>
     </html>
   );
