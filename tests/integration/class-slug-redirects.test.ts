@@ -20,6 +20,15 @@ vi.mock(
   async () => (await import("../support/admin-session")).authModuleMock,
 );
 
+// The route revalidates service pages through `@/lib/content/services`, which
+// builds a real Sanity client the moment it is imported — this test is about
+// the redirect table and never reads Sanity, so it stands in for the client
+// the same way the page tests do.
+vi.mock(
+  "@/lib/sanity/client",
+  async () => (await import("../support/sanity-client")).sanityModuleMock,
+);
+
 // The route revalidates the service pages, and (on a rename) the old slug's
 // page by name, on every write. That is a Next.js request-scoped API this
 // test runs outside of; kept as a spy so the rename tests can assert which
