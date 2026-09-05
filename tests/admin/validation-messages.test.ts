@@ -18,6 +18,10 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { PUT as bookingsPut } from "@/app/api/admin/bookings/route";
+import {
+  POST as classesPost,
+  PUT as classesPut,
+} from "@/app/api/admin/classes/route";
 import { PUT as messagesPut } from "@/app/api/admin/messages/route";
 import { PUT as pricingPut } from "@/app/api/admin/pricing/route";
 import { POST as resendPost } from "@/app/api/admin/resend-email/route";
@@ -91,24 +95,55 @@ const PROBES: Array<[string, Handler, Request]> = [
 
   ["pricing: nothing at all", ...body(pricingPut, {})],
   [
-    "pricing: a class update naming no row",
-    ...body(pricingPut, { classes: [{}] }),
-  ],
-  [
-    "pricing: a price sent as text",
-    ...body(pricingPut, { classes: [{ id: 1, priceInPence: "1500" }] }),
-  ],
-  [
     "pricing: credits sent as text",
     ...body(pricingPut, { bundleConfigs: [{ id: 1, credits: "6" }] }),
   ],
   [
-    "pricing: eligibility sent as a word",
-    ...body(pricingPut, { classes: [{ id: 1, bundleEligible: "yes" }] }),
+    "pricing: updates that are not a list",
+    ...body(pricingPut, { bundleConfigs: {} }),
+  ],
+
+  ["classes create: nothing at all", ...body(classesPost, {})],
+  [
+    "classes create: no slug",
+    ...body(classesPost, {
+      title: "X",
+      category: "class",
+      priceInPence: 100,
+    }),
   ],
   [
-    "pricing: updates that are not a list",
-    ...body(pricingPut, { classes: {} }),
+    "classes create: a slug with spaces",
+    ...body(classesPost, {
+      title: "X",
+      slug: "not a slug",
+      category: "class",
+      priceInPence: 100,
+    }),
+  ],
+  [
+    "classes create: a category that does not exist",
+    ...body(classesPost, {
+      title: "X",
+      slug: "x",
+      category: "retreat",
+      priceInPence: 100,
+    }),
+  ],
+  [
+    "classes create: a price sent as text",
+    ...body(classesPost, {
+      title: "X",
+      slug: "x",
+      category: "class",
+      priceInPence: "1500",
+    }),
+  ],
+  ["classes update: nothing at all", ...body(classesPut, {})],
+  ["classes update: naming no field to change", ...body(classesPut, { id: 1 })],
+  [
+    "classes update: active sent as a word",
+    ...body(classesPut, { id: 1, active: "yes" }),
   ],
 
   ["resend-email: nothing at all", ...body(resendPost, {})],

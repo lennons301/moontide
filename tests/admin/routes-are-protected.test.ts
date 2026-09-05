@@ -45,6 +45,13 @@ const MODULES = import.meta.glob("/src/app/api/admin/**/route.ts", {
 
 /** A body each body-reading handler would otherwise accept, by method and route. */
 const BODIES: Record<string, unknown> = {
+  "POST /api/admin/classes": {
+    title: "Prenatal Yoga",
+    slug: "prenatal-yoga",
+    category: "class",
+    priceInPence: 1250,
+  },
+  "PUT /api/admin/classes": { id: 1, active: false },
   "PUT /api/admin/bookings": { id: 1, status: "cancelled" },
   "PUT /api/admin/messages": { id: 1, read: true },
   "PUT /api/admin/pricing": { classes: [{ id: 1, priceInPence: 1500 }] },
@@ -117,13 +124,13 @@ describe("every /api/admin handler checks the session itself", () => {
     vi.clearAllMocks();
   });
 
-  // Nine route files, seventeen exported handlers. The counts are asserted so
+  // Nine route files, nineteen exported handlers. The counts are asserted so
   // that a route file emptied by a bad merge reads as a failure rather than as
   // a sweep with nothing left to sweep.
   it("covers every handler under /api/admin", () => {
     expect(DISCOVERED).toHaveLength(9);
-    expect(HANDLERS).toHaveLength(17);
-    expect(BODY_HANDLERS).toHaveLength(8);
+    expect(HANDLERS).toHaveLength(19);
+    expect(BODY_HANDLERS).toHaveLength(10);
   });
 
   it.each(
