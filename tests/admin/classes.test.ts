@@ -30,6 +30,9 @@ const {
   mockInsertReturning,
   mockUpdateSet,
   mockUpdateReturning,
+  mockRecordSlugRename,
+  mockAssertSlugNotRedirected,
+  mockDb,
 } = vi.hoisted(() => {
   const mockWhere = vi.fn();
   const mockFrom = vi.fn().mockReturnValue({ where: mockWhere });
@@ -43,6 +46,14 @@ const {
     .fn()
     .mockReturnValue({ returning: mockUpdateReturning });
   const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
+  const mockRecordSlugRename = vi.fn().mockResolvedValue({ ok: true });
+  const mockAssertSlugNotRedirected = vi.fn().mockResolvedValue({ ok: true });
+  const mockDb = {
+    select: vi.fn().mockReturnValue({ from: mockFrom }),
+    insert: vi.fn().mockReturnValue({ values: mockInsertValues }),
+    update: vi.fn().mockReturnValue({ set: mockUpdateSet }),
+    transaction: vi.fn((cb: (tx: unknown) => unknown) => cb(mockDb)),
+  };
   return {
     mockWhere,
     mockFrom,
@@ -51,16 +62,13 @@ const {
     mockInsertReturning,
     mockUpdateSet,
     mockUpdateReturning,
+    mockRecordSlugRename,
+    mockAssertSlugNotRedirected,
+    mockDb,
   };
 });
 
-vi.mock("@/lib/db", () => ({
-  db: {
-    select: vi.fn().mockReturnValue({ from: mockFrom }),
-    insert: vi.fn().mockReturnValue({ values: mockInsertValues }),
-    update: vi.fn().mockReturnValue({ set: mockUpdateSet }),
-  },
-}));
+vi.mock("@/lib/db", () => ({ db: mockDb }));
 
 vi.mock("@/lib/db/schema", () => ({
   classes: {
@@ -73,6 +81,16 @@ vi.mock("@/lib/db/schema", () => ({
     priceInPence: "price_in_pence",
     bundleEligible: "bundle_eligible",
   },
+}));
+
+// The slug-rename write (the redirect history, the collision it refuses) is
+// SQL that has to execute against a real unique constraint, so it is
+// integration-tested (`tests/integration/class-slug-redirects.test.ts`)
+// rather than simulated here. This suite only checks the route's wiring to it.
+vi.mock("@/lib/classes/slug-redirects", () => ({
+  recordSlugRename: (...args: unknown[]) => mockRecordSlugRename(...args),
+  assertSlugNotRedirected: (...args: unknown[]) =>
+    mockAssertSlugNotRedirected(...args),
 }));
 
 vi.mock("drizzle-orm", () => ({ eq: mockEq }));
@@ -270,6 +288,30 @@ describe("POST /api/admin/classes", () => {
       "A class with this slug already exists",
     );
   });
+
+  it("refuses a slug still recorded as another class's old one, without inserting", async () => {
+    mockAssertSlugNotRedirected.mockResolvedValueOnce({
+      ok: false,
+      error: "This slug was previously used by another class",
+      httpStatus: 409,
+    });
+
+    const response = await POST(
+      postRequest({
+        title: "Unrelated New Class",
+        slug: "vinyasa",
+        category: "class",
+        priceInPence: 100,
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe(
+      "This slug was previously used by another class",
+    );
+    expect(mockAssertSlugNotRedirected).toHaveBeenCalledWith(mockDb, "vinyasa");
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
 });
 
 describe("PUT /api/admin/classes", () => {
@@ -314,10 +356,54 @@ describe("PUT /api/admin/classes", () => {
     });
   });
 
-  it("does not accept a slug on update", async () => {
-    await PUT(putRequest({ id: 1, title: "New Title", slug: "new-slug" }));
+  it("renames a slug, recording the redirect it leaves behind", async () => {
+    mockWhere.mockResolvedValueOnce([{ slug: "old-slug" }]);
 
-    expect(mockUpdateSet).toHaveBeenCalledWith({ title: "New Title" });
+    const response = await PUT(
+      putRequest({ id: 1, title: "New Title", slug: "new-slug" }),
+    );
+
+    expect(response.status).toBe(200);
+    // The route hands the write its slug as it stood before this request —
+    // the recording module has no way to know that on its own.
+    expect(mockRecordSlugRename).toHaveBeenCalledWith(mockDb, {
+      classId: 1,
+      oldSlug: "old-slug",
+      newSlug: "new-slug",
+    });
+    expect(mockUpdateSet).toHaveBeenCalledWith({
+      title: "New Title",
+      slug: "new-slug",
+    });
+    // The catalogue-wide revalidation only ever lists the *new* slug — this
+    // is what stops the old slug's statically rendered page serving its
+    // last-rendered content until the ISR window next expires.
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/classes/old-slug");
+  });
+
+  it("does not revalidate an old-slug path when the slug is not actually changing", async () => {
+    mockWhere.mockResolvedValueOnce([{ slug: "same-slug" }]);
+
+    await PUT(putRequest({ id: 1, title: "New Title", slug: "same-slug" }));
+
+    expect(mockRevalidatePath).not.toHaveBeenCalledWith("/classes/same-slug");
+  });
+
+  it("refuses a rename the redirect history refuses, without touching the class", async () => {
+    mockWhere.mockResolvedValueOnce([{ slug: "old-slug" }]);
+    mockRecordSlugRename.mockResolvedValueOnce({
+      ok: false,
+      error: "This slug was previously used by another class",
+      httpStatus: 409,
+    });
+
+    const response = await PUT(putRequest({ id: 1, slug: "taken-slug" }));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe(
+      "This slug was previously used by another class",
+    );
+    expect(mockUpdateSet).not.toHaveBeenCalled();
   });
 
   it("refuses an update that names no field to change", async () => {
@@ -325,7 +411,7 @@ describe("PUT /api/admin/classes", () => {
 
     expect(response.status).toBe(400);
     expect((await response.json()).error).toBe(
-      "Class updates must include a title, category, booking type, price, active state or bundle eligibility",
+      "Class updates must include a title, slug, category, booking type, price, active state or bundle eligibility",
     );
     expect(mockUpdateSet).not.toHaveBeenCalled();
   });

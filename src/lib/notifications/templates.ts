@@ -172,6 +172,13 @@ export const bundleProductMissingAdmin: Template<
   };
 };
 
+export const bookingScheduleMissingAdmin: Template<
+  EventOf<"booking-schedule-missing">
+> = (event) => ({
+  subject: "[Moontide] ACTION NEEDED: booking paid for but not created",
+  text: `A customer paid for a class whose schedule has since been deleted, so no booking could be created for it.\n\nCustomer: ${event.customerName} (${event.customerEmail})\nStripe session: ${event.sessionId}\nSchedule referenced: ${event.scheduleId}\n\nShe has been charged and has no booking. She needs a booking creating by hand for another date, or refunding.\n\nBookings: ${siteUrl("/admin/bookings")}`,
+});
+
 // ---------------------------------------------------------------- waiting list
 
 export const waitlistJoinedCustomer: Template<EventOf<"waitlist-joined">> = (

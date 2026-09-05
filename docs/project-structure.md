@@ -20,7 +20,7 @@ src/
         schedules/        # CRUD API for class schedules
         waitlist/         # GET waiting list + occupancy, DELETE an entry
         waitlist/offer/   # POST offer a held seat, DELETE withdraw it
-        classes/          # CRUD for classes: create, edit, deactivate (soft delete only)
+        classes/          # CRUD for classes: create, edit (title/slug included), deactivate (soft delete only)
         pricing/          # GET/PUT bundle config only — class pricing moved to classes/
         bookings/         # GET all bookings
         bundles/          # GET all bundles
@@ -30,7 +30,7 @@ src/
       revalidate/           # Sanity webhook for on-demand ISR revalidation
     admin/
       login/              # Admin login page
-      classes/            # Create, edit and deactivate classes (no slug edit, no hard delete)
+      classes/            # Create, edit and deactivate classes, including renaming a slug (no hard delete)
       schedule/           # Schedule management (CRUD)
       pricing/            # Manage bundle config only — class pricing lives on /admin/classes
       bookings/           # View bookings
@@ -40,7 +40,7 @@ src/
       bundle/             # Bundle purchase page
       confirmation/       # Post-payment confirmation
     studio/[[...tool]]/   # Embedded Sanity Studio at /studio
-    classes/[slug]/       # Dynamic class detail pages
+    classes/[slug]/       # Dynamic class detail pages; 308s a renamed slug on to the current one
   components/
     ui/                   # shadcn/ui components (button, input, textarea, label, sheet)
     admin/                # Shared chrome for the admin tables
@@ -74,6 +74,7 @@ src/
     stripe.ts             # Stripe client singleton
     classes/
       categories.ts       # CLASS_CATEGORIES / BOOKING_TYPES — the one list, safe for a client page to import
+      slug-redirects.ts   # Records a slug rename (refusing a collision on create too), and resolves a stale slug to the class's current one
     bookings/
       transitions.ts      # Pure cancel/release/reschedule decisions (no DB)
     customers/

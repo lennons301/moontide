@@ -34,14 +34,19 @@ export function recognisedKind(kind: string): BookingNotificationKind | null {
  * the bundle that funded it if any, and the class it was moved off if any.
  */
 export type BookingEmailRow = {
-  bookings: { customerName: string; customerEmail: string };
+  bookings: {
+    customerName: string;
+    customerEmail: string;
+    /** Snapshotted at booking time — see `bookings.classTitle`. */
+    classTitle: string;
+  };
   schedules: {
     date: string;
     startTime: string;
     endTime: string;
     location: string | null;
   };
-  classes: { title: string; priceInPence: number };
+  classes: { priceInPence: number };
   /** Left-joined: null when the customer paid by card. */
   bundles: { creditsRemaining: number } | null;
   /** Left-joined on `originalScheduleId`: null when there was no move, or the class it was moved off has been deleted. */
@@ -86,7 +91,7 @@ export function bookingNotificationFor(
       type: "booking-rescheduled",
       customerName: row.bookings.customerName,
       customerEmail: row.bookings.customerEmail,
-      classTitle: row.classes.title,
+      classTitle: row.bookings.classTitle,
       oldDate: row.original_schedules.date,
       oldStartTime: row.original_schedules.startTime,
       oldEndTime: row.original_schedules.endTime,
@@ -101,7 +106,7 @@ export function bookingNotificationFor(
     type: "booking-confirmed",
     customerName: row.bookings.customerName,
     customerEmail: row.bookings.customerEmail,
-    classTitle: row.classes.title,
+    classTitle: row.bookings.classTitle,
     date: row.schedules.date,
     startTime: row.schedules.startTime,
     endTime: row.schedules.endTime,

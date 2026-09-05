@@ -3,10 +3,14 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { BOOKING_TYPES, CLASS_CATEGORIES } from "@/lib/classes/categories";
+import {
+  assertSlugNotRedirected,
+  recordSlugRename,
+} from "@/lib/classes/slug-redirects";
 import { getServicePagePaths } from "@/lib/content/services";
 import { db } from "@/lib/db";
 import { classes } from "@/lib/db/schema";
-import { ApiError, withAdmin } from "../_lib";
+import { ApiError, refuse, withAdmin } from "../_lib";
 
 async function revalidateServicePages() {
   const paths = await getServicePagePaths();
@@ -54,9 +58,6 @@ const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 const createBody = z.object({
   title: z.string(missingTitle).trim().min(1, missingTitle),
-  // Set once, at creation, and not editable here: changing a slug after
-  // launch needs the redirect a later ticket adds, so mutating it is
-  // deliberately out of scope for this surface.
   slug: z
     .string(missingSlug)
     .trim()
@@ -70,17 +71,20 @@ const createBody = z.object({
 });
 
 /** A duplicate slug is a client mistake, not a fault — `classes.slug` is unique. */
-async function insertClass(values: {
-  title: string;
-  slug: string;
-  category: (typeof CLASS_CATEGORIES)[number];
-  bookingType?: (typeof BOOKING_TYPES)[number];
-  priceInPence: number;
-  active?: boolean;
-  bundleEligible?: boolean;
-}) {
+async function insertClass(
+  executor: Pick<typeof db, "insert">,
+  values: {
+    title: string;
+    slug: string;
+    category: (typeof CLASS_CATEGORIES)[number];
+    bookingType?: (typeof BOOKING_TYPES)[number];
+    priceInPence: number;
+    active?: boolean;
+    bundleEligible?: boolean;
+  },
+) {
   try {
-    const [row] = await db.insert(classes).values(values).returning();
+    const [row] = await executor.insert(classes).values(values).returning();
     return row;
   } catch (error) {
     if ((error as { code?: string })?.code === "23505") {
@@ -91,7 +95,15 @@ async function insertClass(values: {
 }
 
 export const POST = withAdmin({ body: createBody }, async ({ body }) => {
-  const created = await insertClass(body);
+  const created = await db.transaction(async (tx) => {
+    // A slug some other class was renamed away from is still recorded as its
+    // redirect; a new class must not be created at it, or the old link would
+    // come to name this unrelated class instead of redirecting.
+    const available = await assertSlugNotRedirected(tx, body.slug);
+    if (!available.ok) refuse(available);
+
+    return await insertClass(tx, body);
+  });
 
   await revalidateServicePages();
 
@@ -105,6 +117,12 @@ const updateBody = z
   .object({
     id: classId,
     title: z.string(missingTitle).trim().min(1, missingTitle).optional(),
+    slug: z
+      .string(missingSlug)
+      .trim()
+      .min(1, missingSlug)
+      .regex(SLUG_PATTERN, badSlug)
+      .optional(),
     category: z.enum(CLASS_CATEGORIES, badCategory).optional(),
     bookingType: z.enum(BOOKING_TYPES, badBookingType).optional(),
     priceInPence: z
@@ -117,10 +135,11 @@ const updateBody = z
   })
   // A row that names none of the editable fields asks for nothing; the caller
   // meant something by sending it, so say so rather than silently doing
-  // nothing. (Slug is deliberately not among them — see `createBody`.)
+  // nothing.
   .refine(
     (c) =>
       c.title !== undefined ||
+      c.slug !== undefined ||
       c.category !== undefined ||
       c.bookingType !== undefined ||
       c.priceInPence !== undefined ||
@@ -128,7 +147,7 @@ const updateBody = z
       c.bundleEligible !== undefined,
     {
       error:
-        "Class updates must include a title, category, booking type, price, active state or bundle eligibility",
+        "Class updates must include a title, slug, category, booking type, price, active state or bundle eligibility",
     },
   );
 
@@ -136,6 +155,7 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
   const {
     id,
     title,
+    slug,
     category,
     bookingType,
     priceInPence,
@@ -145,6 +165,7 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
 
   const updateFields = {
     ...(title !== undefined && { title }),
+    ...(slug !== undefined && { slug }),
     ...(category !== undefined && { category }),
     ...(bookingType !== undefined && { bookingType }),
     ...(priceInPence !== undefined && { priceInPence }),
@@ -152,17 +173,63 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
     ...(bundleEligible !== undefined && { bundleEligible }),
   };
 
-  const updated = await db
-    .update(classes)
-    .set(updateFields)
-    .where(eq(classes.id, id))
-    .returning();
+  // Set inside the transaction when this update actually moves the slug, so
+  // the statically rendered old-slug page can be revalidated by name once the
+  // rename has committed — the catalogue-wide revalidation below only ever
+  // lists the class's *new* slug, never the one it just stopped answering to.
+  let renamedFrom: string | undefined;
+
+  const updated = await db.transaction(async (tx) => {
+    // The redirect is recorded against the slug this class holds *before* the
+    // update, so the write has to see it ahead of the rename rather than
+    // trust what the request claims that was.
+    if (slug !== undefined) {
+      const current = await tx
+        .select({ slug: classes.slug })
+        .from(classes)
+        .where(eq(classes.id, id));
+
+      if (current.length === 0) {
+        throw new ApiError(404, "Class not found");
+      }
+
+      if (current[0].slug !== slug) {
+        renamedFrom = current[0].slug;
+      }
+
+      const recorded = await recordSlugRename(tx, {
+        classId: id,
+        oldSlug: current[0].slug,
+        newSlug: slug,
+      });
+      if (!recorded.ok) refuse(recorded);
+    }
+
+    try {
+      return await tx
+        .update(classes)
+        .set(updateFields)
+        .where(eq(classes.id, id))
+        .returning();
+    } catch (error) {
+      if ((error as { code?: string })?.code === "23505") {
+        throw new ApiError(409, duplicateSlug.error);
+      }
+      throw error;
+    }
+  });
 
   if (updated.length === 0) {
     throw new ApiError(404, "Class not found");
   }
 
   await revalidateServicePages();
+  // The old slug's statically rendered page would otherwise keep serving its
+  // last-rendered content — old title, no redirect — until the ISR window
+  // (`revalidate = 3600` on `/classes/[slug]`) next expires.
+  if (renamedFrom) {
+    revalidatePath(`/classes/${renamedFrom}`);
+  }
 
   return NextResponse.json(updated[0]);
 });

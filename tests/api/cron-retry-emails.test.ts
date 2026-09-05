@@ -140,6 +140,7 @@ function pendingBooking(overrides: Record<string, unknown> = {}) {
       stripePaymentId: "cs_test_1",
       bundleId: null,
       emailKind: "confirmation",
+      classTitle: "Prenatal Yoga",
       // Created three days ago: outside the window the sweep used to have.
       createdAt: new Date(Date.now() - 3 * DAY_MS),
     },
@@ -149,7 +150,7 @@ function pendingBooking(overrides: Record<string, unknown> = {}) {
       endTime: "10:00",
       location: "Studio 1",
     },
-    classes: { title: "Prenatal Yoga", priceInPence: 1250 },
+    classes: { priceInPence: 1250 },
     // The bundle the booking was funded from, if any: a left join, so null for
     // a card booking.
     bundles: null,
@@ -467,6 +468,7 @@ describe("POST /api/cron/retry-emails", () => {
         bundleId: null,
         originalScheduleId: 41,
         emailKind: "reschedule",
+        classTitle: "Prenatal Yoga",
       },
       schedules: {
         date: isoDate(9),
@@ -474,7 +476,7 @@ describe("POST /api/cron/retry-emails", () => {
         endTime: "19:00",
         location: "Studio 2",
       },
-      classes: { title: "Prenatal Yoga", priceInPence: 1250 },
+      classes: { priceInPence: 1250 },
       bundles: null,
       original_schedules: {
         date: isoDate(2),

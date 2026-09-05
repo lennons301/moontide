@@ -333,6 +333,27 @@ describe("a bundle whose product has gone", () => {
   });
 });
 
+describe("a booking whose schedule was deleted before the webhook fired", () => {
+  it("tells Gabrielle who paid and for what session, with nothing to send the customer", async () => {
+    const { sent } = await send({
+      type: "booking-schedule-missing",
+      customerName: "Jane Doe",
+      customerEmail: "jane@example.com",
+      sessionId: "cs_test_123",
+      scheduleId: 999,
+    });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].to).toBe("gabrielle@example.com");
+    expect(sent[0].subject).toContain("ACTION NEEDED");
+    expect(sent[0].text).toContain("Jane Doe");
+    expect(sent[0].text).toContain("jane@example.com");
+    // The two things a human needs to go and find the payment.
+    expect(sent[0].text).toContain("cs_test_123");
+    expect(sent[0].text).toContain("999");
+  });
+});
+
 describe("joining a waiting list", () => {
   const JOINED = {
     type: "waitlist-joined",

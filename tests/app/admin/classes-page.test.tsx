@@ -72,7 +72,7 @@ describe("/admin/classes", () => {
     });
   });
 
-  it("edits a class without sending its slug", async () => {
+  it("edits a class, slug included", async () => {
     const fetchMock = stubClasses({
       "PUT /api/admin/classes": { json: PRENATAL },
     });
@@ -80,8 +80,10 @@ describe("/admin/classes", () => {
     await screen.findByRole("cell", { name: "Prenatal Yoga" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    // The slug is shown, not an input — there is nothing to type into.
-    expect(screen.queryByLabelText("Slug")).toBeNull();
+    // The slug is an ordinary input now — renaming it is the point.
+    fireEvent.change(screen.getByLabelText("Slug"), {
+      target: { value: "prenatal-yoga-renamed" },
+    });
     fireEvent.change(screen.getByLabelText("Title"), {
       target: { value: "Prenatal Yoga (Updated)" },
     });
@@ -97,7 +99,7 @@ describe("/admin/classes", () => {
       ([, i]) => i?.method === "PUT",
     ) as [string, RequestInit];
     const body = JSON.parse(init.body as string);
-    expect(body.slug).toBeUndefined();
+    expect(body.slug).toBe("prenatal-yoga-renamed");
     expect(body.title).toBe("Prenatal Yoga (Updated)");
   });
 

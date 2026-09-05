@@ -122,12 +122,6 @@ export const PUT = withAdmin({ body: transitionBody }, async ({ body }) => {
     if (!decision.ok) refuse(decision);
     const { source, target } = decision;
 
-    const classRows = await db
-      .select()
-      .from(classes)
-      .where(eq(classes.id, source.classId));
-    const classInfo = classRows[0];
-
     await db.transaction(async (tx) => {
       await tx
         .update(bookings)
@@ -167,7 +161,7 @@ export const PUT = withAdmin({ body: transitionBody }, async ({ body }) => {
         type: "booking-rescheduled",
         customerName: decision.booking.customerName,
         customerEmail: decision.booking.customerEmail,
-        classTitle: classInfo.title,
+        classTitle: decision.booking.classTitle,
         oldDate: source.date,
         oldStartTime: source.startTime,
         oldEndTime: source.endTime,

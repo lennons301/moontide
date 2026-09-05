@@ -288,6 +288,65 @@ describe("POST /api/stripe/webhook", () => {
     );
   });
 
+  it("alerts Gabrielle and creates nothing when the schedule has been deleted before the webhook fires", async () => {
+    // 1st select() → existence check finds no current booking
+    mockBundleConfigSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    });
+    // 2nd select() → schedule+class query finds nothing: the schedule is gone
+    mockBundleConfigSelect.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    });
+
+    mockConstructEvent.mockReturnValue({
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_test_missing_schedule",
+          metadata: {
+            type: "individual",
+            scheduleId: "999",
+            customerName: "Jane Doe",
+            customerEmail: "jane@example.com",
+          },
+        },
+      },
+    } as unknown as Stripe.Event);
+
+    const request = new Request("http://localhost:3000/api/stripe/webhook", {
+      method: "POST",
+      headers: { "stripe-signature": "valid" },
+      body: "{}",
+    });
+
+    const response = await POST(request);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(response.status).toBe(200);
+
+    // Nothing to book against, so nothing is written.
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+
+    // Gabrielle is told a charge has nothing behind it, by name and session,
+    // so she can create the booking by hand or refund it.
+    expect(mockNotifyAfterResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "booking-schedule-missing",
+        customerName: "Jane Doe",
+        customerEmail: "jane@example.com",
+        sessionId: "cs_test_missing_schedule",
+        scheduleId: 999,
+      }),
+      expect.objectContaining({ notRecorded: expect.any(String) }),
+    );
+  });
+
   it("skips creating a duplicate individual booking when one already exists", async () => {
     // 1st select() → existence check finds an active booking
     mockBundleConfigSelect.mockReturnValueOnce({

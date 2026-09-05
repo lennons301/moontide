@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { permanentRedirect } from "next/navigation";
 import { PortableText } from "next-sanity";
+import { resolveCurrentSlug } from "@/lib/classes/slug-redirects";
 import { getClassCatalogue, getService } from "@/lib/content/services";
 import { urlFor } from "@/lib/sanity/client";
 
@@ -33,6 +35,15 @@ export default async function ClassDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+
+  // A slug the admin editor has since renamed away from redirects on to
+  // whatever is current, in one hop however many renames sit in between —
+  // `resolveCurrentSlug` always names the class's live slug, never the next
+  // link in a chain.
+  const currentSlug = await resolveCurrentSlug(slug);
+  if (currentSlug) {
+    permanentRedirect(`/classes/${currentSlug}`);
+  }
 
   const service = await getService(slug);
   const title = service.title;

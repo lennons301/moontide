@@ -107,7 +107,7 @@ export default function BookingsPage() {
       rows: allBookings,
       sortKeys: {
         customer: (r) => r.bookings.customerName,
-        class: (r) => r.classes.title,
+        class: (r) => r.bookings.classTitle,
         date: (r) => r.schedules.date,
         status: (r) => r.bookings.status,
       },
@@ -244,7 +244,7 @@ export default function BookingsPage() {
                   <p className="font-medium text-deep-tide-blue">
                     {item.bookings.customerName}{" "}
                     <span className="font-normal text-deep-ocean/60">
-                      · {item.classes.title}
+                      · {item.bookings.classTitle}
                     </span>
                   </p>
                   <p className="text-xs text-deep-ocean/60">
@@ -341,7 +341,7 @@ export default function BookingsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 font-medium text-deep-tide-blue">
-                    {item.classes.title}
+                    {item.bookings.classTitle}
                   </td>
                   <td className="px-4 py-3">
                     <span>{formatDate(item.schedules.date)}</span>
@@ -416,7 +416,7 @@ export default function BookingsPage() {
           }}
           bookingId={reschedulingBooking.bookings.id}
           customerName={reschedulingBooking.bookings.customerName}
-          classTitle={reschedulingBooking.classes.title}
+          classTitle={reschedulingBooking.bookings.classTitle}
           sourceScheduleId={reschedulingBooking.schedules.id}
           sourceClassId={reschedulingBooking.classes.id}
           sourceDate={reschedulingBooking.schedules.date}

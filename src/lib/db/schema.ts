@@ -67,6 +67,23 @@ export const classes = pgTable("classes", {
   bundleEligible: boolean("bundle_eligible").default(true).notNull(),
 });
 
+// Every slug a class has ever held, other than its current one. Written
+// automatically whenever the admin editor changes `classes.slug`, and read by
+// `/classes/[slug]` to 308 a stale link on to the class's *current* slug —
+// always the current one, never the next link in the chain, so A→B→C resolves
+// in one hop however many renames sit between them.
+export const classSlugRedirects = pgTable("class_slug_redirects", {
+  id: serial("id").primaryKey(),
+  // Unique: a slug, past or present, names exactly one class. Renaming a
+  // class back onto a slug it used to hold removes that slug's row here
+  // rather than leaving a redirect from a slug to itself.
+  slug: text("slug").notNull().unique(),
+  classId: integer("class_id")
+    .references(() => classes.id, { onDelete: "cascade" })
+    .notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const schedules = pgTable(
   "schedules",
   {
@@ -153,6 +170,11 @@ export const bookings = pgTable(
     stripePaymentId: text("stripe_payment_id"),
     bundleId: integer("bundle_id").references(() => bundles.id),
     status: bookingStatus("status").notNull().default("confirmed"),
+    // The class's title as it read at the moment this booking was made.
+    // Confirmation emails and admin displays read this rather than joining
+    // `classes` live, so renaming a class — its title or its slug — never
+    // rewrites what a past booking shows.
+    classTitle: text("class_title").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     emailSent: boolean("email_sent").default(false).notNull(),
     // Which notification this booking still owes its customer while

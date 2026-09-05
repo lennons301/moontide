@@ -181,6 +181,7 @@ export async function POST(request: Request) {
         customerName,
         customerEmail,
         bundleId: bundle.id,
+        classTitle: schedule.classTitle,
       })
       .returning({ id: bookings.id });
 

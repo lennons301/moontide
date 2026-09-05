@@ -117,6 +117,7 @@ const SAMPLE_BOOKING = {
   customerEmail: "jane@example.com",
   status: "confirmed",
   originalScheduleId: null,
+  classTitle: "Prenatal Yoga",
 };
 
 const SAMPLE_SOURCE = {
@@ -382,8 +383,7 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
     mockSelectWhere
       .mockResolvedValueOnce([SAMPLE_BOOKING])
       .mockResolvedValueOnce([SAMPLE_SOURCE])
-      .mockResolvedValueOnce([{ ...SAMPLE_TARGET, date: "2026-06-01" }])
-      .mockResolvedValueOnce([SAMPLE_CLASS]);
+      .mockResolvedValueOnce([{ ...SAMPLE_TARGET, date: "2026-06-01" }]);
 
     const response = await PUT(makeRequest({ id: 1, newScheduleId: 20 }));
 
@@ -395,8 +395,7 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
     mockSelectWhere
       .mockResolvedValueOnce([SAMPLE_BOOKING])
       .mockResolvedValueOnce([SAMPLE_SOURCE])
-      .mockResolvedValueOnce([SAMPLE_TARGET])
-      .mockResolvedValueOnce([SAMPLE_CLASS]);
+      .mockResolvedValueOnce([SAMPLE_TARGET]);
     const response = await PUT(makeRequest({ id: 1, newScheduleId: 20 }));
     expect(response.status).toBe(200);
     expect(mockTransaction).toHaveBeenCalled();
@@ -425,8 +424,7 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
     mockSelectWhere
       .mockResolvedValueOnce([{ ...SAMPLE_BOOKING, status: "released" }])
       .mockResolvedValueOnce([SAMPLE_SOURCE])
-      .mockResolvedValueOnce([SAMPLE_TARGET])
-      .mockResolvedValueOnce([SAMPLE_CLASS]);
+      .mockResolvedValueOnce([SAMPLE_TARGET]);
     const response = await PUT(makeRequest({ id: 1, newScheduleId: 20 }));
     expect(response.status).toBe(200);
 
@@ -441,8 +439,7 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
     mockSelectWhere
       .mockResolvedValueOnce([SAMPLE_BOOKING])
       .mockResolvedValueOnce([SAMPLE_SOURCE])
-      .mockResolvedValueOnce([SAMPLE_TARGET])
-      .mockResolvedValueOnce([SAMPLE_CLASS]);
+      .mockResolvedValueOnce([SAMPLE_TARGET]);
     // The guarded claim matches no row: the target filled up after the check.
     mockTxUpdateReturning.mockResolvedValueOnce([]);
 
@@ -458,8 +455,7 @@ describe("PUT /api/admin/bookings — reschedule branch", () => {
     mockSelectWhere
       .mockResolvedValueOnce([alreadyMoved])
       .mockResolvedValueOnce([SAMPLE_SOURCE])
-      .mockResolvedValueOnce([SAMPLE_TARGET])
-      .mockResolvedValueOnce([SAMPLE_CLASS]);
+      .mockResolvedValueOnce([SAMPLE_TARGET]);
     await PUT(makeRequest({ id: 1, newScheduleId: 20 }));
     const bookingUpdateCall = mockTxUpdateSet.mock.calls[0]?.[0];
     expect(bookingUpdateCall.originalScheduleId).toBe(5);

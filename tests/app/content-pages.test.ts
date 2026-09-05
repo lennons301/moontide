@@ -19,6 +19,13 @@ vi.mock(
   async () => (await import("../support/sanity-client")).sanityModuleMock,
 );
 
+// Slug redirects are a Postgres read (`tests/integration/class-slug-redirects.test.ts`
+// covers the real thing); these tests are about the CMS fallback seam and
+// have no database, so every slug here answers "not a stale link".
+vi.mock("@/lib/classes/slug-redirects", () => ({
+  resolveCurrentSlug: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock(
   "@/lib/db",
   async () => (await import("../support/classes")).dbModuleMock,
@@ -80,6 +87,23 @@ function published(slug: string, title: string): Service {
     bookingType: "stripe",
   };
 }
+
+describe("a slug the admin has renamed away from", () => {
+  it("redirects permanently to the class's current slug, ahead of any CMS read", async () => {
+    const { resolveCurrentSlug } = await import("@/lib/classes/slug-redirects");
+    vi.mocked(resolveCurrentSlug).mockResolvedValueOnce("vinyasa-renamed");
+
+    const { default: Page } = await import("@/app/classes/[slug]/page");
+
+    // `permanentRedirect` throws rather than returning — Next reads the
+    // status code and destination off the thrown error's digest.
+    await expect(
+      Page({ params: Promise.resolve({ slug: "vinyasa" }) }),
+    ).rejects.toMatchObject({
+      digest: "NEXT_REDIRECT;replace;/classes/vinyasa-renamed;308;",
+    });
+  });
+});
 
 describe("with Sanity unreachable", () => {
   it("renders /about", async () => {
