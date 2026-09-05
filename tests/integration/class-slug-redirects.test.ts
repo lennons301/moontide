@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
-import { PUT } from "@/app/api/admin/classes/route";
+import { POST, PUT } from "@/app/api/admin/classes/route";
 import {
   recordSlugRename,
   resolveCurrentSlug,
@@ -20,15 +20,29 @@ vi.mock(
   async () => (await import("../support/admin-session")).authModuleMock,
 );
 
-// The route revalidates the service pages on every write. That is a Next.js
-// request-scoped API this test runs outside of, and is not what any of these
-// tests are about.
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// The route revalidates the service pages, and (on a rename) the old slug's
+// page by name, on every write. That is a Next.js request-scoped API this
+// test runs outside of; kept as a spy so the rename tests can assert which
+// path it was told to revalidate, not just that the write succeeded.
+const mockRevalidatePath = vi.fn();
+vi.mock("next/cache", () => ({
+  revalidatePath: (...args: unknown[]) => mockRevalidatePath(...args),
+}));
 
 function putClass(body: Record<string, unknown>) {
   return PUT(
     new Request("http://localhost/api/admin/classes", {
       method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+function postClass(body: Record<string, unknown>) {
+  return POST(
+    new Request("http://localhost/api/admin/classes", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
@@ -70,6 +84,38 @@ describe("renaming a class's slug", () => {
     expect(await resolveCurrentSlug("autumn-equinox-yin")).toBeNull();
     // A slug nothing has ever held is not a stale link either.
     expect(await resolveCurrentSlug("never-existed")).toBeNull();
+  });
+
+  it("revalidates the old slug's statically rendered page by name, not just the catalogue", async () => {
+    const cls = await createClass({ slug: "vinyasa" });
+    mockRevalidatePath.mockClear();
+
+    const response = await putClass({ id: cls.id, slug: "autumn-equinox-yin" });
+
+    expect(response.status).toBe(200);
+    // The catalogue-wide revalidation only ever lists the class's *current*
+    // slug — this is what tells Next.js the *old* slug's page is stale too,
+    // rather than leaving it to serve its last-rendered content for up to
+    // the ISR window (`revalidate = 3600` on `/classes/[slug]`).
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/classes/vinyasa");
+    expect(mockRevalidatePath).toHaveBeenCalledWith(
+      "/classes/autumn-equinox-yin",
+    );
+  });
+
+  it("does not revalidate the slug's page twice over when it does not actually change", async () => {
+    const cls = await createClass({ slug: "steady" });
+    mockRevalidatePath.mockClear();
+
+    await putClass({ id: cls.id, slug: "steady", title: "New Title" });
+
+    // The catalogue-wide revalidation already lists "/classes/steady" once,
+    // because the class is still active under that slug; a rename that isn't
+    // one must not add a second call for it.
+    const stableSlugCalls = mockRevalidatePath.mock.calls.filter(
+      ([path]) => path === "/classes/steady",
+    );
+    expect(stableSlugCalls).toHaveLength(1);
   });
 
   it("resolves a chain of renames to the current slug in one hop", async () => {
@@ -131,6 +177,45 @@ describe("renaming a class's slug", () => {
 
     expect(response.status).toBe(200);
     expect(await redirectRowsFor(cls.id)).toHaveLength(0);
+  });
+});
+
+describe("creating a class at a slug someone else's rename history claims", () => {
+  it("refuses a new class at a slug recorded as another class's old one", async () => {
+    const first = await createClass({ slug: "vinyasa" });
+    await putClass({ id: first.id, slug: "autumn-equinox-yin" });
+
+    const response = await postClass({
+      title: "Unrelated New Class",
+      slug: "vinyasa",
+      category: "class",
+      priceInPence: 1200,
+    });
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe(
+      "This slug was previously used by another class",
+    );
+    // Refused before any row was created at it.
+    const rows = await db
+      .select()
+      .from(classes)
+      .where(eq(classes.slug, "vinyasa"));
+    expect(rows).toHaveLength(0);
+    // The redirect still resolves to the class it was actually renamed to,
+    // not silently handed to whatever tried to claim the old slug next.
+    expect(await resolveCurrentSlug("vinyasa")).toBe("autumn-equinox-yin");
+  });
+
+  it("still allows a slug nothing has ever held", async () => {
+    const response = await postClass({
+      title: "Brand New Class",
+      slug: "never-before-seen",
+      category: "class",
+      priceInPence: 1200,
+    });
+
+    expect(response.status).toBe(201);
   });
 });
 

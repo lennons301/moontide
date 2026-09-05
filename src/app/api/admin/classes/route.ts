@@ -3,7 +3,10 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { BOOKING_TYPES, CLASS_CATEGORIES } from "@/lib/classes/categories";
-import { recordSlugRename } from "@/lib/classes/slug-redirects";
+import {
+  assertSlugNotRedirected,
+  recordSlugRename,
+} from "@/lib/classes/slug-redirects";
 import { getServicePagePaths } from "@/lib/content/services";
 import { db } from "@/lib/db";
 import { classes } from "@/lib/db/schema";
@@ -68,17 +71,20 @@ const createBody = z.object({
 });
 
 /** A duplicate slug is a client mistake, not a fault — `classes.slug` is unique. */
-async function insertClass(values: {
-  title: string;
-  slug: string;
-  category: (typeof CLASS_CATEGORIES)[number];
-  bookingType?: (typeof BOOKING_TYPES)[number];
-  priceInPence: number;
-  active?: boolean;
-  bundleEligible?: boolean;
-}) {
+async function insertClass(
+  executor: Pick<typeof db, "insert">,
+  values: {
+    title: string;
+    slug: string;
+    category: (typeof CLASS_CATEGORIES)[number];
+    bookingType?: (typeof BOOKING_TYPES)[number];
+    priceInPence: number;
+    active?: boolean;
+    bundleEligible?: boolean;
+  },
+) {
   try {
-    const [row] = await db.insert(classes).values(values).returning();
+    const [row] = await executor.insert(classes).values(values).returning();
     return row;
   } catch (error) {
     if ((error as { code?: string })?.code === "23505") {
@@ -89,7 +95,15 @@ async function insertClass(values: {
 }
 
 export const POST = withAdmin({ body: createBody }, async ({ body }) => {
-  const created = await insertClass(body);
+  const created = await db.transaction(async (tx) => {
+    // A slug some other class was renamed away from is still recorded as its
+    // redirect; a new class must not be created at it, or the old link would
+    // come to name this unrelated class instead of redirecting.
+    const available = await assertSlugNotRedirected(tx, body.slug);
+    if (!available.ok) refuse(available);
+
+    return await insertClass(tx, body);
+  });
 
   await revalidateServicePages();
 
@@ -159,6 +173,12 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
     ...(bundleEligible !== undefined && { bundleEligible }),
   };
 
+  // Set inside the transaction when this update actually moves the slug, so
+  // the statically rendered old-slug page can be revalidated by name once the
+  // rename has committed — the catalogue-wide revalidation below only ever
+  // lists the class's *new* slug, never the one it just stopped answering to.
+  let renamedFrom: string | undefined;
+
   const updated = await db.transaction(async (tx) => {
     // The redirect is recorded against the slug this class holds *before* the
     // update, so the write has to see it ahead of the rename rather than
@@ -171,6 +191,10 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
 
       if (current.length === 0) {
         throw new ApiError(404, "Class not found");
+      }
+
+      if (current[0].slug !== slug) {
+        renamedFrom = current[0].slug;
       }
 
       const recorded = await recordSlugRename(tx, {
@@ -200,6 +224,12 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
   }
 
   await revalidateServicePages();
+  // The old slug's statically rendered page would otherwise keep serving its
+  // last-rendered content — old title, no redirect — until the ISR window
+  // (`revalidate = 3600` on `/classes/[slug]`) next expires.
+  if (renamedFrom) {
+    revalidatePath(`/classes/${renamedFrom}`);
+  }
 
   return NextResponse.json(updated[0]);
 });

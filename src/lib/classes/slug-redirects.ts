@@ -14,6 +14,24 @@ import { classes, classSlugRedirects } from "@/lib/db/schema";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/** The root db client or an open transaction — both can run this read. */
+type SlugRedirectReader = Pick<typeof db, "select">;
+
+const slugCollisionRefusal = {
+  ok: false as const,
+  error: "This slug was previously used by another class",
+  httpStatus: 409,
+};
+
+/** The redirect row claiming `slug`, if any class's rename history holds one. */
+async function findRedirectClash(executor: SlugRedirectReader, slug: string) {
+  const clashes = await executor
+    .select({ id: classSlugRedirects.id, classId: classSlugRedirects.classId })
+    .from(classSlugRedirects)
+    .where(eq(classSlugRedirects.slug, slug));
+  return clashes[0];
+}
+
 /**
  * Records that `oldSlug` no longer names the class directly and now redirects
  * to it, as part of changing `classes.slug` to `newSlug`.
@@ -38,19 +56,11 @@ export async function recordSlugRename(
 ): Promise<{ ok: true } | { ok: false; error: string; httpStatus: number }> {
   if (oldSlug === newSlug) return { ok: true };
 
-  const clashes = await tx
-    .select({ id: classSlugRedirects.id, classId: classSlugRedirects.classId })
-    .from(classSlugRedirects)
-    .where(eq(classSlugRedirects.slug, newSlug));
-  const clash = clashes[0];
+  const clash = await findRedirectClash(tx, newSlug);
 
   if (clash) {
     if (clash.classId !== classId) {
-      return {
-        ok: false,
-        error: "This slug was previously used by another class",
-        httpStatus: 409,
-      };
+      return slugCollisionRefusal;
     }
     await tx
       .delete(classSlugRedirects)
@@ -59,6 +69,22 @@ export async function recordSlugRename(
 
   await tx.insert(classSlugRedirects).values({ slug: oldSlug, classId });
   return { ok: true };
+}
+
+/**
+ * Refuses creating a new class at a slug some other class's rename history
+ * still claims. `recordSlugRename` already refuses this collision when it
+ * happens on a rename; a brand-new class has no row to rename from, so it
+ * needs the same check made explicitly. Without it, an old link a class was
+ * renamed away from could come to name an unrelated new class instead of
+ * redirecting to the one it was renamed to.
+ */
+export async function assertSlugNotRedirected(
+  executor: SlugRedirectReader,
+  slug: string,
+): Promise<{ ok: true } | { ok: false; error: string; httpStatus: number }> {
+  const clash = await findRedirectClash(executor, slug);
+  return clash ? slugCollisionRefusal : { ok: true };
 }
 
 /**

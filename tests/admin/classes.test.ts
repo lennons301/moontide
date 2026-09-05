@@ -31,6 +31,7 @@ const {
   mockUpdateSet,
   mockUpdateReturning,
   mockRecordSlugRename,
+  mockAssertSlugNotRedirected,
   mockDb,
 } = vi.hoisted(() => {
   const mockWhere = vi.fn();
@@ -46,6 +47,7 @@ const {
     .mockReturnValue({ returning: mockUpdateReturning });
   const mockUpdateSet = vi.fn().mockReturnValue({ where: mockUpdateWhere });
   const mockRecordSlugRename = vi.fn().mockResolvedValue({ ok: true });
+  const mockAssertSlugNotRedirected = vi.fn().mockResolvedValue({ ok: true });
   const mockDb = {
     select: vi.fn().mockReturnValue({ from: mockFrom }),
     insert: vi.fn().mockReturnValue({ values: mockInsertValues }),
@@ -61,6 +63,7 @@ const {
     mockUpdateSet,
     mockUpdateReturning,
     mockRecordSlugRename,
+    mockAssertSlugNotRedirected,
     mockDb,
   };
 });
@@ -86,6 +89,8 @@ vi.mock("@/lib/db/schema", () => ({
 // rather than simulated here. This suite only checks the route's wiring to it.
 vi.mock("@/lib/classes/slug-redirects", () => ({
   recordSlugRename: (...args: unknown[]) => mockRecordSlugRename(...args),
+  assertSlugNotRedirected: (...args: unknown[]) =>
+    mockAssertSlugNotRedirected(...args),
 }));
 
 vi.mock("drizzle-orm", () => ({ eq: mockEq }));
@@ -283,6 +288,30 @@ describe("POST /api/admin/classes", () => {
       "A class with this slug already exists",
     );
   });
+
+  it("refuses a slug still recorded as another class's old one, without inserting", async () => {
+    mockAssertSlugNotRedirected.mockResolvedValueOnce({
+      ok: false,
+      error: "This slug was previously used by another class",
+      httpStatus: 409,
+    });
+
+    const response = await POST(
+      postRequest({
+        title: "Unrelated New Class",
+        slug: "vinyasa",
+        category: "class",
+        priceInPence: 100,
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe(
+      "This slug was previously used by another class",
+    );
+    expect(mockAssertSlugNotRedirected).toHaveBeenCalledWith(mockDb, "vinyasa");
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
 });
 
 describe("PUT /api/admin/classes", () => {
@@ -346,6 +375,18 @@ describe("PUT /api/admin/classes", () => {
       title: "New Title",
       slug: "new-slug",
     });
+    // The catalogue-wide revalidation only ever lists the *new* slug — this
+    // is what stops the old slug's statically rendered page serving its
+    // last-rendered content until the ISR window next expires.
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/classes/old-slug");
+  });
+
+  it("does not revalidate an old-slug path when the slug is not actually changing", async () => {
+    mockWhere.mockResolvedValueOnce([{ slug: "same-slug" }]);
+
+    await PUT(putRequest({ id: 1, title: "New Title", slug: "same-slug" }));
+
+    expect(mockRevalidatePath).not.toHaveBeenCalledWith("/classes/same-slug");
   });
 
   it("refuses a rename the redirect history refuses, without touching the class", async () => {

@@ -74,7 +74,7 @@ src/
     stripe.ts             # Stripe client singleton
     classes/
       categories.ts       # CLASS_CATEGORIES / BOOKING_TYPES — the one list, safe for a client page to import
-      slug-redirects.ts   # Records a slug rename, and resolves a stale slug to the class's current one
+      slug-redirects.ts   # Records a slug rename (refusing a collision on create too), and resolves a stale slug to the class's current one
     bookings/
       transitions.ts      # Pure cancel/release/reschedule decisions (no DB)
     customers/
