@@ -9,10 +9,6 @@ import {
 } from "@/lib/admin/pricing-changes";
 
 const ROWS: PricingRows = {
-  classes: [
-    { id: 1, title: "Prenatal Yoga", priceInPence: 1500, bundleEligible: true },
-    { id: 2, title: "Baby Yoga", priceInPence: 1200, bundleEligible: false },
-  ],
   bundleConfigs: [
     {
       id: 10,
@@ -25,8 +21,6 @@ const ROWS: PricingRows = {
 };
 
 const NOTHING_TYPED: PricingEdits = {
-  classPrices: {},
-  classEligibility: {},
   bundles: {},
 };
 
@@ -70,36 +64,9 @@ describe("buildChangeSummary", () => {
     expect(
       buildChangeSummary(
         ROWS,
-        edits({ classPrices: { 1: "15.00" }, classEligibility: { 1: true } }),
+        edits({ bundles: { 10: { priceInPence: "75.00" } } }),
       ),
     ).toEqual([]);
-  });
-
-  it("describes a class price change in both directions", () => {
-    expect(
-      buildChangeSummary(ROWS, edits({ classPrices: { 1: "18.50" } })),
-    ).toEqual(["Prenatal Yoga: £15.00 → £18.50"]);
-  });
-
-  it("says which way bundle eligibility moved", () => {
-    expect(
-      buildChangeSummary(ROWS, edits({ classEligibility: { 1: false } })),
-    ).toEqual(["Prenatal Yoga: no longer bookable with a bundle"]);
-    expect(
-      buildChangeSummary(ROWS, edits({ classEligibility: { 2: true } })),
-    ).toEqual(["Baby Yoga: now bookable with a bundle"]);
-  });
-
-  it("lists both changes to one class", () => {
-    expect(
-      buildChangeSummary(
-        ROWS,
-        edits({ classPrices: { 1: "18.00" }, classEligibility: { 1: false } }),
-      ),
-    ).toEqual([
-      "Prenatal Yoga: £15.00 → £18.00",
-      "Prenatal Yoga: no longer bookable with a bundle",
-    ]);
   });
 
   it("describes each bundle field in its own units", () => {
@@ -134,40 +101,25 @@ describe("buildPricingPayload", () => {
     expect(buildPricingPayload(ROWS, NOTHING_TYPED)).toEqual({});
   });
 
-  it("omits the untouched side entirely", () => {
-    expect(
-      buildPricingPayload(ROWS, edits({ classPrices: { 2: "13.00" } })),
-    ).toEqual({ classes: [{ id: 2, priceInPence: 1300 }] });
-  });
-
   it("carries only the fields that changed on a row", () => {
     expect(
       buildPricingPayload(
         ROWS,
         edits({
-          classPrices: { 1: "15.00" },
-          classEligibility: { 1: false },
           bundles: { 10: { priceInPence: "75.00", credits: "8" } },
         }),
       ),
     ).toEqual({
-      classes: [{ id: 1, bundleEligible: false }],
       bundleConfigs: [{ id: 10, credits: 8 }],
     });
   });
 
   it("carries exactly what the summary describes", () => {
     const typed = edits({
-      classPrices: { 1: "18.50" },
-      classEligibility: { 2: true },
       bundles: { 10: { expiryDays: "120" } },
     });
-    expect(buildChangeSummary(ROWS, typed)).toHaveLength(3);
+    expect(buildChangeSummary(ROWS, typed)).toHaveLength(1);
     expect(buildPricingPayload(ROWS, typed)).toEqual({
-      classes: [
-        { id: 1, priceInPence: 1850 },
-        { id: 2, bundleEligible: true },
-      ],
       bundleConfigs: [{ id: 10, expiryDays: 120 }],
     });
   });

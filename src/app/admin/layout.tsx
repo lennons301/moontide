@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { contactSubmissions } from "@/lib/db/schema";
 
 const adminLinks = [
+  { label: "Classes", href: "/admin/classes" },
   { label: "Schedule", href: "/admin/schedule" },
   { label: "Pricing", href: "/admin/pricing" },
   { label: "Bookings", href: "/admin/bookings" },

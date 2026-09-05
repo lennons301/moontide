@@ -9,14 +9,10 @@
  * Only fields that were actually typed into are considered, and only when the
  * value they parse to differs from what is stored — retyping the same price is
  * not a change, and the Save button stays disabled.
+ *
+ * Class pricing lives on `/admin/classes` now — see `src/lib/admin/rows.ts`
+ * and `/api/admin/classes` — so this is bundle config only.
  */
-
-export interface ClassPriceRow {
-  id: number;
-  title: string;
-  priceInPence: number;
-  bundleEligible: boolean;
-}
 
 export interface BundleConfigRow {
   id: number;
@@ -28,8 +24,6 @@ export interface BundleConfigRow {
 
 /** Raw form state: what has been typed, keyed by row id. */
 export interface PricingEdits {
-  classPrices: Record<number, string>;
-  classEligibility: Record<number, boolean>;
   bundles: Record<
     number,
     { priceInPence?: string; credits?: string; expiryDays?: string } | undefined
@@ -37,14 +31,7 @@ export interface PricingEdits {
 }
 
 export interface PricingRows {
-  classes: ClassPriceRow[];
   bundleConfigs: BundleConfigRow[];
-}
-
-export interface ClassUpdate {
-  id: number;
-  priceInPence?: number;
-  bundleEligible?: boolean;
 }
 
 export interface BundleUpdate {
@@ -67,38 +54,6 @@ export function poundsToPence(pounds: string): number {
   const parsed = Number.parseFloat(pounds);
   if (Number.isNaN(parsed) || parsed < 0) return 0;
   return Math.round(parsed * 100);
-}
-
-/** The class-price and bundle-eligibility fields that differ from what is stored. */
-function classChanges(
-  rows: ClassPriceRow[],
-  edits: PricingEdits,
-): ClassUpdate[] {
-  const updates: ClassUpdate[] = [];
-
-  for (const c of rows) {
-    const update: ClassUpdate = { id: c.id };
-
-    const typedPrice = edits.classPrices[c.id];
-    if (typedPrice !== undefined) {
-      const newPence = poundsToPence(typedPrice);
-      if (newPence !== c.priceInPence) update.priceInPence = newPence;
-    }
-
-    const eligible = edits.classEligibility[c.id];
-    if (eligible !== undefined && eligible !== c.bundleEligible) {
-      update.bundleEligible = eligible;
-    }
-
-    if (
-      update.priceInPence !== undefined ||
-      update.bundleEligible !== undefined
-    ) {
-      updates.push(update);
-    }
-  }
-
-  return updates;
 }
 
 /** The bundle-config fields that differ from what is stored. */
@@ -149,22 +104,6 @@ export function buildChangeSummary(
 ): string[] {
   const lines: string[] = [];
 
-  const byClassId = new Map(rows.classes.map((c) => [c.id, c]));
-  for (const update of classChanges(rows.classes, edits)) {
-    const c = byClassId.get(update.id);
-    if (!c) continue;
-    if (update.priceInPence !== undefined) {
-      lines.push(
-        `${c.title}: £${penceToPounds(c.priceInPence)} → £${penceToPounds(update.priceInPence)}`,
-      );
-    }
-    if (update.bundleEligible !== undefined) {
-      lines.push(
-        `${c.title}: ${update.bundleEligible ? "now bookable" : "no longer bookable"} with a bundle`,
-      );
-    }
-  }
-
   const byBundleId = new Map(rows.bundleConfigs.map((bc) => [bc.id, bc]));
   for (const update of bundleChanges(rows.bundleConfigs, edits)) {
     const bc = byBundleId.get(update.id);
@@ -194,12 +133,8 @@ export function buildChangeSummary(
 export function buildPricingPayload(
   rows: PricingRows,
   edits: PricingEdits,
-): { classes?: ClassUpdate[]; bundleConfigs?: BundleUpdate[] } {
-  const payload: { classes?: ClassUpdate[]; bundleConfigs?: BundleUpdate[] } =
-    {};
-
-  const classes = classChanges(rows.classes, edits);
-  if (classes.length > 0) payload.classes = classes;
+): { bundleConfigs?: BundleUpdate[] } {
+  const payload: { bundleConfigs?: BundleUpdate[] } = {};
 
   const bundleConfigs = bundleChanges(rows.bundleConfigs, edits);
   if (bundleConfigs.length > 0) payload.bundleConfigs = bundleConfigs;
