@@ -12,16 +12,12 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { BOOKING_TYPES, CLASS_CATEGORIES } from "@/lib/classes/categories";
 import { SCHEDULE_STATUSES } from "@/lib/schedules/availability";
 
 // Enums
-export const classCategory = pgEnum("class_category", [
-  "class",
-  "coaching",
-  "community",
-]);
-
-export const bookingType = pgEnum("booking_type", ["stripe", "contact"]);
+export const classCategory = pgEnum("class_category", CLASS_CATEGORIES);
+export const bookingType = pgEnum("booking_type", BOOKING_TYPES);
 
 // Values come from src/lib/schedules/availability.ts: there is no `full` status
 // because fullness is derived from occupancy, and `closed` is Gabrielle's
