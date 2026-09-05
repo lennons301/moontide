@@ -1,14 +1,25 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCommunityEvents } from "@/lib/content/community";
 import {
   fallbackServices,
   fallbackTrainer,
   unknownServiceFallback,
 } from "@/lib/content/fallbacks";
-import { getService, getServices } from "@/lib/content/services";
+import {
+  getClassCatalogue,
+  getService,
+  getServicePagePaths,
+  getServices,
+} from "@/lib/content/services";
 import { getSiteSettings } from "@/lib/content/site-settings";
 import { getTrainer } from "@/lib/content/trainer";
 import type { Service, Trainer } from "@/lib/sanity/types";
+import {
+  givenClassCatalogueHolds,
+  givenClassCatalogueIsEmpty,
+  givenClassCatalogueUnreachable,
+  mockSelect,
+} from "../support/classes";
 import {
   CMS_IMAGE,
   givenCmsHolds,
@@ -21,6 +32,12 @@ vi.mock(
   async () => (await import("../support/sanity-client")).sanityModuleMock,
 );
 
+vi.mock(
+  "@/lib/db",
+  async () => (await import("../support/classes")).dbModuleMock,
+);
+
+beforeEach(givenClassCatalogueIsEmpty);
 afterEach(resetContentSource);
 
 const CMS_COACHING: Service = {
@@ -130,6 +147,139 @@ describe("getService", () => {
       expect(service.title).not.toBe(unknownServiceFallback.title);
       expect(service.descriptionParagraphs.length).toBeGreaterThan(0);
     }
+  });
+
+  it("titles a catalogue class from Postgres, even when Sanity names it differently", async () => {
+    givenClassCatalogueHolds([
+      { slug: "prenatal", title: "Prenatal Yoga", category: "class" },
+    ]);
+    givenCmsHolds({
+      services: [
+        { ...CMS_COACHING, slug: { current: "prenatal" }, title: "Renamed" },
+      ],
+    });
+
+    const service = await getService("prenatal");
+
+    expect(service.title).toBe("Prenatal Yoga");
+  });
+
+  it("still renders Sanity's prose and image for a catalogue class", async () => {
+    givenClassCatalogueHolds([
+      { slug: "prenatal", title: "Prenatal Yoga", category: "class" },
+    ]);
+    givenCmsHolds({
+      services: [{ ...CMS_COACHING, slug: { current: "prenatal" } }],
+    });
+
+    const service = await getService("prenatal");
+
+    expect(service.title).toBe("Prenatal Yoga");
+    expect(service.fullDescription).toEqual(CMS_COACHING.fullDescription);
+    expect(service.image).toEqual(CMS_IMAGE);
+  });
+
+  it("falls back to 'coming soon' for a catalogue class Sanity has no document for", async () => {
+    givenClassCatalogueHolds([
+      { slug: "evening-flow", title: "Evening Flow", category: "class" },
+    ]);
+    givenCmsUnreachable();
+
+    const service = await getService("evening-flow");
+
+    expect(service.title).toBe("Evening Flow");
+    expect(service.descriptionParagraphs).toEqual(
+      unknownServiceFallback.descriptionParagraphs,
+    );
+  });
+
+  it("falls back to the module's own copy when Postgres cannot be reached", async () => {
+    givenClassCatalogueUnreachable();
+    givenCmsUnreachable();
+
+    const service = await getService("prenatal");
+
+    expect(service.title).toBe("Prenatal Yoga");
+    expect(service.descriptionParagraphs[0]).toContain("Gentle movement");
+  });
+
+  it("never asks Postgres about coaching, community or private", async () => {
+    givenCmsUnreachable();
+    mockSelect.mockClear();
+
+    for (const slug of ["coaching", "community", "private"]) {
+      const service = await getService(slug);
+      expect(service.title).not.toBe(unknownServiceFallback.title);
+    }
+
+    expect(mockSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe("getClassCatalogue", () => {
+  it("answers with the active classes Postgres holds", async () => {
+    givenClassCatalogueHolds([
+      { slug: "prenatal", title: "Prenatal Yoga", category: "class" },
+      { slug: "postnatal", title: "Postnatal Yoga", category: "class" },
+    ]);
+
+    expect(await getClassCatalogue()).toEqual([
+      { slug: "prenatal", title: "Prenatal Yoga", category: "class" },
+      { slug: "postnatal", title: "Postnatal Yoga", category: "class" },
+    ]);
+  });
+
+  it("answers with nothing when Postgres has no active classes", async () => {
+    givenClassCatalogueIsEmpty();
+
+    expect(await getClassCatalogue()).toEqual([]);
+  });
+
+  it("degrades to nothing rather than throw when Postgres cannot be reached", async () => {
+    givenClassCatalogueUnreachable();
+
+    await expect(getClassCatalogue()).resolves.toEqual([]);
+  });
+});
+
+describe("getServicePagePaths", () => {
+  it("includes a page for every class in the catalogue, not a fixed list", async () => {
+    givenClassCatalogueHolds([
+      { slug: "prenatal", title: "Prenatal Yoga", category: "class" },
+      { slug: "postnatal", title: "Postnatal Yoga", category: "class" },
+      { slug: "baby-yoga", title: "Baby Yoga & Massage", category: "class" },
+      {
+        slug: "vinyasa",
+        title: "Autumn Equinox Yin",
+        category: "class",
+      },
+      // A class added after the original four — a hardcoded list of paths
+      // would silently miss this one.
+      { slug: "restorative", title: "Restorative Yoga", category: "class" },
+    ]);
+
+    expect(await getServicePagePaths()).toEqual([
+      "/",
+      "/classes/prenatal",
+      "/classes/postnatal",
+      "/classes/baby-yoga",
+      "/classes/vinyasa",
+      "/classes/restorative",
+      "/coaching",
+      "/community",
+      "/private",
+    ]);
+  });
+
+  it("still names the fixed service pages when the catalogue is empty", async () => {
+    givenClassCatalogueIsEmpty();
+
+    expect(await getServicePagePaths()).toEqual([
+      "/",
+      "/coaching",
+      "/community",
+      "/private",
+    ]);
   });
 });
 

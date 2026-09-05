@@ -10,6 +10,18 @@ vi.mock("next/cache", () => ({
   revalidatePath: (...args: unknown[]) => mockRevalidatePath(...args),
 }));
 
+const mockGetServicePagePaths = vi.fn();
+vi.mock("@/lib/content/services", () => ({
+  getServicePagePaths: () => mockGetServicePagePaths(),
+}));
+mockGetServicePagePaths.mockResolvedValue([
+  "/",
+  "/classes/prenatal-yoga",
+  "/coaching",
+  "/community",
+  "/private",
+]);
+
 const {
   mockWhere,
   mockFrom,
@@ -174,6 +186,10 @@ describe("POST /api/admin/classes", () => {
     );
     expect(mockRevalidatePath).toHaveBeenCalledWith("/");
     expect(mockRevalidatePath).toHaveBeenCalledWith("/coaching");
+    // The path list comes from the catalogue, not a hardcoded list, so a
+    // sixth class or a rename picks up the same revalidation a create
+    // through Sanity does.
+    expect(mockGetServicePagePaths).toHaveBeenCalled();
   });
 
   it("requires a title", async () => {
@@ -269,6 +285,7 @@ describe("PUT /api/admin/classes", () => {
     expect(response.status).toBe(200);
     expect(mockUpdateSet).toHaveBeenCalledWith({ active: false });
     expect(mockRevalidatePath).toHaveBeenCalledWith("/");
+    expect(mockGetServicePagePaths).toHaveBeenCalled();
   });
 
   it("reactivates a class", async () => {

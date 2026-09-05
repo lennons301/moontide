@@ -3,13 +3,14 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { BOOKING_TYPES, CLASS_CATEGORIES } from "@/lib/classes/categories";
+import { getServicePagePaths } from "@/lib/content/services";
 import { db } from "@/lib/db";
 import { classes } from "@/lib/db/schema";
-import { SERVICE_PAGE_PATHS } from "@/lib/revalidation";
 import { ApiError, withAdmin } from "../_lib";
 
-function revalidateServicePages() {
-  for (const path of SERVICE_PAGE_PATHS) {
+async function revalidateServicePages() {
+  const paths = await getServicePagePaths();
+  for (const path of paths) {
     revalidatePath(path);
   }
 }
@@ -92,7 +93,7 @@ async function insertClass(values: {
 export const POST = withAdmin({ body: createBody }, async ({ body }) => {
   const created = await insertClass(body);
 
-  revalidateServicePages();
+  await revalidateServicePages();
 
   return NextResponse.json(created, { status: 201 });
 });
@@ -161,7 +162,7 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
     throw new ApiError(404, "Class not found");
   }
 
-  revalidateServicePages();
+  await revalidateServicePages();
 
   return NextResponse.json(updated[0]);
 });

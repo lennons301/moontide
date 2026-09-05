@@ -1,6 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  givenClassCatalogueHolds,
+  givenClassCatalogueUnreachable,
+} from "../support/classes";
 import {
   givenCmsHolds,
   givenCmsUnreachable,
@@ -10,6 +14,17 @@ import {
 vi.mock(
   "@/lib/sanity/client",
   async () => (await import("../support/sanity-client")).sanityModuleMock,
+);
+
+vi.mock(
+  "@/lib/db",
+  async () => (await import("../support/classes")).dbModuleMock,
+);
+
+beforeEach(() =>
+  givenClassCatalogueHolds([
+    { slug: "prenatal", title: "Prenatal Yoga", category: "class" },
+  ]),
 );
 
 // next/font/google is a build-time loader; the layout only uses the variables.
@@ -72,5 +87,19 @@ describe("RootLayout", () => {
 
     expect(html).toContain("https://instagram.com/moontide");
     expect(html).toContain("Instagram");
+  });
+
+  it("renders every page when Postgres cannot be reached, with no classes listed", async () => {
+    givenClassCatalogueUnreachable();
+
+    const html = await renderLayout();
+
+    // /book has no dependency of its own on the classes table and must keep
+    // taking bookings through a Postgres outage or a Neon cold-start blip.
+    expect(html).toContain("Book a Class");
+    // Nav and footer still render — minus the one thing Postgres was asked
+    // for, the same degradation Sanity's own outage gets.
+    expect(html).toContain("Privacy");
+    expect(html).not.toContain("/classes/");
   });
 });

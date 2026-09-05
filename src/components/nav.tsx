@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import type { CatalogueClass } from "@/lib/content/services";
 import { MobileMenu } from "./mobile-menu";
 
-export function Nav() {
+export function Nav({ classes }: { classes: CatalogueClass[] }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -27,7 +28,11 @@ export function Nav() {
           MOONTIDE
         </Link>
       </div>
-      <MobileMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <MobileMenu
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        classes={classes}
+      />
     </header>
   );
 }
