@@ -14,6 +14,8 @@ human_signoff:
     - "**/api/stripe/**"
     - "**/api/book/**"
     - "**/admin/pricing/**"
+    - "**/admin/classes/**"
+    - "**/api/admin/classes/**"
   # Anything that emails a customer, or the scheduled jobs that trigger it.
   # A bad send goes out once and cannot be recalled, so these never auto-land.
   notifications:

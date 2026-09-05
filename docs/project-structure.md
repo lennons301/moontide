@@ -20,8 +20,8 @@ src/
         schedules/        # CRUD API for class schedules
         waitlist/         # GET waiting list + occupancy, DELETE an entry
         waitlist/offer/   # POST offer a held seat, DELETE withdraw it
-        classes/          # GET active class types
-        pricing/          # GET/PUT class prices and bundle config
+        classes/          # CRUD for classes: create, edit, deactivate (soft delete only)
+        pricing/          # GET/PUT bundle config only — class pricing moved to classes/
         bookings/         # GET all bookings
         bundles/          # GET all bundles
         messages/         # GET contact submissions
@@ -30,8 +30,9 @@ src/
       revalidate/           # Sanity webhook for on-demand ISR revalidation
     admin/
       login/              # Admin login page
+      classes/            # Create, edit and deactivate classes (no slug edit, no hard delete)
       schedule/           # Schedule management (CRUD)
-      pricing/            # Manage class prices and bundle config
+      pricing/            # Manage bundle config only — class pricing lives on /admin/classes
       bookings/           # View bookings
       bundles/            # View bundles
       messages/           # Contact message inbox
@@ -71,6 +72,9 @@ src/
       rows.ts             # The shapes /api/admin/* answers with, from the Drizzle schema
       navigate.ts         # goToLogin — where a 401 sends the operator
     stripe.ts             # Stripe client singleton
+    revalidation.ts       # SERVICE_PAGE_PATHS — the public routes a class change revalidates
+    classes/
+      categories.ts       # CLASS_CATEGORIES / BOOKING_TYPES — the one list, safe for a client page to import
     bookings/
       transitions.ts      # Pure cancel/release/reschedule decisions (no DB)
     customers/
@@ -139,7 +143,7 @@ tests/
   admin/routes-are-protected.test.ts # Every /api/admin handler, signed out and demoted
   admin/bookings.test.ts      # Booking list + cancel/release/reschedule wiring
   admin/bundles.test.ts       # Bundle list
-  admin/classes.test.ts       # Active class list
+  admin/classes.test.ts       # Classes CRUD API: list (active or all), create, update, deactivate
   admin/messages.test.ts      # Contact message read flag
   admin/resend-email.test.ts  # Resending a booking or bundle confirmation
   admin/validation-messages.test.ts # No admin refusal is phrased by zod
