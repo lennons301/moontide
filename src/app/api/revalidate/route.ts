@@ -1,17 +1,9 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+import { SERVICE_PAGE_PATHS } from "@/lib/revalidation";
 
 const pathsByType: Record<string, string[]> = {
-  service: [
-    "/",
-    "/classes/prenatal",
-    "/classes/postnatal",
-    "/classes/baby-yoga",
-    "/classes/vinyasa",
-    "/coaching",
-    "/community",
-    "/private",
-  ],
+  service: SERVICE_PAGE_PATHS,
   trainer: ["/", "/about"],
   communityEvent: ["/community"],
   siteSettings: ["/"],
