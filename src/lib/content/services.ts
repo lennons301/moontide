@@ -1,4 +1,7 @@
+import { eq } from "drizzle-orm";
 import type { Image, PortableTextBlock } from "sanity";
+import { db } from "@/lib/db";
+import { classes } from "@/lib/db/schema";
 import { serviceBySlugQuery, servicesQuery } from "@/lib/sanity/queries";
 import type { Service } from "@/lib/sanity/types";
 import {
@@ -7,6 +10,75 @@ import {
   unknownServiceFallback,
 } from "./fallbacks";
 import { fetchOrNull } from "./source";
+
+/** One bookable class, as Postgres — the catalogue's owner — has it. */
+export interface CatalogueClass {
+  slug: string;
+  title: string;
+  category: Service["category"];
+}
+
+/**
+ * The bookable classes: prenatal, postnatal, baby yoga, and whatever else
+ * Gabrielle has added at `/admin/pricing`. Postgres owns a class's title and
+ * slug (ADR-0001), so this is the one read nav, footer, `/about`, static
+ * generation and revalidation all share — none of them enumerate the classes
+ * themselves any more.
+ *
+ * Read by the root layout, which wraps every route — including `/book`,
+ * which has no dependency of its own on either the CMS or this table. So a
+ * Postgres outage or a cold-start blip must cost the catalogue's own answer
+ * (no classes to list) and nothing else, the same guarantee `fetchOrNull`
+ * gives every Sanity read: an uncaught throw here once took the whole site
+ * down over an optional Instagram link, and this is the same shape of
+ * mistake with a different dependency.
+ */
+export async function getClassCatalogue(): Promise<CatalogueClass[]> {
+  try {
+    return await db
+      .select({
+        slug: classes.slug,
+        title: classes.title,
+        category: classes.category,
+      })
+      .from(classes)
+      .where(eq(classes.active, true))
+      .orderBy(classes.id);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The public routes that show a class's title, description or price: the
+ * home page, each class's own page, and the three fixed service pages that
+ * aren't backed by a catalogue row. Both callers that need to revalidate "a
+ * class changed" — the Sanity webhook (`/api/revalidate`, on a `service`
+ * document publish) and the admin classes API (on a create or update) — read
+ * this rather than each keeping its own list, so a class added or renamed
+ * since the last deploy is revalidated correctly without a code change here.
+ */
+export async function getServicePagePaths(): Promise<string[]> {
+  const catalogue = await getClassCatalogue();
+  return [
+    "/",
+    ...catalogue.map(({ slug }) => `/classes/${slug}`),
+    "/coaching",
+    "/community",
+    "/private",
+  ];
+}
+
+/**
+ * The service slugs the catalogue never answers for — they have no row in
+ * `classes` and never will, so `getService` has no reason to ask Postgres
+ * about them at all.
+ */
+const NON_CLASS_SLUGS: ReadonlySet<string> = new Set([
+  "coaching",
+  "community",
+  "private",
+]);
 
 /** One service, answered whether or not the CMS is reachable. */
 export interface ServiceContent {
@@ -28,14 +100,26 @@ export interface ServiceContent {
  * The service behind a page: `/coaching`, `/private`, `/community` and every
  * `/classes/<slug>`. The fallback copy is part of the answer, so the page has
  * one thing to render rather than a CMS document and a local backup.
+ *
+ * A slug in the catalogue always has a Postgres title, so that is what wins —
+ * Sanity's prose and image still apply, and "Class details coming soon" is
+ * the only fallback left for a catalogue class Sanity has no document for.
  */
 export async function getService(slug: string): Promise<ServiceContent> {
-  const service = await fetchOrNull<Service>(serviceBySlugQuery, { slug });
-  const fallback = fallbackServiceBySlug[slug] ?? unknownServiceFallback;
+  const [catalogue, service] = await Promise.all([
+    NON_CLASS_SLUGS.has(slug)
+      ? Promise.resolve<CatalogueClass[]>([])
+      : getClassCatalogue(),
+    fetchOrNull<Service>(serviceBySlugQuery, { slug }),
+  ]);
+  const classRow = catalogue.find((c) => c.slug === slug);
+  const fallback = classRow
+    ? unknownServiceFallback
+    : (fallbackServiceBySlug[slug] ?? unknownServiceFallback);
 
   return {
     slug,
-    title: service?.title ?? fallback.title,
+    title: classRow?.title ?? service?.title ?? fallback.title,
     fullDescription: service?.fullDescription,
     descriptionParagraphs: fallback.descriptionParagraphs,
     shortDescription: service?.shortDescription ?? fallback.shortDescription,

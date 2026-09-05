@@ -17,6 +17,13 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
+// /api/admin/classes revalidates through the class catalogue, which builds
+// a real Sanity client the moment it is imported.
+vi.mock(
+  "@/lib/sanity/client",
+  async () => (await import("../support/sanity-client")).sanityModuleMock,
+);
+
 import { PUT as bookingsPut } from "@/app/api/admin/bookings/route";
 import {
   POST as classesPost,

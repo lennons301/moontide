@@ -1,62 +1,23 @@
-# 1. Postgres owns a class's title and slug
+# Postgres owns a class's title and slug; Sanity holds only its editorial content
 
-## Status
-
-Accepted
+**Status:** Accepted
 
 ## Context
 
-`classes.slug` identifies a class for booking and admin purposes, and
-`classes.title` is what a customer is called by — on the booking page, in
-confirmation emails, in the admin tables. Nothing let either change: the
-admin editor (#115) could edit a class's price, category and active state,
-but not its slug, and there was nowhere a rename could go besides overwriting
-the row in place.
-
-That stuck one specific class: `vinyasa`/"Autumn Equinox Yin" has a slug that
-no longer describes its title, because the title was changed by hand at some
-point (migration `0008_rename_vinyasa_class_title`) and the slug was left
-alone rather than risk 404ing whoever had the old link. #38's discussion
-settled that this needs to be fixable from the admin UI — code-free and
-redeploy-free — rather than left to another one-off migration.
-
-Sanity holds the editorial copy for a class's public page (`/classes/<slug>`)
-— description, images — under its own document with its own `slug` field.
-That document and the Postgres `classes` row are linked loosely, by
-`classes.sanityId` and by the two slugs happening to agree, which is a
-separate concern (#38) from the one this ADR resolves.
+A class is both editorial (title, prose, image) and transactional (price, category, schedule), so `AGENTS.md`'s stated boundary — editorial content to Sanity, transactional data to Postgres — didn't decide which system owns its title and slug. In practice both did: public pages (nav, footer, `/classes/[slug]`) read a title from Sanity, while Stripe line items, confirmation emails and admin tables read `classes.title` from Postgres. The two copies drifted independently — a class titled "Autumn Equinox Yin" in six places still lived at the URL `/classes/vinyasa` — and the drift reappeared within days of a prior attempt to fix it, because nothing enforced a single source (lennons301/moontide#38).
 
 ## Decision
 
-Postgres is the system of record for a class's *identity* — what it is
-called and how it is addressed — for every booking and admin purpose:
+Postgres `classes` is the single source of truth for a class's title, slug, category, price, active state and bundle eligibility. Sanity `service` documents supply only prose and image, matched to the Postgres row by slug — the Sanity document's own `title` and `slug` fields go unread wherever a class is shown; a page always takes those two from Postgres.
 
-- **A class keeps one id and one *current* slug.** Renaming a slug mutates
-  the row in place; it does not fork a class into a new one.
-- **Every slug a class has held is kept**, in `class_slug_redirects` (old
-  slug, class id, created at), written automatically whenever the admin
-  editor changes a slug. A request for an old slug found only in that table
-  is redirected, permanently, to the class's *current* slug — resolving a
-  chain of renames in one hop, because the table always points at the class
-  directly rather than at the next link in the chain.
-- **A booking snapshots the class's title at the moment it is made**, on
-  `bookings.classTitle`. Confirmation emails and admin displays read it from
-  there instead of joining `classes` live, so a later rename — of the title
-  or the slug — never rewrites what a past booking shows.
+## Considered Options
+
+- **Sanity owns title+slug, Postgres is a transactional shadow** (joined via the already-existing but unread `classes.sanityId`) — rejected because Postgres already governs everything else about a class (price, category, active state, the `schedules` FK), and Gabrielle needs to manage classes without code changes or redeploys, which the existing admin surface (`/api/admin/*`) already does for Postgres and does not do for Sanity.
+- **Both keep a copy, with a stated sync direction** — rejected as strictly more moving parts than owning it in one place, and the two copies already had no defined sync and had already drifted twice.
 
 ## Consequences
 
-- The admin class editor can rename a slug without breaking an old link, and
-  without a migration, redeploy, or a fork of the class row.
-- A booking's own record of "what this was for" is stable once made, which
-  is the property emails and admin history actually need — not a live join
-  that answers differently depending on when it is asked.
-- The class detail page's rendering (`/classes/[slug]`, content from Sanity)
-  is unaffected in the ordinary case: it still resolves content by the slug
-  in the URL. It gains one additional check — is this slug recorded as
-  someone else's old one? — ahead of that, so a stale link still lands
-  somewhere useful instead of showing fallback copy for a slug nobody
-  recognises.
-- The looser link between a Postgres `classes` row and its Sanity content
-  document (by `sanityId`, or by the two slugs agreeing) is unchanged by this
-  decision and remains its own concern (#38).
+- This is the repo's first deviation from the blanket rule in `AGENTS.md` ("Editorial content → Sanity. Transactional data → Neon Postgres"); that rule still holds everywhere else, and this ADR narrows it for classes specifically.
+- The public-facing "catalogue" — nav, footer, `about`'s services list, `generateStaticParams`, `generateMetadata`, `revalidate`'s `pathsByType` — reads from Postgres instead of hardcoded arrays or Sanity (lennons301/moontide#116).
+- Sanity's `service.title` and `service.slug` fields are left in the schema (existing documents already carry them, and the Studio still uses `slug` to address a document), but no page reads them for a class — Postgres' `title` and `slug` always win. Removing those fields from the Studio editing UI, and renaming them so an editor isn't offered a field that silently does nothing, is a follow-up once the fields are confirmed unread everywhere.
+- Renaming an existing class (slug mutability + redirects) and giving Gabrielle a CRUD UI for the Postgres rows in the first place (lennons301/moontide#115) are each their own follow-up ticket.

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { PortableText } from "next-sanity";
+import { getClassCatalogue } from "@/lib/content/services";
 import { getTrainer } from "@/lib/content/trainer";
 import { urlFor } from "@/lib/sanity/client";
 
@@ -9,18 +10,24 @@ export const metadata: Metadata = { title: "About — Moontide" };
 
 export const revalidate = 3600;
 
-const services = [
-  { label: "Prenatal Yoga", href: "/classes/prenatal" },
-  { label: "Postnatal Yoga", href: "/classes/postnatal" },
-  { label: "Baby Yoga & Massage", href: "/classes/baby-yoga" },
-  { label: "Autumn Equinox Yin", href: "/classes/vinyasa" },
+const fixedServices = [
   { label: "Transformational Coaching", href: "/coaching" },
   { label: "Creating Community", href: "/community" },
   { label: "Private Classes", href: "/private" },
 ];
 
 export default async function AboutPage() {
-  const trainer = await getTrainer();
+  const [trainer, classCatalogue] = await Promise.all([
+    getTrainer(),
+    getClassCatalogue(),
+  ]);
+  const services = [
+    ...classCatalogue.map(({ slug, title }) => ({
+      label: title,
+      href: `/classes/${slug}`,
+    })),
+    ...fixedServices,
+  ];
 
   const photoUrl = trainer.photo
     ? urlFor(trainer.photo).width(320).height(320).url()

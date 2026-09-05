@@ -72,7 +72,6 @@ src/
       rows.ts             # The shapes /api/admin/* answers with, from the Drizzle schema
       navigate.ts         # goToLogin — where a 401 sends the operator
     stripe.ts             # Stripe client singleton
-    revalidation.ts       # SERVICE_PAGE_PATHS — the public routes a class change revalidates
     classes/
       categories.ts       # CLASS_CATEGORIES / BOOKING_TYPES — the one list, safe for a client page to import
       slug-redirects.ts   # Records a slug rename, and resolves a stale slug to the class's current one
@@ -92,7 +91,7 @@ src/
       source.ts           # The ContentSource seam: the Sanity adapter, and fetchOrNull
       in-memory-source.ts # The other adapter: a CMS held in a variable, for tests
       fallbacks.ts        # One copy of every piece of hardcoded content
-      services.ts         # getService(slug) / getServices()
+      services.ts         # getClassCatalogue() / getService(slug) / getServices() / getServicePagePaths()
       trainer.ts          # getTrainer() — the one trainer fallback, shared by / and /about
       community.ts        # getCommunityEvents()
       site-settings.ts    # getSiteSettings() — hero tagline, Instagram link
@@ -180,13 +179,15 @@ tests/
   admin/waitlist-offer.test.ts # Offer/withdraw route wiring
   support/content.ts      # What the CMS holds for one test, or that it is unreachable
   support/sanity-client.ts # The client module stubbed: reading it directly fails
+  support/classes.ts      # The classes table stubbed: what getClassCatalogue() reads back
   lib/content.test.ts     # Every content question, with the CMS up and with it down
   lib/content-source.test.ts # The seam: fetchOrNull, and the in-memory adapter
   lib/cms-reads-go-through-content.test.ts # Nothing outside src/lib/content reads Sanity
   lib/homepage-content.test.ts # Homepage CMS fallbacks, section by section
+  components/class-catalogue-navigation.test.tsx # A catalogue class is reachable from nav, footer and /about alike
   app/homepage.test.ts    # Homepage renders with the CMS up and with it down
   app/content-pages.test.ts # /about, /coaching, /private, /community, /classes/[slug]
-  app/layout.test.ts      # Root layout renders every page when Sanity throws
+  app/layout.test.ts      # Root layout renders every page when Sanity or the classes table throws
   integration/            # Runs against a real Postgres, not mocks
     support/database-url.ts # Which server, and the throwaway database on it
     support/global-setup.ts # Drop, create and migrate that database, once per run

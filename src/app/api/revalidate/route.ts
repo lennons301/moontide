@@ -1,13 +1,24 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
-import { SERVICE_PAGE_PATHS } from "@/lib/revalidation";
+import { getServicePagePaths } from "@/lib/content/services";
 
-const pathsByType: Record<string, string[]> = {
-  service: SERVICE_PAGE_PATHS,
+const staticPathsByType: Record<string, string[]> = {
   trainer: ["/", "/about"],
   communityEvent: ["/community"],
   siteSettings: ["/"],
 };
+
+/**
+ * `service` is the one type whose paths aren't fixed: a class's path comes
+ * from the catalogue, so a class added since the last deploy is revalidated
+ * correctly without a code change here.
+ */
+async function pathsForType(docType: string): Promise<string[] | undefined> {
+  if (docType === "service") {
+    return getServicePagePaths();
+  }
+  return staticPathsByType[docType];
+}
 
 export async function POST(request: Request) {
   const secret = request.headers.get("x-sanity-webhook-secret");
@@ -23,14 +34,14 @@ export async function POST(request: Request) {
   }
 
   const docType = body._type;
-  if (!docType || !(docType in pathsByType)) {
+  const paths = docType ? await pathsForType(docType) : undefined;
+  if (!paths) {
     return NextResponse.json(
       { error: `Unknown document type: ${docType}` },
       { status: 400 },
     );
   }
 
-  const paths = pathsByType[docType];
   for (const path of paths) {
     revalidatePath(path);
   }
