@@ -14,6 +14,13 @@ vi.mock(
   async () => (await import("../support/sanity-client")).sanityModuleMock,
 );
 
+// Slug redirects are a Postgres read (`tests/integration/class-slug-redirects.test.ts`
+// covers the real thing); these tests are about the CMS fallback seam and
+// have no database, so every slug here answers "not a stale link".
+vi.mock("@/lib/classes/slug-redirects", () => ({
+  resolveCurrentSlug: vi.fn().mockResolvedValue(null),
+}));
+
 afterEach(resetContentSource);
 
 /** next/image URL-encodes the src it was given. */
