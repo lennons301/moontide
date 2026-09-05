@@ -45,6 +45,9 @@ export const RECIPIENTS: {
     admin: templates.bundlePurchasedAdmin,
   },
   "bundle-product-missing": { admin: templates.bundleProductMissingAdmin },
+  "booking-schedule-missing": {
+    admin: templates.bookingScheduleMissingAdmin,
+  },
   "waitlist-joined": {
     customer: templates.waitlistJoinedCustomer,
     admin: templates.waitlistJoinedAdmin,

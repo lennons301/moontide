@@ -77,6 +77,20 @@ export type NotificationEvent =
       /** The terms granted from the session itself, or null if nothing was. */
       granted: { credits: number; expiryDate: string } | null;
     }
+  /**
+   * An individual-class checkout session named a schedule that has since been
+   * deleted — Gabrielle can delete a schedule right up until a booking exists
+   * against it, and nothing stops that while a customer's checkout is still in
+   * flight. Nothing is created for the payment, so this is the only record of
+   * it beyond Stripe's own.
+   */
+  | {
+      type: "booking-schedule-missing";
+      customerName: string;
+      customerEmail: string;
+      sessionId: string;
+      scheduleId: number;
+    }
   /** Someone put their name down for a class that is full. */
   | ({
       type: "waitlist-joined";

@@ -88,6 +88,23 @@ function published(slug: string, title: string): Service {
   };
 }
 
+describe("a slug the admin has renamed away from", () => {
+  it("redirects permanently to the class's current slug, ahead of any CMS read", async () => {
+    const { resolveCurrentSlug } = await import("@/lib/classes/slug-redirects");
+    vi.mocked(resolveCurrentSlug).mockResolvedValueOnce("vinyasa-renamed");
+
+    const { default: Page } = await import("@/app/classes/[slug]/page");
+
+    // `permanentRedirect` throws rather than returning — Next reads the
+    // status code and destination off the thrown error's digest.
+    await expect(
+      Page({ params: Promise.resolve({ slug: "vinyasa" }) }),
+    ).rejects.toMatchObject({
+      digest: "NEXT_REDIRECT;replace;/classes/vinyasa-renamed;308;",
+    });
+  });
+});
+
 describe("with Sanity unreachable", () => {
   it("renders /about", async () => {
     givenCmsUnreachable();

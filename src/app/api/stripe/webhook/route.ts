@@ -100,6 +100,22 @@ export async function POST(request: Request) {
         console.error(
           `Schedule ${scheduleId} not found for checkout session ${session.id}`,
         );
+        // The customer is already charged and there is nothing left to book
+        // them against, so this is the only thing that tells Gabrielle —
+        // mirroring the missing-bundle-product alert below.
+        notifyAfterResponse(
+          {
+            type: "booking-schedule-missing",
+            customerName: metadata.customerName,
+            customerEmail,
+            sessionId: session.id,
+            scheduleId,
+          },
+          {
+            notRecorded:
+              "an alert about a charge with no schedule left to book it against",
+          },
+        );
         return NextResponse.json({ received: true });
       }
 
