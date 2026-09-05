@@ -59,11 +59,8 @@ export interface AdminBookingRow {
   classes: ClassRow;
 }
 
-/** `GET /api/admin/pricing`: the editable columns, and the bundle products. */
+/** `GET /api/admin/pricing`: the bundle products. Class pricing moved to
+ * `GET /api/admin/classes` — see `ClassRow`. */
 export interface AdminPricingResponse {
-  classes: Pick<
-    ClassRow,
-    "id" | "title" | "slug" | "priceInPence" | "bundleEligible"
-  >[];
   bundleConfigs: BundleConfigApiRow[];
 }
