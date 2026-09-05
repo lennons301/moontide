@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
-import { getClassCatalogue } from "@/lib/content/services";
+import { getServicePagePaths } from "@/lib/content/services";
 
 const staticPathsByType: Record<string, string[]> = {
   trainer: ["/", "/about"],
@@ -15,14 +15,7 @@ const staticPathsByType: Record<string, string[]> = {
  */
 async function pathsForType(docType: string): Promise<string[] | undefined> {
   if (docType === "service") {
-    const catalogue = await getClassCatalogue();
-    return [
-      "/",
-      ...catalogue.map(({ slug }) => `/classes/${slug}`),
-      "/coaching",
-      "/community",
-      "/private",
-    ];
+    return getServicePagePaths();
   }
   return staticPathsByType[docType];
 }

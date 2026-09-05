@@ -50,6 +50,26 @@ export async function getClassCatalogue(): Promise<CatalogueClass[]> {
 }
 
 /**
+ * The public routes that show a class's title, description or price: the
+ * home page, each class's own page, and the three fixed service pages that
+ * aren't backed by a catalogue row. Both callers that need to revalidate "a
+ * class changed" — the Sanity webhook (`/api/revalidate`, on a `service`
+ * document publish) and the admin classes API (on a create or update) — read
+ * this rather than each keeping its own list, so a class added or renamed
+ * since the last deploy is revalidated correctly without a code change here.
+ */
+export async function getServicePagePaths(): Promise<string[]> {
+  const catalogue = await getClassCatalogue();
+  return [
+    "/",
+    ...catalogue.map(({ slug }) => `/classes/${slug}`),
+    "/coaching",
+    "/community",
+    "/private",
+  ];
+}
+
+/**
  * The service slugs the catalogue never answers for — they have no row in
  * `classes` and never will, so `getService` has no reason to ask Postgres
  * about them at all.

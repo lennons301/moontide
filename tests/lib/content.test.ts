@@ -8,6 +8,7 @@ import {
 import {
   getClassCatalogue,
   getService,
+  getServicePagePaths,
   getServices,
 } from "@/lib/content/services";
 import { getSiteSettings } from "@/lib/content/site-settings";
@@ -238,6 +239,47 @@ describe("getClassCatalogue", () => {
     givenClassCatalogueUnreachable();
 
     await expect(getClassCatalogue()).resolves.toEqual([]);
+  });
+});
+
+describe("getServicePagePaths", () => {
+  it("includes a page for every class in the catalogue, not a fixed list", async () => {
+    givenClassCatalogueHolds([
+      { slug: "prenatal", title: "Prenatal Yoga", category: "class" },
+      { slug: "postnatal", title: "Postnatal Yoga", category: "class" },
+      { slug: "baby-yoga", title: "Baby Yoga & Massage", category: "class" },
+      {
+        slug: "vinyasa",
+        title: "Autumn Equinox Yin",
+        category: "class",
+      },
+      // A class added after the original four — a hardcoded list of paths
+      // would silently miss this one.
+      { slug: "restorative", title: "Restorative Yoga", category: "class" },
+    ]);
+
+    expect(await getServicePagePaths()).toEqual([
+      "/",
+      "/classes/prenatal",
+      "/classes/postnatal",
+      "/classes/baby-yoga",
+      "/classes/vinyasa",
+      "/classes/restorative",
+      "/coaching",
+      "/community",
+      "/private",
+    ]);
+  });
+
+  it("still names the fixed service pages when the catalogue is empty", async () => {
+    givenClassCatalogueIsEmpty();
+
+    expect(await getServicePagePaths()).toEqual([
+      "/",
+      "/coaching",
+      "/community",
+      "/private",
+    ]);
   });
 });
 

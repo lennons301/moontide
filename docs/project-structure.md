@@ -72,7 +72,6 @@ src/
       rows.ts             # The shapes /api/admin/* answers with, from the Drizzle schema
       navigate.ts         # goToLogin — where a 401 sends the operator
     stripe.ts             # Stripe client singleton
-    revalidation.ts       # SERVICE_PAGE_PATHS — the public routes a class change revalidates
     classes/
       categories.ts       # CLASS_CATEGORIES / BOOKING_TYPES — the one list, safe for a client page to import
     bookings/
@@ -91,7 +90,7 @@ src/
       source.ts           # The ContentSource seam: the Sanity adapter, and fetchOrNull
       in-memory-source.ts # The other adapter: a CMS held in a variable, for tests
       fallbacks.ts        # One copy of every piece of hardcoded content
-      services.ts         # getClassCatalogue() / getService(slug) / getServices()
+      services.ts         # getClassCatalogue() / getService(slug) / getServices() / getServicePagePaths()
       trainer.ts          # getTrainer() — the one trainer fallback, shared by / and /about
       community.ts        # getCommunityEvents()
       site-settings.ts    # getSiteSettings() — hero tagline, Instagram link
