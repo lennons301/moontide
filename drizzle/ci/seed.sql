@@ -67,21 +67,22 @@ INSERT INTO bundles (id, customer_email, credits_total, credits_remaining, strip
 
 -- Bookings: one per status. The partial unique index allows one active booking
 -- per customer per schedule, so cancelled rows are the only repeats.
-INSERT INTO bookings (id, schedule_id, customer_name, customer_email, stripe_payment_id, bundle_id, status, created_at, email_sent, original_schedule_id, rescheduled_at, released_at) VALUES
-  (1, 1, 'Amelia Hart', 'amelia@example.com', 'pi_seed_card_1', NULL, 'confirmed', now() - interval '20 days', true, NULL, NULL, NULL),
-  (2, 1, 'Priya Nair', 'priya@example.com', NULL, 1, 'confirmed', now() - interval '19 days', true, NULL, NULL, NULL),
-  (3, 2, 'Amelia Hart', 'amelia@example.com', 'pi_seed_card_2', NULL, 'cancelled', now() - interval '15 days', true, NULL, NULL, NULL),
-  (4, 2, 'Rosa Klein', 'rosa@example.com', NULL, 2, 'confirmed', now() - interval '14 days', true, NULL, NULL, NULL),
-  -- Moved from schedule 1 to schedule 2.
-  (5, 2, 'Nadia Osei', 'nadia@example.com', 'pi_seed_card_3', NULL, 'confirmed', now() - interval '25 days', true, 1, now() - interval '9 days', NULL),
-  (6, 3, 'Priya Nair', 'priya@example.com', 'pi_seed_card_4', NULL, 'confirmed', now() - interval '6 days', true, NULL, NULL, NULL),
+INSERT INTO bookings (id, schedule_id, customer_name, customer_email, stripe_payment_id, bundle_id, status, class_title, created_at, email_sent, original_schedule_id, rescheduled_at, released_at) VALUES
+  (1, 1, 'Amelia Hart', 'amelia@example.com', 'pi_seed_card_1', NULL, 'confirmed', 'Prenatal Yoga', now() - interval '20 days', true, NULL, NULL, NULL),
+  (2, 1, 'Priya Nair', 'priya@example.com', NULL, 1, 'confirmed', 'Prenatal Yoga', now() - interval '19 days', true, NULL, NULL, NULL),
+  (3, 2, 'Amelia Hart', 'amelia@example.com', 'pi_seed_card_2', NULL, 'cancelled', 'Postnatal Yoga', now() - interval '15 days', true, NULL, NULL, NULL),
+  (4, 2, 'Rosa Klein', 'rosa@example.com', NULL, 2, 'confirmed', 'Postnatal Yoga', now() - interval '14 days', true, NULL, NULL, NULL),
+  -- Moved from schedule 1 to schedule 2. The title snapshots at booking
+  -- time — see `bookings.classTitle` — so the move leaves it as it was.
+  (5, 2, 'Nadia Osei', 'nadia@example.com', 'pi_seed_card_3', NULL, 'confirmed', 'Prenatal Yoga', now() - interval '25 days', true, 1, now() - interval '9 days', NULL),
+  (6, 3, 'Priya Nair', 'priya@example.com', 'pi_seed_card_4', NULL, 'confirmed', 'Prenatal Yoga', now() - interval '6 days', true, NULL, NULL, NULL),
   -- Card payer owed a class, released long enough ago to want chasing.
-  (7, 3, 'Sofia Marchetti', 'sofia@example.com', 'pi_seed_card_5', NULL, 'released', now() - interval '30 days', true, NULL, NULL, now() - interval '10 days'),
-  (8, 4, 'Ines Duarte', 'ines@example.com', NULL, 1, 'confirmed', now() - interval '4 days', true, NULL, NULL, NULL),
+  (7, 3, 'Sofia Marchetti', 'sofia@example.com', 'pi_seed_card_5', NULL, 'released', 'Prenatal Yoga', now() - interval '30 days', true, NULL, NULL, now() - interval '10 days'),
+  (8, 4, 'Ines Duarte', 'ines@example.com', NULL, 1, 'confirmed', 'Baby Yoga', now() - interval '4 days', true, NULL, NULL, NULL),
   -- Seat held against the outstanding offer on waiting-list entry 3.
-  (9, 5, 'Chloe Bennett', 'chloe@example.com', NULL, NULL, 'held', now() - interval '1 day', false, NULL, NULL, NULL),
+  (9, 5, 'Chloe Bennett', 'chloe@example.com', NULL, NULL, 'held', 'Vinyasa Flow', now() - interval '1 day', false, NULL, NULL, NULL),
   -- Confirmation email never got out; the retry cron picks this up.
-  (10, 7, 'Farah Aziz', 'farah@example.com', 'pi_seed_card_6', NULL, 'confirmed', now() - interval '2 days', false, NULL, NULL, NULL);
+  (10, 7, 'Farah Aziz', 'farah@example.com', 'pi_seed_card_6', NULL, 'confirmed', 'Vinyasa Flow', now() - interval '2 days', false, NULL, NULL, NULL);
 
 -- Waiting lists: plain entries, one outstanding offer and one already lapsed.
 INSERT INTO waitlist_entries (id, schedule_id, customer_name, customer_email, created_at, email_sent, offered_at, offer_expires_at, offer_token, held_booking_id) VALUES
