@@ -153,10 +153,26 @@ jobs:
           set -euo pipefail
           # The seed as it stood on the base commit: it stands for data that is
           # already there, so it has to match the schema that is already there.
-          # A branch that adds a column must not have to add it here too.
+          # A branch that adds a column must not add it here in the same breath.
           git checkout "${{ steps.base.outputs.sha }}" -- drizzle/ci/seed.sql \
             || echo "Base commit has no seed; using this branch's."
-          node scripts/ci/run-sql.mjs drizzle/ci/seed.sql
+          # The base seed can be left stale against the base schema by the PR
+          # that changed the schema — the PR that owed this file its matching
+          # edit. That is a defect in the base commit, and no branch built on
+          # it can repair it: the checkout above always wins, so every such PR
+          # would fail this step for content it never chose. Nothing a branch
+          # does can reach this fallback while master is consistent — this
+          # step runs against the base schema alone, so a column a branch adds
+          # is not in it yet, and a branch's own migration bugs surface in the
+          # steps below, which apply them to whatever loaded here. The branch's
+          # seed still has to load against that same base schema, so the
+          # fallback keeps the check: it can only trade a seed that cannot load
+          # for one that can.
+          if ! node scripts/ci/run-sql.mjs drizzle/ci/seed.sql; then
+            echo "Base commit's seed does not load against its schema; using this branch's." >&2
+            git checkout HEAD -- drizzle/ci/seed.sql
+            node scripts/ci/run-sql.mjs drizzle/ci/seed.sql
+          fi
 
       - name: Apply this branch's migrations to it
         run: |
