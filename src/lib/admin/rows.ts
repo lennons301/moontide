@@ -59,8 +59,13 @@ export interface AdminBookingRow {
   classes: ClassRow;
 }
 
+/** A bundle config as `/api/admin/pricing` answers it: the row, plus whether it
+ * has ever been purchased — the admin page uses that to decide whether the row
+ * can be deleted outright or only deactivated. */
+export type BundleConfigAdminRow = BundleConfigApiRow & { purchased: boolean };
+
 /** `GET /api/admin/pricing`: the bundle products. Class pricing moved to
  * `GET /api/admin/classes` — see `ClassRow`. */
 export interface AdminPricingResponse {
-  bundleConfigs: BundleConfigApiRow[];
+  bundleConfigs: BundleConfigAdminRow[];
 }
