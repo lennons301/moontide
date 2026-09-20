@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { bundleConfig, classes, schedules } from "@/lib/db/schema";
@@ -24,12 +24,14 @@ export default async function BookPage() {
     )
     .orderBy(schedules.date, schedules.startTime);
 
+  // Ordered biggest pack first, so the page sells the bigger one before the
+  // smaller one. Zero rows is valid — pausing bundle sales — and the section
+  // simply does not render.
   const activeBundles = await db
     .select()
     .from(bundleConfig)
-    .where(eq(bundleConfig.active, true));
-
-  const activeBundleConfig = activeBundles[0] ?? null;
+    .where(eq(bundleConfig.active, true))
+    .orderBy(desc(bundleConfig.credits));
 
   return (
     <section className="py-16 px-6 bg-dawn-light">
@@ -38,7 +40,7 @@ export default async function BookPage() {
           Book a Class
         </h1>
         <div className="w-8 h-0.5 bg-bright-orange mx-auto mb-8" />
-        <BookingClient schedules={upcoming} bundleConfig={activeBundleConfig} />
+        <BookingClient schedules={upcoming} bundleConfigs={activeBundles} />
       </div>
     </section>
   );

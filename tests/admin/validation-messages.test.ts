@@ -30,7 +30,11 @@ import {
   PUT as classesPut,
 } from "@/app/api/admin/classes/route";
 import { PUT as messagesPut } from "@/app/api/admin/messages/route";
-import { PUT as pricingPut } from "@/app/api/admin/pricing/route";
+import {
+  DELETE as pricingDelete,
+  POST as pricingPost,
+  PUT as pricingPut,
+} from "@/app/api/admin/pricing/route";
 import { POST as resendPost } from "@/app/api/admin/resend-email/route";
 import {
   DELETE as schedulesDelete,
@@ -109,6 +113,32 @@ const PROBES: Array<[string, Handler, Request]> = [
     "pricing: updates that are not a list",
     ...body(pricingPut, { bundleConfigs: {} }),
   ],
+  [
+    "pricing: active sent as a word",
+    ...body(pricingPut, { bundleConfigs: [{ id: 1, active: "yes" }] }),
+  ],
+
+  ["pricing create: nothing at all", ...body(pricingPost, {})],
+  [
+    "pricing create: no name",
+    ...body(pricingPost, {
+      priceInPence: 4400,
+      credits: 4,
+      expiryDays: 90,
+    }),
+  ],
+  [
+    "pricing create: credits sent as text",
+    ...body(pricingPost, {
+      name: "4-Class Bundle",
+      priceInPence: 4400,
+      credits: "4",
+      expiryDays: 90,
+    }),
+  ],
+
+  ["pricing delete: nothing at all", ...body(pricingDelete, {})],
+  ["pricing delete: a non-numeric id", ...body(pricingDelete, { id: "12" })],
 
   ["classes create: nothing at all", ...body(classesPost, {})],
   [

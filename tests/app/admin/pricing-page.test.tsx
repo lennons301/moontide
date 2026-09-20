@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import PricingPage from "@/app/admin/pricing/page";
 import { type StubRoute, stubFetch } from "../../support/fetch-stub";
@@ -17,6 +17,7 @@ const PRICING = {
       credits: 6,
       expiryDays: 90,
       active: true,
+      purchased: true,
     },
   ],
 };
@@ -85,5 +86,114 @@ describe("/admin/pricing", () => {
     expect(
       fetchMock.mock.calls.filter(([url]) => url === "/api/admin/pricing"),
     ).toHaveLength(3);
+  });
+
+  it("does not offer to delete a bundle that has been purchased", async () => {
+    stubPricing({ json: { success: true } });
+    render(<PricingPage />);
+
+    await screen.findByText("Six-Class Bundle");
+    expect(
+      screen.queryByRole("button", { name: "Delete" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("deletes a bundle that has never been purchased", async () => {
+    const fetchMock = stubFetch({
+      "GET /api/admin/pricing": {
+        json: {
+          bundleConfigs: [
+            {
+              id: 9,
+              name: "Four-Class Bundle",
+              priceInPence: 4400,
+              credits: 4,
+              expiryDays: 90,
+              active: true,
+              purchased: false,
+            },
+          ],
+        },
+      },
+      "DELETE /api/admin/pricing": { json: { success: true } },
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<PricingPage />);
+
+    await screen.findByText("Four-Class Bundle");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await vi.waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/admin/pricing" && init?.method === "DELETE",
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("toggles a bundle between active and inactive", async () => {
+    const fetchMock = stubPricing({ json: { success: true } });
+    render(<PricingPage />);
+
+    await screen.findByText("Six-Class Bundle");
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate" }));
+
+    await vi.waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) => url === "/api/admin/pricing" && init?.method === "PUT",
+      );
+      expect(call).toBeDefined();
+      expect(JSON.parse((call?.[1]?.body as string) ?? "{}")).toEqual({
+        bundleConfigs: [{ id: 7, active: false }],
+      });
+    });
+  });
+
+  it("creates a new bundle through the form", async () => {
+    const fetchMock = stubFetch({
+      "GET /api/admin/pricing": { json: PRICING },
+      "POST /api/admin/pricing": { json: { success: true } },
+    });
+    render(<PricingPage />);
+
+    await screen.findByText("Six-Class Bundle");
+    fireEvent.click(screen.getByRole("button", { name: "New Bundle" }));
+
+    const form = screen
+      .getByRole("heading", { name: "Create Bundle" })
+      .closest("form") as HTMLElement;
+
+    fireEvent.change(within(form).getByLabelText("Name"), {
+      target: { value: "4-Class Bundle" },
+    });
+    fireEvent.change(within(form).getByLabelText("Bundle Price"), {
+      target: { value: "44.00" },
+    });
+    fireEvent.change(within(form).getByLabelText("Classes Included"), {
+      target: { value: "4" },
+    });
+    fireEvent.change(within(form).getByLabelText("Expiry (days)"), {
+      target: { value: "60" },
+    });
+
+    fireEvent.click(
+      within(form).getByRole("button", { name: "Create Bundle" }),
+    );
+
+    await vi.waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          url === "/api/admin/pricing" && init?.method === "POST",
+      );
+      expect(call).toBeDefined();
+      expect(JSON.parse((call?.[1]?.body as string) ?? "{}")).toEqual({
+        name: "4-Class Bundle",
+        priceInPence: 4400,
+        credits: 4,
+        expiryDays: 60,
+      });
+    });
   });
 });

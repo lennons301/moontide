@@ -61,7 +61,16 @@ const BODIES: Record<string, unknown> = {
   "PUT /api/admin/classes": { id: 1, active: false },
   "PUT /api/admin/bookings": { id: 1, status: "cancelled" },
   "PUT /api/admin/messages": { id: 1, read: true },
-  "PUT /api/admin/pricing": { classes: [{ id: 1, priceInPence: 1500 }] },
+  "POST /api/admin/pricing": {
+    name: "4-Class Bundle",
+    priceInPence: 4400,
+    credits: 4,
+    expiryDays: 90,
+  },
+  "PUT /api/admin/pricing": {
+    bundleConfigs: [{ id: 1, priceInPence: 1500 }],
+  },
+  "DELETE /api/admin/pricing": { id: 1 },
   "POST /api/admin/resend-email": { type: "booking", id: 1 },
   "POST /api/admin/schedules": {
     classId: 1,
@@ -131,13 +140,13 @@ describe("every /api/admin handler checks the session itself", () => {
     vi.clearAllMocks();
   });
 
-  // Nine route files, nineteen exported handlers. The counts are asserted so
+  // Nine route files, twenty-one exported handlers. The counts are asserted so
   // that a route file emptied by a bad merge reads as a failure rather than as
   // a sweep with nothing left to sweep.
   it("covers every handler under /api/admin", () => {
     expect(DISCOVERED).toHaveLength(9);
-    expect(HANDLERS).toHaveLength(19);
-    expect(BODY_HANDLERS).toHaveLength(10);
+    expect(HANDLERS).toHaveLength(21);
+    expect(BODY_HANDLERS).toHaveLength(12);
   });
 
   it.each(

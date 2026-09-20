@@ -143,14 +143,14 @@ type BundleConfig = {
   priceInPence: number;
   credits: number;
   expiryDays: number;
-} | null;
+};
 
 export function BookingClient({
   schedules,
-  bundleConfig,
+  bundleConfigs,
 }: {
   schedules: ScheduleRow[];
-  bundleConfig: BundleConfig;
+  bundleConfigs: BundleConfig[];
 }) {
   const [selected, setSelected] = useState<ScheduleRow | null>(null);
   const [name, setName] = useState("");
@@ -591,23 +591,30 @@ export function BookingClient({
         </div>
       )}
 
-      {/* Bundle Banner */}
-      {bundleConfig && (
-        <div className="bg-bright-orange/10 border border-bright-orange/30 rounded-lg p-6 text-center">
-          <h2 className="text-deep-tide-blue font-heading text-xl mb-1">
-            Save with a {bundleConfig.name}
-          </h2>
-          <p className="text-deep-ocean mb-4">
-            {bundleConfig.credits} classes for{" "}
-            {formatPrice(bundleConfig.priceInPence)} &middot; Valid{" "}
-            {bundleConfig.expiryDays} days
-          </p>
-          <Link
-            href="/book/bundle"
-            className="inline-block bg-bright-orange text-dawn-light px-6 py-3 rounded-md font-semibold hover:bg-bright-orange/90 transition-colors"
-          >
-            Purchase Bundle &rarr;
-          </Link>
+      {/* Bundle Banners — one card per active bundle, biggest pack first */}
+      {bundleConfigs.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {bundleConfigs.map((bundleConfig) => (
+            <div
+              key={bundleConfig.id}
+              className="bg-bright-orange/10 border border-bright-orange/30 rounded-lg p-6 text-center"
+            >
+              <h2 className="text-deep-tide-blue font-heading text-xl mb-1">
+                Save with a {bundleConfig.name}
+              </h2>
+              <p className="text-deep-ocean mb-4">
+                {bundleConfig.credits} classes for{" "}
+                {formatPrice(bundleConfig.priceInPence)} &middot; Valid{" "}
+                {bundleConfig.expiryDays} days
+              </p>
+              <Link
+                href={`/book/bundle?id=${bundleConfig.id}`}
+                className="inline-block bg-bright-orange text-dawn-light px-6 py-3 rounded-md font-semibold hover:bg-bright-orange/90 transition-colors"
+              >
+                Purchase Bundle &rarr;
+              </Link>
+            </div>
+          ))}
         </div>
       )}
     </div>
