@@ -155,7 +155,7 @@ export function BookingOptions() {
           >
             <MoonCycle />
             <span className="text-sm font-semibold text-deep-tide-blue">
-              Six Class Bundle
+              Class Bundles
             </span>
           </Link>
         </div>
