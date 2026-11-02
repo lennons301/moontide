@@ -1,5 +1,7 @@
 import {
+  classPageOptionsQuery,
   communityEventsQuery,
+  serviceByIdQuery,
   serviceBySlugQuery,
   servicesQuery,
   siteSettingsQuery,
@@ -48,6 +50,17 @@ export function inMemoryContentSource(
       if (query === serviceBySlugQuery) {
         const services = answer(documents.services) ?? [];
         return services.find((s) => s.slug.current === params?.slug) ?? null;
+      }
+      if (query === serviceByIdQuery) {
+        const services = answer(documents.services) ?? [];
+        return services.find((s) => s._id === params?.id) ?? null;
+      }
+      if (query === classPageOptionsQuery) {
+        const services = answer(documents.services) ?? [];
+        return services
+          .filter((s) => s.category === "class")
+          .map((s) => ({ _id: s._id, title: s.title }))
+          .sort((a, b) => a.title.localeCompare(b.title));
       }
       if (query === trainerQuery) {
         return answer(documents.trainer);

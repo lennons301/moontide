@@ -1,9 +1,17 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { CatalogueClass } from "@/lib/content/services";
+import { classTileHref } from "@/lib/content/services";
 import { urlFor } from "@/lib/sanity/client";
 import type { Service } from "@/lib/sanity/types";
 
-function ClassGrid({ services }: { services: Service[] }) {
+function ClassGrid({
+  services,
+  catalogue,
+}: {
+  services: Service[];
+  catalogue: CatalogueClass[];
+}) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {services.map((service) => {
@@ -14,7 +22,7 @@ function ClassGrid({ services }: { services: Service[] }) {
         return (
           <Link
             key={service._id}
-            href={`/classes/${service.slug.current}`}
+            href={classTileHref(service, catalogue)}
             className="group relative aspect-[4/3] rounded-lg overflow-hidden bg-ocean-light-blue/30"
           >
             {imageUrl ? (
@@ -143,7 +151,13 @@ function CommunityCard({ service }: { service: Service }) {
   );
 }
 
-export function ServicesSection({ services }: { services: Service[] }) {
+export function ServicesSection({
+  services,
+  catalogue,
+}: {
+  services: Service[];
+  catalogue: CatalogueClass[];
+}) {
   const classes = services.filter((s) => s.category === "class");
   const coaching = services.find((s) => s.category === "coaching");
   const community = services.find((s) => s.category === "community");
@@ -159,7 +173,7 @@ export function ServicesSection({ services }: { services: Service[] }) {
               Classes
             </h2>
             <div className="w-8 h-0.5 bg-bright-orange mb-6" />
-            <ClassGrid services={classes} />
+            <ClassGrid services={classes} catalogue={catalogue} />
           </div>
         </section>
       )}

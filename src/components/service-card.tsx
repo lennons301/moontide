@@ -1,5 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { CatalogueClass } from "@/lib/content/services";
+import { classTileHref } from "@/lib/content/services";
 import { urlFor } from "@/lib/sanity/client";
 import type { Service } from "@/lib/sanity/types";
 
@@ -17,7 +19,7 @@ function getCtaConfig(service: Service) {
   }
 }
 
-function getDetailHref(service: Service) {
+function getDetailHref(service: Service, catalogue: CatalogueClass[]) {
   switch (service.category) {
     case "coaching":
       return "/coaching";
@@ -26,13 +28,19 @@ function getDetailHref(service: Service) {
     case "private":
       return "/private";
     default:
-      return `/classes/${service.slug.current}`;
+      return classTileHref(service, catalogue);
   }
 }
 
-export function ServiceCard({ service }: { service: Service }) {
+export function ServiceCard({
+  service,
+  catalogue,
+}: {
+  service: Service;
+  catalogue: CatalogueClass[];
+}) {
   const cta = getCtaConfig(service);
-  const detailHref = getDetailHref(service);
+  const detailHref = getDetailHref(service, catalogue);
   const imageUrl = service.image
     ? urlFor(service.image).width(800).height(400).url()
     : null;

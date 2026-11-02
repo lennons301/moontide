@@ -9,7 +9,8 @@ import { urlFor } from "@/lib/sanity/client";
 export const revalidate = 3600;
 
 export default async function HomePage() {
-  const { heroTagline, services, trainer } = await loadHomepageContent();
+  const { heroTagline, services, catalogue, trainer } =
+    await loadHomepageContent();
 
   const photoUrl = trainer.photo
     ? urlFor(trainer.photo).width(160).height(160).url()
@@ -19,7 +20,7 @@ export default async function HomePage() {
     <>
       <Hero tagline={heroTagline} />
       <BookingOptions />
-      <ServicesSection services={services} />
+      <ServicesSection services={services} catalogue={catalogue} />
       <AboutPreview
         name={trainer.name}
         shortBio={trainer.shortBio}
