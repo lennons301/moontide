@@ -80,6 +80,7 @@ vi.mock("@/lib/db/schema", () => ({
     bookingType: "booking_type",
     priceInPence: "price_in_pence",
     bundleEligible: "bundle_eligible",
+    sanityId: "sanity_id",
   },
 }));
 
@@ -411,7 +412,7 @@ describe("PUT /api/admin/classes", () => {
 
     expect(response.status).toBe(400);
     expect((await response.json()).error).toBe(
-      "Class updates must include a title, slug, category, booking type, price, active state or bundle eligibility",
+      "Class updates must include a title, slug, category, booking type, price, active state, bundle eligibility or page content",
     );
     expect(mockUpdateSet).not.toHaveBeenCalled();
   });
@@ -423,5 +424,108 @@ describe("PUT /api/admin/classes", () => {
 
     expect(response.status).toBe(404);
     expect((await response.json()).error).toBe("Class not found");
+  });
+});
+
+describe("page content linking", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    signedInAsAdmin();
+  });
+
+  it("creates a class linked to a Sanity document", async () => {
+    mockInsertReturning.mockResolvedValue([
+      { ...PRENATAL, sanityId: "service-prenatal" },
+    ]);
+    // Nobody else holds this document yet.
+    mockWhere.mockResolvedValueOnce([]);
+
+    const response = await POST(
+      postRequest({
+        title: "Prenatal Yoga",
+        slug: "prenatal-yoga",
+        category: "class",
+        priceInPence: 1250,
+        sanityId: "service-prenatal",
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ sanityId: "service-prenatal" }),
+    );
+  });
+
+  it("refuses to create a class linked to a document another class already holds", async () => {
+    mockWhere.mockResolvedValueOnce([{ id: 99 }]);
+
+    const response = await POST(
+      postRequest({
+        title: "Prenatal Yoga",
+        slug: "prenatal-yoga",
+        category: "class",
+        priceInPence: 1250,
+        sanityId: "service-prenatal",
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe(
+      "That page is already linked to another class",
+    );
+    expect(mockInsertValues).not.toHaveBeenCalled();
+  });
+
+  it("links an existing class to a Sanity document", async () => {
+    mockUpdateReturning.mockResolvedValue([
+      { ...PRENATAL, sanityId: "service-prenatal" },
+    ]);
+    mockWhere.mockResolvedValueOnce([]);
+
+    const response = await PUT(
+      putRequest({ id: 1, sanityId: "service-prenatal" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockUpdateSet).toHaveBeenCalledWith({
+      sanityId: "service-prenatal",
+    });
+  });
+
+  it("allows a class to keep the document it already links to", async () => {
+    mockUpdateReturning.mockResolvedValue([
+      { ...PRENATAL, sanityId: "service-prenatal" },
+    ]);
+    // Only this class (id 1) holds the document.
+    mockWhere.mockResolvedValueOnce([{ id: 1 }]);
+
+    const response = await PUT(
+      putRequest({ id: 1, sanityId: "service-prenatal" }),
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("refuses to link a document a different class already holds", async () => {
+    mockWhere.mockResolvedValueOnce([{ id: 2 }]);
+
+    const response = await PUT(
+      putRequest({ id: 1, sanityId: "service-prenatal" }),
+    );
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toBe(
+      "That page is already linked to another class",
+    );
+    expect(mockUpdateSet).not.toHaveBeenCalled();
+  });
+
+  it("unlinks a class from its page content", async () => {
+    mockUpdateReturning.mockResolvedValue([{ ...PRENATAL, sanityId: null }]);
+
+    const response = await PUT(putRequest({ id: 1, sanityId: null }));
+
+    expect(response.status).toBe(200);
+    expect(mockUpdateSet).toHaveBeenCalledWith({ sanityId: null });
   });
 });

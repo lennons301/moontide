@@ -52,9 +52,22 @@ const badBookingType = {
 const badPrice = { error: "Price must be greater than 0" };
 const badActive = { error: "Active must be true or false" };
 const badEligibility = { error: "Bundle eligibility must be true or false" };
+const badSanityId = { error: "Page content must be a Sanity document id" };
 const duplicateSlug = { error: "A class with this slug already exists" };
+const duplicateSanityId = {
+  error: "That page is already linked to another class",
+};
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+// `null` unlinks a class from any page content; `undefined` (the field
+// absent) leaves whatever it already has alone.
+const sanityIdField = z
+  .string(badSanityId)
+  .trim()
+  .min(1, badSanityId)
+  .nullable()
+  .optional();
 
 const createBody = z.object({
   title: z.string(missingTitle).trim().min(1, missingTitle),
@@ -68,7 +81,29 @@ const createBody = z.object({
   priceInPence: z.number(badPrice).int(badPrice).positive(badPrice),
   active: z.boolean(badActive).optional(),
   bundleEligible: z.boolean(badEligibility).optional(),
+  sanityId: sanityIdField,
 });
+
+/**
+ * Refuses linking a Sanity document to a second class. Not a unique index —
+ * a dropdown fed by `getClassPageOptions` is the only way `sanityId` is ever
+ * set, so this is a client mistake caught at the moment it would happen
+ * (stale options after someone else just linked the same page), not a
+ * concurrency guard.
+ */
+async function assertSanityIdNotLinked(
+  executor: Pick<typeof db, "select">,
+  sanityId: string,
+  excludeClassId?: number,
+) {
+  const linked = await executor
+    .select({ id: classes.id })
+    .from(classes)
+    .where(eq(classes.sanityId, sanityId));
+  if (linked.some((row) => row.id !== excludeClassId)) {
+    throw new ApiError(409, duplicateSanityId.error);
+  }
+}
 
 /** A duplicate slug is a client mistake, not a fault — `classes.slug` is unique. */
 async function insertClass(
@@ -81,6 +116,7 @@ async function insertClass(
     priceInPence: number;
     active?: boolean;
     bundleEligible?: boolean;
+    sanityId?: string | null;
   },
 ) {
   try {
@@ -101,6 +137,10 @@ export const POST = withAdmin({ body: createBody }, async ({ body }) => {
     // come to name this unrelated class instead of redirecting.
     const available = await assertSlugNotRedirected(tx, body.slug);
     if (!available.ok) refuse(available);
+
+    if (body.sanityId) {
+      await assertSanityIdNotLinked(tx, body.sanityId);
+    }
 
     return await insertClass(tx, body);
   });
@@ -132,6 +172,7 @@ const updateBody = z
       .optional(),
     active: z.boolean(badActive).optional(),
     bundleEligible: z.boolean(badEligibility).optional(),
+    sanityId: sanityIdField,
   })
   // A row that names none of the editable fields asks for nothing; the caller
   // meant something by sending it, so say so rather than silently doing
@@ -144,10 +185,11 @@ const updateBody = z
       c.bookingType !== undefined ||
       c.priceInPence !== undefined ||
       c.active !== undefined ||
-      c.bundleEligible !== undefined,
+      c.bundleEligible !== undefined ||
+      c.sanityId !== undefined,
     {
       error:
-        "Class updates must include a title, slug, category, booking type, price, active state or bundle eligibility",
+        "Class updates must include a title, slug, category, booking type, price, active state, bundle eligibility or page content",
     },
   );
 
@@ -161,6 +203,7 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
     priceInPence,
     active,
     bundleEligible,
+    sanityId,
   } = body;
 
   const updateFields = {
@@ -171,6 +214,7 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
     ...(priceInPence !== undefined && { priceInPence }),
     ...(active !== undefined && { active }),
     ...(bundleEligible !== undefined && { bundleEligible }),
+    ...(sanityId !== undefined && { sanityId }),
   };
 
   // Set inside the transaction when this update actually moves the slug, so
@@ -203,6 +247,10 @@ export const PUT = withAdmin({ body: updateBody }, async ({ body }) => {
         newSlug: slug,
       });
       if (!recorded.ok) refuse(recorded);
+    }
+
+    if (sanityId) {
+      await assertSanityIdNotLinked(tx, sanityId, id);
     }
 
     try {
