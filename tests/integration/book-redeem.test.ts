@@ -78,13 +78,14 @@ describe("which bundle a credit comes out of", () => {
     const schedule = await createSchedule({ capacity: 8 });
     // Inserted in the order that gets it wrong: an unordered read hands back
     // the row it found first, which is the bundle with months left on it.
+    const DAY_MS = 24 * 60 * 60 * 1000;
     const later = await createBundle({
       customerEmail: CUSTOMER,
-      expiresAt: new Date("2027-03-01T00:00:00Z"),
+      expiresAt: new Date(Date.now() + 180 * DAY_MS),
     });
     const sooner = await createBundle({
       customerEmail: CUSTOMER,
-      expiresAt: new Date("2026-10-01T00:00:00Z"),
+      expiresAt: new Date(Date.now() + 30 * DAY_MS),
     });
 
     const response = await redeem(schedule.id);
