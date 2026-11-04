@@ -10,6 +10,7 @@ async function seed() {
   const classTypes = [
     {
       slug: "prenatal",
+      sanityId: "service-prenatal",
       title: "Prenatal Yoga",
       category: "class" as const,
       bookingType: "stripe" as const,
@@ -17,6 +18,7 @@ async function seed() {
     },
     {
       slug: "postnatal",
+      sanityId: "service-postnatal",
       title: "Postnatal Yoga",
       category: "class" as const,
       bookingType: "stripe" as const,
@@ -24,6 +26,7 @@ async function seed() {
     },
     {
       slug: "baby-yoga",
+      sanityId: "service-baby-yoga",
       title: "Baby Yoga & Massage",
       category: "class" as const,
       bookingType: "stripe" as const,
@@ -31,6 +34,7 @@ async function seed() {
     },
     {
       slug: "vinyasa",
+      sanityId: "service-vinyasa",
       title: "Autumn Equinox Yin",
       category: "class" as const,
       bookingType: "stripe" as const,

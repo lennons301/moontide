@@ -1,5 +1,8 @@
 import { defineField, defineType } from "sanity";
 
+const isClass = (document: Record<string, unknown> | undefined) =>
+  document?.category === "class";
+
 export const service = defineType({
   name: "service",
   title: "Service",
@@ -9,6 +12,11 @@ export const service = defineType({
       name: "title",
       title: "Title",
       type: "string",
+      // Classes are renamed in /admin/classes — Postgres owns the title and
+      // slug there (ADR-0003) — so editing either one here would do nothing
+      // and look like it did something.
+      readOnly: ({ document }) => isClass(document),
+      description: "Rename this class in the admin (/admin/classes)",
       validation: (rule) => rule.required(),
     }),
     defineField({
@@ -16,6 +24,8 @@ export const service = defineType({
       title: "Slug",
       type: "slug",
       options: { source: "title" },
+      readOnly: ({ document }) => isClass(document),
+      description: "Rename this class in the admin (/admin/classes)",
       validation: (rule) => rule.required(),
     }),
     defineField({

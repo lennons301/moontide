@@ -2,7 +2,12 @@ import { eq } from "drizzle-orm";
 import type { Image, PortableTextBlock } from "sanity";
 import { db } from "@/lib/db";
 import { classes } from "@/lib/db/schema";
-import { serviceBySlugQuery, servicesQuery } from "@/lib/sanity/queries";
+import {
+  classPageOptionsQuery,
+  serviceByIdQuery,
+  serviceBySlugQuery,
+  servicesQuery,
+} from "@/lib/sanity/queries";
 import type { Service } from "@/lib/sanity/types";
 import {
   fallbackServiceBySlug,
@@ -16,6 +21,8 @@ export interface CatalogueClass {
   slug: string;
   title: string;
   category: Service["category"];
+  /** The Sanity `service` document this class's content is linked to, if any. */
+  sanityId: string | null;
 }
 
 /**
@@ -40,6 +47,7 @@ export async function getClassCatalogue(): Promise<CatalogueClass[]> {
         slug: classes.slug,
         title: classes.title,
         category: classes.category,
+        sanityId: classes.sanityId,
       })
       .from(classes)
       .where(eq(classes.active, true))
@@ -101,18 +109,26 @@ export interface ServiceContent {
  * `/classes/<slug>`. The fallback copy is part of the answer, so the page has
  * one thing to render rather than a CMS document and a local backup.
  *
- * A slug in the catalogue always has a Postgres title, so that is what wins —
- * Sanity's prose and image still apply, and "Class details coming soon" is
- * the only fallback left for a catalogue class Sanity has no document for.
+ * A slug in the catalogue always has a Postgres title, so that is what wins.
+ * Its Sanity content is found by `sanityId` — the join that survives either
+ * side being renamed (#131) — not by slug: the two slugs are editable
+ * independently and have already drifted once. The three non-class pages
+ * have no Postgres row to carry an id, so they keep the slug lookup.
+ * "Class details coming soon" is what a catalogue class falls back to when
+ * it carries no `sanityId`, or the document it names is gone.
  */
 export async function getService(slug: string): Promise<ServiceContent> {
-  const [catalogue, service] = await Promise.all([
-    NON_CLASS_SLUGS.has(slug)
-      ? Promise.resolve<CatalogueClass[]>([])
-      : getClassCatalogue(),
-    fetchOrNull<Service>(serviceBySlugQuery, { slug }),
-  ]);
+  const catalogue = NON_CLASS_SLUGS.has(slug)
+    ? ([] as CatalogueClass[])
+    : await getClassCatalogue();
   const classRow = catalogue.find((c) => c.slug === slug);
+
+  const service = classRow
+    ? classRow.sanityId
+      ? await fetchOrNull<Service>(serviceByIdQuery, { id: classRow.sanityId })
+      : null
+    : await fetchOrNull<Service>(serviceBySlugQuery, { slug });
+
   const fallback = classRow
     ? unknownServiceFallback
     : (fallbackServiceBySlug[slug] ?? unknownServiceFallback);
@@ -134,4 +150,38 @@ export async function getService(slug: string): Promise<ServiceContent> {
 export async function getServices(): Promise<Service[]> {
   const services = await fetchOrNull<Service[]>(servicesQuery);
   return services?.length ? services : fallbackServices;
+}
+
+/**
+ * The href a homepage class tile links to: the slug of the active class
+ * linked to this document by `sanityId`, so renaming a class in the admin
+ * moves the tile with no Studio edit. Falls back to the document's own
+ * slug when nothing is linked to it — never offered, or the catalogue came
+ * back empty because Postgres could not be reached — so a Postgres blip
+ * degrades the tile rather than breaking it (#131).
+ */
+export function classTileHref(
+  service: Service,
+  catalogue: CatalogueClass[],
+): string {
+  const linked = catalogue.find((c) => c.sanityId === service._id);
+  return `/classes/${linked?.slug ?? service.slug.current}`;
+}
+
+/** One Sanity class document, named for the admin "Page content" dropdown. */
+export interface ClassPageOption {
+  id: string;
+  title: string;
+}
+
+/**
+ * Every class document Sanity holds, for `/admin/classes` to link a
+ * catalogue row to by title rather than by `_id`. Read-only: nothing here
+ * writes to Sanity, so picking an option only ever sets `classes.sanityId`.
+ */
+export async function getClassPageOptions(): Promise<ClassPageOption[]> {
+  const options = await fetchOrNull<{ _id: string; title: string }[]>(
+    classPageOptionsQuery,
+  );
+  return (options ?? []).map(({ _id, title }) => ({ id: _id, title }));
 }

@@ -182,6 +182,10 @@ const PROBES: Array<[string, Handler, Request]> = [
     "classes update: active sent as a word",
     ...body(classesPut, { id: 1, active: "yes" }),
   ],
+  [
+    "classes update: sanityId sent as a number",
+    ...body(classesPut, { id: 1, sanityId: 5 }),
+  ],
 
   ["resend-email: nothing at all", ...body(resendPost, {})],
   [

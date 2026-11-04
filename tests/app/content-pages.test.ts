@@ -33,17 +33,29 @@ vi.mock(
 
 /** The four bookable classes, as Postgres — the catalogue's owner — has them. */
 const CATALOGUE = [
-  { slug: "prenatal", title: "Prenatal Yoga", category: "class" as const },
-  { slug: "postnatal", title: "Postnatal Yoga", category: "class" as const },
+  {
+    slug: "prenatal",
+    title: "Prenatal Yoga",
+    category: "class" as const,
+    sanityId: "service-prenatal",
+  },
+  {
+    slug: "postnatal",
+    title: "Postnatal Yoga",
+    category: "class" as const,
+    sanityId: "service-postnatal",
+  },
   {
     slug: "baby-yoga",
     title: "Baby Yoga & Massage",
     category: "class" as const,
+    sanityId: "service-baby-yoga",
   },
   {
     slug: "vinyasa",
     title: "Autumn Equinox Yin",
     category: "class" as const,
+    sanityId: "service-vinyasa",
   },
 ];
 

@@ -20,7 +20,8 @@ src/
         schedules/        # CRUD API for class schedules
         waitlist/         # GET waiting list + occupancy, DELETE an entry
         waitlist/offer/   # POST offer a held seat, DELETE withdraw it
-        classes/          # CRUD for classes: create, edit (title/slug included), deactivate (soft delete only)
+        classes/          # CRUD for classes: create, edit (title/slug/sanityId included), deactivate (soft delete only)
+        class-pages/      # GET the Sanity class documents, for the admin "Page content" dropdown
         pricing/          # GET/PUT bundle config only — class pricing moved to classes/
         bookings/         # GET all bookings
         bundles/          # GET all bundles
@@ -91,7 +92,7 @@ src/
       source.ts           # The ContentSource seam: the Sanity adapter, and fetchOrNull
       in-memory-source.ts # The other adapter: a CMS held in a variable, for tests
       fallbacks.ts        # One copy of every piece of hardcoded content
-      services.ts         # getClassCatalogue() / getService(slug) / getServices() / getServicePagePaths()
+      services.ts         # getClassCatalogue() / getService(slug) (joined by sanityId, not slug) / getServices() / getServicePagePaths() / classTileHref() / getClassPageOptions()
       trainer.ts          # getTrainer() — the one trainer fallback, shared by / and /about
       community.ts        # getCommunityEvents()
       site-settings.ts    # getSiteSettings() — hero tagline, Instagram link
@@ -123,7 +124,7 @@ src/
       digest.ts           # Pure decisions: what belongs in Gabrielle's daily digest
       daily.ts            # The daily job: settle expired offers, send the digest
   sanity/
-    schema/               # Sanity document schemas (siteSettings, service, page, trainer, communityEvent)
+    schema/               # Sanity document schemas (siteSettings, service, page, trainer, communityEvent); service.title/slug are readOnly for category "class"
     structure.ts          # Sanity Studio desk structure
   proxy.ts                  # Admin route protection (/admin/* except /admin/login)
 scripts/

@@ -140,12 +140,12 @@ describe("every /api/admin handler checks the session itself", () => {
     vi.clearAllMocks();
   });
 
-  // Nine route files, twenty-one exported handlers. The counts are asserted so
+  // Ten route files, twenty-two exported handlers. The counts are asserted so
   // that a route file emptied by a bad merge reads as a failure rather than as
   // a sweep with nothing left to sweep.
   it("covers every handler under /api/admin", () => {
-    expect(DISCOVERED).toHaveLength(9);
-    expect(HANDLERS).toHaveLength(21);
+    expect(DISCOVERED).toHaveLength(10);
+    expect(HANDLERS).toHaveLength(22);
     expect(BODY_HANDLERS).toHaveLength(12);
   });
 

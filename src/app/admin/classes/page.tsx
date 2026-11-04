@@ -28,6 +28,16 @@ import {
 } from "@/lib/classes/categories";
 
 const NO_CLASSES: ClassRow[] = [];
+const NO_PAGE_OPTIONS: ClassPageOption[] = [];
+
+/** A Sanity class document, as `/api/admin/class-pages` answers it. */
+interface ClassPageOption {
+  id: string;
+  title: string;
+}
+
+/** Nothing linked yet — distinct from any real Sanity `_id`. */
+const UNLINKED = "";
 
 type ActiveFilter = "all" | "active" | "inactive";
 type CategoryFilter = "all" | ClassCategory;
@@ -44,6 +54,11 @@ export default function ClassesPage() {
     refetch: fetchClasses,
   } = useAdminResource<ClassRow[]>("/api/admin/classes?all=true", NO_CLASSES);
 
+  const { data: pageOptions } = useAdminResource<ClassPageOption[]>(
+    "/api/admin/class-pages",
+    NO_PAGE_OPTIONS,
+  );
+
   const [actionError, setActionError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -57,6 +72,7 @@ export default function ClassesPage() {
     priceInPence: "0.00",
     active: true,
     bundleEligible: true,
+    sanityId: UNLINKED,
   });
 
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("active");
@@ -106,6 +122,7 @@ export default function ClassesPage() {
       priceInPence: "0.00",
       active: true,
       bundleEligible: true,
+      sanityId: UNLINKED,
     });
     setEditingId(null);
   }
@@ -120,6 +137,7 @@ export default function ClassesPage() {
       priceInPence: penceToPounds(item.priceInPence),
       active: item.active,
       bundleEligible: item.bundleEligible,
+      sanityId: item.sanityId ?? UNLINKED,
     });
     setShowForm(true);
   }
@@ -152,6 +170,7 @@ export default function ClassesPage() {
       priceInPence: poundsToPence(formData.priceInPence),
       active: formData.active,
       bundleEligible: formData.bundleEligible,
+      sanityId: formData.sanityId === UNLINKED ? null : formData.sanityId,
     };
 
     const result = await mutateAdmin("/api/admin/classes", {
@@ -286,6 +305,24 @@ export default function ClassesPage() {
                   className="h-8"
                 />
               </div>
+            </div>
+            <div>
+              <Label htmlFor="sanityId">Page content</Label>
+              <select
+                id="sanityId"
+                value={formData.sanityId}
+                onChange={(e) =>
+                  setFormData({ ...formData, sanityId: e.target.value })
+                }
+                className="mt-1 h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <option value={UNLINKED}>None yet</option>
+                {pageOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.title}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex items-end gap-4">
               <label

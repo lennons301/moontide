@@ -25,15 +25,26 @@ vi.mock(
  * imply the others.
  */
 const CATALOGUE = [
-  { slug: "prenatal", title: "Prenatal Yoga", category: "class" as const },
+  {
+    slug: "prenatal",
+    title: "Prenatal Yoga",
+    category: "class" as const,
+    sanityId: null,
+  },
   {
     slug: "baby-yoga",
     title: "Baby Yoga & Massage",
     category: "class" as const,
+    sanityId: null,
   },
   // Not one of the four classes hardcoded anywhere historically — proves the
   // three components read the catalogue rather than a list of known slugs.
-  { slug: "evening-flow", title: "Evening Flow", category: "class" as const },
+  {
+    slug: "evening-flow",
+    title: "Evening Flow",
+    category: "class" as const,
+    sanityId: null,
+  },
 ];
 
 beforeEach(() => givenClassCatalogueHolds(CATALOGUE));

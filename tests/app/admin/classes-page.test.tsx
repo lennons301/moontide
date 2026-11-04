@@ -23,6 +23,7 @@ const PRENATAL = {
 function stubClasses(overrides: Record<string, unknown> = {}) {
   return stubFetch({
     "GET /api/admin/classes": { json: [PRENATAL] },
+    "GET /api/admin/class-pages": { json: [] },
     ...overrides,
   });
 }
@@ -69,6 +70,49 @@ describe("/admin/classes", () => {
       priceInPence: 1800,
       active: true,
       bundleEligible: true,
+      sanityId: null,
+    });
+  });
+
+  it("links a class to a page from the dropdown", async () => {
+    const fetchMock = stubClasses({
+      "GET /api/admin/class-pages": {
+        json: [
+          { id: "service-prenatal", title: "Prenatal Yoga" },
+          { id: "service-yin", title: "Yin Circle" },
+        ],
+      },
+      "POST /api/admin/classes": { status: 201, json: { id: 5 } },
+    });
+    render(<ClassesPage />);
+    await screen.findByRole("cell", { name: "Prenatal Yoga" });
+
+    fireEvent.click(screen.getByRole("button", { name: "New Class" }));
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Yin Circle" },
+    });
+    fireEvent.change(screen.getByLabelText("Slug"), {
+      target: { value: "yincircle" },
+    });
+    fireEvent.change(screen.getByLabelText("Price"), {
+      target: { value: "18.00" },
+    });
+    fireEvent.change(await screen.findByLabelText("Page content"), {
+      target: { value: "service-yin" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Class" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/classes",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const [, init] = fetchMock.mock.calls.find(
+      ([, i]) => i?.method === "POST",
+    ) as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      sanityId: "service-yin",
     });
   });
 

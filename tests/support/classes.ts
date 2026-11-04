@@ -24,6 +24,8 @@ export interface CatalogueRow {
   slug: string;
   title: string;
   category: "class" | "coaching" | "community";
+  /** The Sanity document this class is linked to. Omitted means unlinked. */
+  sanityId?: string | null;
 }
 
 const mockOrderBy = vi.fn();

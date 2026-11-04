@@ -6,7 +6,10 @@ import {
   unknownServiceFallback,
 } from "@/lib/content/fallbacks";
 import {
+  type CatalogueClass,
+  classTileHref,
   getClassCatalogue,
+  getClassPageOptions,
   getService,
   getServicePagePaths,
   getServices,
@@ -151,7 +154,12 @@ describe("getService", () => {
 
   it("titles a catalogue class from Postgres, even when Sanity names it differently", async () => {
     givenClassCatalogueHolds([
-      { slug: "prenatal", title: "Prenatal Yoga", category: "class" },
+      {
+        slug: "prenatal",
+        title: "Prenatal Yoga",
+        category: "class",
+        sanityId: "service-coaching",
+      },
     ]);
     givenCmsHolds({
       services: [
@@ -164,26 +172,33 @@ describe("getService", () => {
     expect(service.title).toBe("Prenatal Yoga");
   });
 
-  it("still renders Sanity's prose and image for a catalogue class", async () => {
+  it("joins a catalogue class to its Sanity document by _id, not by slug", async () => {
+    // The Postgres slug and the Sanity document's own slug have drifted
+    // independently (#131) — the join has to survive that.
     givenClassCatalogueHolds([
-      { slug: "prenatal", title: "Prenatal Yoga", category: "class" },
+      {
+        slug: "yincircle",
+        title: "Yin Circle",
+        category: "class",
+        sanityId: "service-coaching",
+      },
     ]);
     givenCmsHolds({
-      services: [{ ...CMS_COACHING, slug: { current: "prenatal" } }],
+      services: [{ ...CMS_COACHING, slug: { current: "yin" } }],
     });
 
-    const service = await getService("prenatal");
+    const service = await getService("yincircle");
 
-    expect(service.title).toBe("Prenatal Yoga");
+    expect(service.title).toBe("Yin Circle");
     expect(service.fullDescription).toEqual(CMS_COACHING.fullDescription);
     expect(service.image).toEqual(CMS_IMAGE);
   });
 
-  it("falls back to 'coming soon' for a catalogue class Sanity has no document for", async () => {
+  it("falls back to 'coming soon' for a catalogue class with no linked page", async () => {
     givenClassCatalogueHolds([
       { slug: "evening-flow", title: "Evening Flow", category: "class" },
     ]);
-    givenCmsUnreachable();
+    givenCmsHolds({ services: [CMS_COACHING] });
 
     const service = await getService("evening-flow");
 
@@ -191,6 +206,28 @@ describe("getService", () => {
     expect(service.descriptionParagraphs).toEqual(
       unknownServiceFallback.descriptionParagraphs,
     );
+    expect(service.fullDescription).toBeUndefined();
+    expect(service.image).toBeUndefined();
+  });
+
+  it("falls back to 'coming soon' when a catalogue class's linked document is gone", async () => {
+    givenClassCatalogueHolds([
+      {
+        slug: "evening-flow",
+        title: "Evening Flow",
+        category: "class",
+        sanityId: "service-deleted",
+      },
+    ]);
+    givenCmsHolds({ services: [CMS_COACHING] });
+
+    const service = await getService("evening-flow");
+
+    expect(service.title).toBe("Evening Flow");
+    expect(service.descriptionParagraphs).toEqual(
+      unknownServiceFallback.descriptionParagraphs,
+    );
+    expect(service.fullDescription).toBeUndefined();
   });
 
   it("falls back to the module's own copy when Postgres cannot be reached", async () => {
@@ -316,6 +353,80 @@ describe("getServices", () => {
       "community",
       "private",
     ]);
+  });
+});
+
+describe("getClassPageOptions", () => {
+  it("names every class document, by title", async () => {
+    givenCmsHolds({
+      services: [
+        CMS_COACHING,
+        {
+          ...CMS_COACHING,
+          _id: "service-prenatal",
+          title: "Prenatal Yoga",
+          category: "class",
+        },
+        {
+          ...CMS_COACHING,
+          _id: "service-yin",
+          title: "Yin Circle",
+          category: "class",
+        },
+      ],
+    });
+
+    expect(await getClassPageOptions()).toEqual([
+      { id: "service-prenatal", title: "Prenatal Yoga" },
+      { id: "service-yin", title: "Yin Circle" },
+    ]);
+  });
+
+  it("answers with nothing when the CMS is unreachable", async () => {
+    givenCmsUnreachable();
+
+    expect(await getClassPageOptions()).toEqual([]);
+  });
+});
+
+describe("classTileHref", () => {
+  const DOC = {
+    ...CMS_COACHING,
+    _id: "service-yin",
+    category: "class" as const,
+  };
+
+  it("links to the slug of the class linked to this document", () => {
+    const catalogue: CatalogueClass[] = [
+      {
+        slug: "yincircle",
+        title: "Yin Circle",
+        category: "class",
+        sanityId: "service-yin",
+      },
+    ];
+
+    expect(classTileHref(DOC, catalogue)).toBe("/classes/yincircle");
+  });
+
+  it("falls back to the document's own slug when nothing is linked to it", () => {
+    const catalogue: CatalogueClass[] = [
+      {
+        slug: "prenatal",
+        title: "Prenatal Yoga",
+        category: "class",
+        sanityId: null,
+      },
+    ];
+
+    expect(classTileHref(DOC, catalogue)).toBe(`/classes/${DOC.slug.current}`);
+  });
+
+  it("falls back to the document's own slug when the catalogue is empty", () => {
+    // What getClassCatalogue() answers with when Postgres is unreachable —
+    // a tile must still have somewhere to link, even if it is Sanity's own
+    // (possibly stale) slug.
+    expect(classTileHref(DOC, [])).toBe(`/classes/${DOC.slug.current}`);
   });
 });
 
